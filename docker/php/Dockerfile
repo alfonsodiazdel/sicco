@@ -15,5 +15,8 @@ COPY php.ini /usr/local/etc/php/conf.d/sicco.ini
 
 RUN groupmod -o -g ${GID} www-data && usermod -o -u ${UID} -g www-data www-data
 
+# Configuración e historial de PsySH (php artisan tinker) fuera del código montado.
+ENV XDG_CONFIG_HOME=/tmp/.config
+
 WORKDIR /var/www/backend
 USER www-data
