@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "sicco",
+      "credentials": [{ "accessKey": "sicco", "secretKey": "sicco-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

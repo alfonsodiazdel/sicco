@@ -1,0 +1,82 @@
+# Entorno de desarrollo local de SICCO.
+# En producción (DigitalOcean): MySQL → Managed Database, SeaweedFS (S3) → Spaces, Mailpit → SMTP real.
+name: sicco
+
+services:
+  php:
+    build:
+      context: ./docker/php
+    volumes:
+      - ./backend:/var/www/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  queue:
+    build:
+      context: ./docker/php
+    command: php artisan queue:work --tries=3 --backoff=60
+    volumes:
+      - ./backend:/var/www/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    profiles: [queue]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./backend:/var/www/backend:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: sicco
+      MYSQL_USER: sicco
+      MYSQL_PASSWORD: sicco
+      MYSQL_ROOT_PASSWORD: root
+      TZ: America/Lima
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025" # interfaz web
+      - "1025:1025" # SMTP
+
+  # Almacenamiento S3 local (simula DigitalOcean Spaces).
+  # MinIO dejó de publicar imágenes gratuitas; SeaweedFS expone la misma API S3.
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333" # API S3
+    volumes:
+      - s3-data:/data
+      - ./docker/s3/s3.json:/etc/seaweedfs/s3.json:ro
+
+  s3-init:
+    image: chrislusf/seaweedfs:latest
+    depends_on:
+      - s3
+    restart: on-failure
+    entrypoint: >
+      /bin/sh -c "sleep 5 && echo 's3.bucket.create -name sicco' | weed shell -master=s3:9333"
+
+volumes:
+  mysql-data:
+  s3-data:
