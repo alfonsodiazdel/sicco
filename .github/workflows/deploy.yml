@@ -1,0 +1,64 @@
+name: Deploy demo
+
+# Se lanza a mano: pestaña Actions → "Deploy demo" → Run workflow.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+env:
+  DEPLOY_PATH: /opt/sicco
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # La SPA se compila aquí y no en el Droplet, que tiene poca RAM.
+      - name: Compilar frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build-only
+
+      - name: Configurar SSH
+        env:
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+
+      # Lo excluido tampoco se borra en el Droplet: .env, vendor y storage se conservan.
+      - name: Copiar código al Droplet
+        env:
+          DESTINO: ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}
+        run: |
+          rsync -az --delete \
+            --exclude=/.git/ \
+            --exclude=/frontend/node_modules/ \
+            --exclude=/backend/.env \
+            --exclude=/backend/vendor/ \
+            --exclude=/backend/storage/ \
+            --exclude='/backend/bootstrap/cache/*.php' \
+            ./ "$DESTINO:$DEPLOY_PATH/"
+
+      - name: Desplegar
+        env:
+          DESTINO: ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}
+        run: ssh "$DESTINO" "bash $DEPLOY_PATH/deploy/deploy.sh"

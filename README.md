@@ -62,6 +62,11 @@ docker compose --profile queue up -d queue         # worker de colas (correos)
 - Backend: `->middleware('rol:oficina_tecnica,gerencia')`. Frontend: `meta.roles` en
   la ruta y `src/router/menu.ts` para el menú.
 
+## Despliegue de la demo
+
+Un solo Droplet de DigitalOcean con Docker, HTTPS y despliegue manual desde GitHub
+Actions (workflow "Deploy demo"). Paso a paso en [deploy/README.md](deploy/README.md).
+
 ## Almacenamiento: local vs. producción
 
 Laravel usa el disco `s3` en ambos entornos; solo cambian las variables:

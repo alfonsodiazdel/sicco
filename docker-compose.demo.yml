@@ -1,0 +1,126 @@
+# Entorno de demostración de SICCO en un Droplet (ver deploy/README.md).
+# Todo en un solo servidor: nginx + Let's Encrypt, PHP, MySQL, SeaweedFS y Mailpit.
+# Solo nginx publica puertos (80 y 443); el resto queda en la red interna de Docker.
+#
+# Las variables se leen de backend/.env, por eso siempre se usa:
+#   docker compose -f docker-compose.demo.yml --env-file backend/.env <comando>
+name: sicco-demo
+
+x-reinicio: &reinicio
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  php:
+    <<: *reinicio
+    image: sicco-php:demo
+    build:
+      context: ./docker/php
+      args:
+        UID: ${DEPLOY_UID:-1000}
+        GID: ${DEPLOY_GID:-1000}
+    volumes:
+      - ./backend:/var/www/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  queue:
+    <<: *reinicio
+    image: sicco-php:demo
+    command: php artisan queue:work --tries=3 --backoff=60
+    volumes:
+      - ./backend:/var/www/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  nginx:
+    <<: *reinicio
+    image: nginx:1.27-alpine
+    # Elige la plantilla HTTP o HTTPS según exista el certificado y arranca nginx.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - sh /etc/nginx/sicco/seleccionar-plantilla.sh && exec /docker-entrypoint.sh nginx -g 'daemon off;'
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./backend:/var/www/backend:ro
+      - ./frontend/dist:/var/www/frontend/dist:ro
+      - ./docker/nginx/demo:/etc/nginx/sicco:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      - php
+      - mailpit
+
+  # Solo se usa con "run" desde deploy/deploy.sh para emitir o renovar el certificado.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    profiles: [certbot]
+
+  mysql:
+    <<: *reinicio
+    image: mysql:8.4
+    # Ajustes de memoria para un Droplet de 1–2 GB de RAM.
+    command:
+      - --performance-schema=OFF
+      - --innodb-buffer-pool-size=128M
+      - --innodb-log-buffer-size=8M
+      - --max-connections=40
+      - --tmp-table-size=16M
+      - --max-heap-table-size=16M
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-sicco}
+      MYSQL_USER: ${DB_USERNAME:-sicco}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en backend/.env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Falta DB_ROOT_PASSWORD en backend/.env}
+      TZ: America/Lima
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Muestra al jurado los correos que envía el sistema, en https://<dominio>/mailpit/
+  mailpit:
+    <<: *reinicio
+    image: axllent/mailpit:latest
+    environment:
+      MP_WEBROOT: /mailpit/
+      MP_UI_AUTH: ${MAILPIT_UI_AUTH:?Falta MAILPIT_UI_AUTH en backend/.env}
+
+  s3:
+    <<: *reinicio
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - s3-data:/data
+      - ./docker/s3/s3.json:/etc/seaweedfs/s3.json:ro
+
+  s3-init:
+    image: chrislusf/seaweedfs:latest
+    depends_on:
+      - s3
+    restart: on-failure
+    entrypoint: >
+      /bin/sh -c "sleep 5 && echo 's3.bucket.create -name sicco' | weed shell -master=s3:9333"
+
+volumes:
+  mysql-data:
+  s3-data:
+  letsencrypt:
+  certbot-www:

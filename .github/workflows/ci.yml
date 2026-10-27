@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # El workflow "Deploy demo" lo reutiliza antes de desplegar.
+  workflow_call:
 
 jobs:
   backend:

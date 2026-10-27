@@ -1,0 +1,12 @@
+# Sin certificado todavía (o sin dominio): sirve la app por HTTP y responde
+# el reto de Let's Encrypt para poder emitir el certificado.
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    include /etc/nginx/sicco/app.conf;
+}
