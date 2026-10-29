@@ -116,21 +116,22 @@ Desde entonces, cada **Run workflow** pasa la CI y actualiza el Droplet con lo q
 
 ## 7. Usuarios para la demo
 
-En producción no se crean usuarios demo automáticamente. Crea uno por rol con una
-contraseña temporal; al primer ingreso el sistema obliga a cambiarla (CU01):
+En producción no se crean usuarios demo automáticamente. `UsuarioDemoProduccionSeeder`
+crea uno por rol (`<rol>@sicco.app`) con la contraseña temporal de `DEMO_PASSWORD`;
+al primer ingreso el sistema obliga a cambiarla (CU01).
+
+1. En `backend/.env` del Droplet define `DEMO_PASSWORD` (mínimo 8 caracteres, letras y números).
+2. Vuelve a cachear la configuración (para que tome la variable) y ejecuta el seeder:
 
 ```bash
 ssh sicco@IP_DEL_DROPLET
 cd /opt/sicco
-docker compose -f docker-compose.demo.yml --env-file backend/.env exec php php artisan tinker --execute='
-foreach (App\Enums\Rol::cases() as $rol) {
-    App\Models\User::updateOrCreate(["email" => $rol->value."@sicco.app"], [
-        "rol_id" => App\Models\Rol::where("clave", $rol)->value("id"),
-        "nombres" => $rol->nombre(), "apellidos" => "Demo",
-        "password" => "TemporalSicco1", "activo" => true, "debe_cambiar_password" => true,
-    ]);
-}'
+alias dc='docker compose -f docker-compose.demo.yml --env-file backend/.env'
+dc exec php php artisan config:cache
+dc exec php php artisan db:seed --class=UsuarioDemoProduccionSeeder --force
 ```
+
+Volver a ejecutarlo no cambia las contraseñas de usuarios que ya existen.
 
 ## Comandos útiles en el Droplet
 
