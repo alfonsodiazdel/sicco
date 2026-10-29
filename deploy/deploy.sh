@@ -56,8 +56,9 @@ paso "Migraciones y roles"
 dc run --rm php php artisan migrate --force
 dc run --rm php php artisan db:seed --class=RolSeeder --force
 
+# Sin "optimize": la API no tiene vistas Blade y resources/views no existe en el repositorio.
 paso "Cacheando configuración y rutas"
-dc run --rm php php artisan optimize
+dc run --rm php sh -c "php artisan config:cache && php artisan route:cache && php artisan event:cache"
 
 paso "Levantando PHP, cola y nginx"
 dc up -d --remove-orphans
