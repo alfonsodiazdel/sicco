@@ -22,9 +22,10 @@ if [ ! -f backend/.env ]; then
     exit 1
 fi
 
-if grep -q "CAMBIAR" backend/.env; then
+# Solo líneas de variables; los comentarios de la plantilla también mencionan CAMBIAR.
+if grep -q "^[^#]*CAMBIAR" backend/.env; then
     echo "backend/.env todavía tiene valores CAMBIAR:"
-    grep -n "CAMBIAR" backend/.env
+    grep -n "^[^#]*CAMBIAR" backend/.env
     exit 1
 fi
 

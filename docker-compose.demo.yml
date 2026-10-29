@@ -94,6 +94,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # La primera inicialización en un Droplet de 1 GB puede tardar varios minutos.
+      start_period: 180s
 
   # Muestra al jurado los correos que envía el sistema, en https://<dominio>/mailpit/
   mailpit:
@@ -111,13 +113,20 @@ services:
       - s3-data:/data
       - ./docker/s3/s3.json:/etc/seaweedfs/s3.json:ro
 
+  # Crea el bucket si no existe y termina (no falla si ya está creado).
   s3-init:
     image: chrislusf/seaweedfs:latest
     depends_on:
       - s3
-    restart: on-failure
-    entrypoint: >
-      /bin/sh -c "sleep 5 && echo 's3.bucket.create -name sicco' | weed shell -master=s3:9333"
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until echo 's3.bucket.list' | weed shell -master=s3:9333 2>/dev/null | grep -qw sicco; do
+          echo 's3.bucket.create -name sicco' | weed shell -master=s3:9333
+          sleep 3
+        done
 
 volumes:
   mysql-data:
