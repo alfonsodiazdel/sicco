@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import router from '@/router'
+import router, { destinoTrasLogin } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 import type { RolClave, Usuario } from '@/types/auth'
 
@@ -30,5 +30,19 @@ describe('acceso por URL', () => {
     await router.push('/proyectos')
 
     expect(router.currentRoute.value.name).toBe('proyectos')
+  })
+})
+
+describe('destino tras iniciar sesión', () => {
+  it.each([
+    ['/proyectos?vista=1', '/proyectos?vista=1'],
+    ['//evil.example', '/'],
+    ['/\\evil.example', '/'],
+    ['https://evil.example', '/'],
+    ['javascript:alert(1)', '/'],
+    [undefined, '/'],
+    [['/proyectos'], '/'],
+  ])('con redirect %j vuelve a %s', (redirect, destino) => {
+    expect(destinoTrasLogin(redirect)).toBe(destino)
   })
 })

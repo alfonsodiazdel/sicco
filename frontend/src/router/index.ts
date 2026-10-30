@@ -121,4 +121,9 @@ router.afterEach((to) => {
   document.title = to.meta.titulo ? `${to.meta.titulo} · SICCO` : 'SICCO'
 })
 
+// Solo rutas del propio sitio: «//host» y «/\\host» los navegadores los leen como otro origen.
+export function destinoTrasLogin(redirect: unknown) {
+  return typeof redirect === 'string' && /^\/(?![/\\])/.test(redirect) ? redirect : '/'
+}
+
 export default router
