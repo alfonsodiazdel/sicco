@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { createMemoryHistory, createRouter, type LocationQueryRaw } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
@@ -40,14 +41,22 @@ vi.mock('@/services/partidas', async (importOriginal) => {
   }
 })
 
-async function montar(preparar?: (proyectos: ProyectosServicio) => Promise<void>) {
+async function montar(
+  preparar?: (proyectos: ProyectosServicio) => Promise<void>,
+  consulta: LocationQueryRaw = {},
+) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
   servicios.proyectos = crearProyectosEnMemoria()
   servicios.partidas = crearPartidasEnMemoria()
   await preparar?.(servicios.proyectos)
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/partidas', component: PartidasView }],
+  })
+  await router.push({ path: '/partidas', query: consulta })
   const vista = mount(PartidasView, {
-    global: { plugins: [PrimeVue], stubs: { teleport: true } },
+    global: { plugins: [PrimeVue, router], stubs: { teleport: true } },
   })
   await flushPromises()
   return vista
@@ -155,6 +164,36 @@ describe('PartidasView', () => {
       'Condominio Las Palmeras',
     ])
     expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
+  })
+
+  it('preselecciona el proyecto que llega desde la lista de proyectos', async () => {
+    const vista = await montar(undefined, { proyecto: '2' })
+
+    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
+    expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
+  })
+
+  it.each(['99', 'abc'])(
+    'con un proyecto inexistente (%s) elige el primer proyecto activo',
+    async (proyecto) => {
+      const vista = await montar(undefined, { proyecto })
+
+      expect(selectorProyecto(vista).props('modelValue')).toBe(1)
+      expect(filas(vista).map((f) => f[0])).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
+    },
+  )
+
+  it('no preselecciona un proyecto finalizado', async () => {
+    const vista = await montar(
+      async (proyectos) => {
+        const segundo = (await proyectos.listar()).find((p) => p.id === 2)
+        await proyectos.actualizar(2, { ...segundo!, estado: 'Finalizado' })
+      },
+      { proyecto: '2' },
+    )
+
+    expect(selectorProyecto(vista).props('modelValue')).toBe(1)
+    expect(filas(vista).map((f) => f[0])).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
   })
 
   it('al elegir otro proyecto muestra solo sus partidas y su total', async () => {

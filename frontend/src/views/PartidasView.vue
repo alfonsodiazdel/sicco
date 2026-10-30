@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useToast } from 'primevue/usetoast'
@@ -22,6 +23,7 @@ import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 
 const toast = useToast()
 const confirm = useConfirm()
+const route = useRoute()
 
 const proyectos = ref<ProyectoFila[]>([])
 const proyectoId = ref<number | null>(null)
@@ -55,7 +57,9 @@ watch(proyectoId, async () => {
 onMounted(async () => {
   try {
     proyectos.value = (await proyectosServicio.listar()).filter((p) => p.estado === 'Activo')
-    proyectoId.value = proyectos.value[0]?.id ?? null
+    // Desde Proyectos llega ?proyecto=<id>; solo se respeta si es uno de los activos.
+    const pedido = proyectos.value.find((p) => String(p.id) === route.query.proyecto)
+    proyectoId.value = (pedido ?? proyectos.value[0])?.id ?? null
   } catch (error) {
     toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
   } finally {

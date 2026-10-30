@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import DatePicker from 'primevue/datepicker'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { UsuariosServicio } from '@/services/usuarios'
 import ProyectosView from '@/views/ProyectosView.vue'
+import { useAuthStore } from '@/stores/auth'
+import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
@@ -38,14 +42,30 @@ vi.mock('@/services/usuarios', async (importOriginal) => {
   }
 })
 
-async function montar(preparar?: (usuarios: UsuariosServicio) => Promise<void>) {
+let router: Router
+
+async function montar(
+  preparar?: (usuarios: UsuariosServicio) => Promise<void>,
+  rol: RolClave = 'oficina_tecnica',
+) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearUsuariosEnMemoria } = await import('@/services/usuarios')
   servicios.proyectos = crearProyectosEnMemoria()
   servicios.usuarios = crearUsuariosEnMemoria()
   await preparar?.(servicios.usuarios)
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().usuario = { rol: { clave: rol } } as Usuario
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/proyectos', component: ProyectosView },
+      { path: '/partidas', component: { template: '<p>Presupuesto</p>' } },
+    ],
+  })
+  await router.push('/proyectos')
   const vista = mount(ProyectosView, {
-    global: { plugins: [PrimeVue], stubs: { teleport: true } },
+    global: { plugins: [PrimeVue, pinia, router], stubs: { teleport: true } },
   })
   await flushPromises()
   return vista
@@ -253,4 +273,34 @@ describe('ProyectosView', () => {
     expect(vista.find('[aria-label^="Eliminar"]').exists()).toBe(false)
     expect(vista.find('.pi-trash').exists()).toBe(false)
   })
+
+  it('en cada fila abre el presupuesto con ese proyecto elegido', async () => {
+    const vista = await montar()
+    const botones = vista.findAll('button[aria-label^="Presupuesto de "]')
+
+    expect(botones.map((b) => b.attributes('aria-label'))).toEqual([
+      'Presupuesto de Residencial Los Álamos',
+      'Presupuesto de Torre Empresarial Javier Prado',
+      'Presupuesto de Condominio Las Palmeras',
+    ])
+    expect(botones[1]!.text()).toBe('Presupuesto')
+    // En celular queda solo el ícono, para que la tabla no se desplace a lo ancho.
+    expect(botones[1]!.get('.p-button-label').classes()).toEqual(
+      expect.arrayContaining(['hidden', 'sm:inline']),
+    )
+
+    await botones[1]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/partidas?proyecto=2')
+  })
+
+  it.each<RolClave>(['ingeniero_produccion', 'gerencia'])(
+    'no muestra la acción de presupuesto a %s',
+    async (rol) => {
+      const vista = await montar(undefined, rol)
+
+      expect(filas(vista)).toHaveLength(3)
+      expect(vista.find('button[aria-label^="Presupuesto de "]').exists()).toBe(false)
+    },
+  )
 })

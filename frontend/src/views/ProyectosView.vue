@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useToast } from 'primevue/usetoast'
@@ -14,12 +15,33 @@ import BuscadorTabla from '@/components/moleculas/BuscadorTabla.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 import { proyectosServicio } from '@/services/proyectos'
+import { useAuthStore } from '@/stores/auth'
+import { menu } from '@/router/menu'
 import { usuariosServicio } from '@/services/usuarios'
 import { datosDeProyecto, esquemaProyecto, valoresDeProyecto } from '@/validaciones/proyecto'
 import { estadosProyecto, type ProyectoFila } from '@/types/proyectos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 
 const toast = useToast()
+const router = useRouter()
+const auth = useAuthStore()
+
+const rutaPresupuesto = '/partidas'
+const rolesPresupuesto = menu.find((item) => item.ruta === rutaPresupuesto)?.roles
+const verPresupuesto = computed(() => !rolesPresupuesto || auth.tieneRol(...rolesPresupuesto))
+// En celular las acciones van apiladas y angostas: lado a lado, la tabla se desplaza a lo ancho
+// y la columna fija de acciones tapa el estado.
+// El tema de PrimeVue va en una capa posterior a las utilidades: por eso el `!`.
+const accionCompacta = 'max-sm:w-8!'
+const presupuestoSoloIconoEnCelular = {
+  root: { class: `${accionCompacta} max-sm:px-0! max-sm:rounded-full!` },
+  icon: { class: 'sm:hidden' },
+  label: { class: 'hidden sm:inline' },
+}
+
+function abrirPresupuesto(proyecto: ProyectoFila) {
+  router.push({ path: rutaPresupuesto, query: { proyecto: String(proyecto.id) } })
+}
 
 const proyectos = ref<ProyectoFila[]>([])
 const ingenieros = ref<{ id: number; nombre: string }[]>([])
@@ -140,14 +162,27 @@ const guardar = handleSubmit(async (valores) => {
         <EstadoTag :activo="fila.estado === 'Activo'" inactivo="Finalizado" />
       </template>
       <template #acciones="{ fila }">
-        <Button
-          icon="pi pi-pencil"
-          text
-          rounded
-          :aria-label="`Editar ${fila.nombre}`"
-          :title="`Editar ${fila.nombre}`"
-          @click="abrir(fila)"
-        />
+        <div class="flex flex-col items-center sm:flex-row sm:gap-1">
+          <Button
+            v-if="verPresupuesto"
+            label="Presupuesto"
+            icon="pi pi-calculator"
+            text
+            :pt="presupuestoSoloIconoEnCelular"
+            :aria-label="`Presupuesto de ${fila.nombre}`"
+            :title="`Presupuesto de ${fila.nombre}`"
+            @click="abrirPresupuesto(fila)"
+          />
+          <Button
+            icon="pi pi-pencil"
+            text
+            rounded
+            :class="accionCompacta"
+            :aria-label="`Editar ${fila.nombre}`"
+            :title="`Editar ${fila.nombre}`"
+            @click="abrir(fila)"
+          />
+        </div>
       </template>
     </TablaCrud>
 
