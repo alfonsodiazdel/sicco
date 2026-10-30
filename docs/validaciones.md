@@ -26,62 +26,86 @@ el largo y el rango) y OWASP ASVS 5.0, capítulos V2 (validación y lógica de n
 
 | Tipo | Control en el front | Por qué | Regla en Laravel |
 |---|---|---|---|
-| Cantidad (m³, %) | `type="number"` con `min`, `max` y `step`; bloquea `e`, `+` y `-` | Teclado numérico y rango nativo | `numeric\|between:min,max` + `decimal:0,1` |
-| DNI, celular | `type="text"`, `inputmode="numeric"`, `pattern`, `maxlength`; solo entran dígitos (al pegar, se quitan los demás caracteres) | Pueden empezar con 0, y `type=number` borraría ese 0 | `string\|regex:/^\d{8}$/` |
+| Cantidad (m³, S/, %) | `type="number"` con `min` y `step="0.01"`; bloquea `e`, `+` y `-` | Teclado numérico; la tesis pide dos decimales | `numeric\|gt:0` (o `min:0` en el desperdicio) + `decimal:0,2` |
 | Texto libre | `maxlength` igual al de la columna | Evita errores de la base | `string\|max:n` |
-| Nombres de persona | `pattern` de letras, espacios y apóstrofo | Lista de lo permitido | `regex:/^[\pL' ]+$/u` |
 | Correo | `type="email"` + comprobación de dominio con punto | El navegador acepta `x@y` | `email:rfc\|max:255`, guardado en minúsculas |
-| Fecha | `type="date"` con `min` y `max` | Calendario nativo | `date\|after_or_equal:...` |
-| Lista (rol, estado) | `<select>` con opción vacía «Selecciona…» | Obliga a elegir | `Rule::enum(...)` o `in:...` |
+| Fecha | `type="date"`; el fin, con `min` = inicio + 1 día | Calendario nativo | `date`; el fin, `after:fecha_inicio` |
+| Lista (rol, ingeniero, elemento) | `<select>` con opción vacía «Seleccione…» | Obliga a elegir | `Rule::enum(...)`, `in:...` o `exists:tabla,id` |
 
 En Vue, la columna «Control en el front» se arma con un esquema zod por formulario, en un módulo
 compartido, para no repetir la regla en cada vista.
 
+Los mensajes son los de la tesis, al pie de la letra y tratando de usted. «Este dato es requerido»
+vale para todo campo obligatorio vacío y no se repite en las tablas de abajo.
+
 ## 3. Tabla de campos
 
-Obligatorio: **S** = sí, N = no. «Backend hoy» es lo que existe en el código al 29/10/2026; se
-actualiza en el mismo commit que agrega el `FormRequest` de cada caso de uso.
+Fuente: la tabla de especificación de cada caso de uso (capítulo 1) y el diagrama entidad-relación
+(Figura 7), que fija los campos de cada tabla. Obligatorio: **S** = sí, N = no. Las longitudes no
+están en la tesis: son las de la columna que se propone. «Backend hoy» es lo que existe en el código
+al 29/10/2026; se actualiza en el mismo commit que agrega el `FormRequest` de cada caso de uso.
 
 ### Usuarios (CU02)
 
-| Campo | Tipo | Oblig. | Longitud | Formato | Mensaje | Backend hoy |
-|---|---|---|---|---|---|---|
-| Nombres | texto | S | 1–100 | letras, espacios y ' | Este campo es obligatorio. / Usa solo letras y espacios. | Solo la columna `varchar(100) NOT NULL` (migración `..._000000_create_users_table.php`). Sin regla en ningún `FormRequest`. |
-| Apellidos | texto | S | 1–100 | ídem | ídem | ídem |
-| DNI | dígitos | S | 8 | `^\d{8}$`, único | El DNI debe tener 8 dígitos. / Ya existe un usuario con ese DNI. | **La columna no existe** (tampoco en `User.php:15`). |
-| Celular | dígitos | N | 9 | `^9\d{8}$` | El celular debe tener 9 dígitos y empezar con 9. | **La columna no existe.** |
-| Correo | correo | S | ≤ 255 | correo con dominio, único | Ingresa un correo válido, por ejemplo nombre@empresa.com. / Ya existe un usuario con ese correo. | Solo el índice `UNIQUE` en la base. `LoginRequest.php:19` valida `email` solo al iniciar sesión. |
-| Rol | lista | S | — | uno de `App\Enums\Rol` | Este campo es obligatorio. | El enum existe (`Rol.php:11-15`), pero ninguna regla lo usa. |
+Columnas de la lista: nombre, correo, rol y estado. Acciones: «Editar» y «Desactivar» (no se
+eliminan). Al guardar: «Usuario registrado correctamente» y se envía la contraseña temporal al correo.
+
+| Campo | Columna (DER) | Tipo | Oblig. | Longitud | Regla | Mensaje | Backend hoy |
+|---|---|---|---|---|---|---|---|
+| Nombres | `USUARIO.nombres` | texto | S | 1–100 | — | — | Solo la columna `varchar(100) NOT NULL` (migración `..._000000_create_users_table.php`). Sin regla en ningún `FormRequest`. |
+| Apellidos | `USUARIO.apellidos` | texto | S | 1–100 | — | — | ídem |
+| Correo | `USUARIO.correo` | correo | S | ≤ 255 | correo con dominio, único | El correo ya está registrado | Solo el índice `UNIQUE` en la base. `LoginRequest.php:19` valida `email` solo al iniciar sesión. |
+| Rol | `USUARIO.rol_id` | lista | S | — | uno de `App\Enums\Rol` | — | El enum existe (`Rol.php:11-15`), pero ninguna regla lo usa. |
+| Proyectos asignados | `USUARIO_PROYECTO` | lista múltiple | S | al menos 1 | proyectos existentes | — | No existe (sin tabla de proyectos). |
 
 ### Proyectos (CU03)
 
-| Campo | Tipo | Oblig. | Longitud | Formato | Mensaje | Backend hoy |
-|---|---|---|---|---|---|---|
-| Nombre | texto | S | 1–120 | único | Ya existe un proyecto con ese nombre. | No existe (sin tabla, modelo ni ruta). |
-| Ubicación | texto | S | 1–150 | — | Este campo es obligatorio. | No existe. |
-| Inicio | fecha | S | — | 2020-01-01 a 2035-12-31 | Este campo es obligatorio. | No existe. |
-| Fin estimado | fecha | N | — | ≥ inicio | La fecha de fin no puede ser anterior a la de inicio. | No existe. |
+Columnas de la lista: código, nombre, dirección, fechas y estado. Al guardar: «Proyecto registrado
+correctamente».
+
+| Campo | Columna (DER) | Tipo | Oblig. | Longitud | Regla | Mensaje | Backend hoy |
+|---|---|---|---|---|---|---|---|
+| Código | `PROYECTO.codigo` | texto | S | 1–20 | único | El código de proyecto ya existe | No existe (sin tabla, modelo ni ruta). |
+| Nombre | `PROYECTO.nombre` | texto | S | 1–120 | — | — | No existe. |
+| Dirección | `PROYECTO.direccion` | texto | S | 1–150 | — | — | No existe. |
+| Fecha de inicio | `PROYECTO.fecha_inicio` | fecha | S | — | — | — | No existe. |
+| Fecha de fin estimada | `PROYECTO.fecha_fin` | fecha | S | — | posterior a la de inicio | La fecha de fin debe ser posterior a la de inicio | No existe. |
+| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario existente | — | No existe. |
+
+`PROYECTO.estado` no está en el formulario (Figura 13): se muestra en la lista.
 
 ### Partidas del presupuesto (CU04)
 
-| Campo | Tipo | Oblig. | Longitud | Formato | Mensaje | Backend hoy |
+La partida pertenece al proyecto, no a un nivel (`PRESUPUESTO.proyecto_id`). Columnas de la lista:
+elemento, f'c, metrado m³, % de desperdicio, precio unitario S/ y total S/, con el total
+presupuestado al pie (Figura 14). Al guardar: «Partida registrada» y se actualiza el total.
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|
-| Nivel | lista | S | — | nivel del mismo proyecto | Este campo es obligatorio. | No existe. |
-| Concreto | lista | S | — | f'c 175/210/280/350 kg/cm² | Este campo es obligatorio. | No existe. |
-| Elemento | texto | S | 1–80 | — | Este campo es obligatorio. | No existe. |
-| Volumen (m³) | número | S | — | 0.1–10000, paso 0.1 | Ingresa un valor entre 0.1 y 10000. | No existe. |
-| Desperdicio (%) | número | S | — | 0–20, paso 0.5 | Ingresa un valor entre 0 y 20. | No existe. |
+| Elemento estructural | `PRESUPUESTO.elemento` | lista | S | — | — | No existe. |
+| Resistencia f'c | `PRESUPUESTO.resistencia_fc` | lista | S | — | — | No existe. |
+| Metrado (m³) | `PRESUPUESTO.metrado_m3` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
+| Factor de desperdicio (%) | `PRESUPUESTO.factor_desperdicio` | número | S | ≥ 0, dos decimales; si pasa de 15 %, se pide confirmar el valor | — | No existe. |
+| Precio unitario (S/ por m³) | `PRESUPUESTO.precio_unitario` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
+
+Cálculo: volumen con desperdicio = metrado × (1 + desperdicio ÷ 100); total de la partida = volumen
+con desperdicio × precio unitario.
 
 ### Niveles y sectores (CU05)
 
-| Campo | Tipo | Oblig. | Longitud | Formato | Mensaje | Backend hoy |
+Para registrar sectores, el proyecto ya tiene presupuesto. Si no hay niveles, se registra primero
+uno con «Nuevo nivel». Al guardar un sector: «Sector registrado».
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|
-| Nivel · nombre | texto | S | 1–40 | único en el proyecto | Ese nivel ya existe en el proyecto. | No existe. |
-| Sector · código | texto | S | 2–4 | `^S\d{1,3}$`, único en el nivel | Usa la letra S seguida de un número, por ejemplo S4. / Ese código ya existe en el nivel. | No existe. |
-| Sector · elemento | texto | S | 1–80 | — | Este campo es obligatorio. | No existe. |
-| Sector · volumen teórico | número | S | — | 0.1–2000, paso 0.1 | Ingresa un valor entre 0.1 y 2000. | No existe. |
-| Sector · fecha de vaciado | fecha | S | — | 2020-01-01 a 2035-12-31 | Este campo es obligatorio. | No existe. |
-| Sector · estado | lista | S | — | Programado / Vaciado | Este campo es obligatorio. | No existe. |
+| Nivel · nombre | `NIVEL.nombre` | texto (1–40) | S | — | — | No existe. |
+| Nivel · orden | `NIVEL.orden` | número entero | S | > 0 | — | No existe. |
+| Sector · nombre | `SECTOR.nombre` | texto (1–40) | S | — | — | No existe. |
+| Sector · elemento estructural | `SECTOR.presupuesto_id` | lista de partidas del proyecto | S | — | — | No existe. |
+| Sector · volumen presupuestado (m³) | `SECTOR.volumen_presup_m3` | número | S | > 0, dos decimales, no mayor que el metrado de la partida menos lo ya asignado a otros sectores | El volumen excede lo presupuestado para el elemento | No existe. |
+
+El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asignación de guías
+(`SECTOR.volumen_vaciado_m3` y `ASIGNACION`).
 
 ## 4. Diferencias entre el front y el backend
 
@@ -101,9 +125,8 @@ actualiza en el mismo commit que agrega el `FormRequest` de cada caso de uso.
    | Cambiar contraseña | `password_actual` | `max:255` | Ídem. |
    | Cambiar contraseña | `password` (nueva) | `max:72` | bcrypt usa solo los primeros 72 bytes: con más, dos contraseñas que comparten esos 72 bytes valdrían igual. |
 
-4. **DNI y celular** están en el diseño, pero no en la tabla `users`. Es una decisión pendiente: si
-   van, hace falta una migración (`dni char(8) unique`, `celular char(9) null`); si no van, se
-   quitan del formulario. Hasta esa decisión no se crea la migración.
+4. **Nombres de columnas:** el DER usa `correo`, `estado` y `password_hash`; la tabla `users` usa
+   `email`, `activo` y `password` (`User.php:15`). Los demás campos del usuario coinciden.
 5. **Largo solo en la base:** `nombres` y `apellidos` tienen `varchar(100)`, pero todavía no hay regla
    `max:100`. Un texto más largo daría error 500 en vez de 422. Se corrige con el `FormRequest` de
    usuarios (punto 2).
@@ -113,8 +136,9 @@ actualiza en el mismo commit que agrega el `FormRequest` de cada caso de uso.
 7. **«Distinta de la actual»** (`different:password_actual`) solo la valida el backend. Es correcto:
    el front no conoce la contraseña actual.
 
-## 5. Preguntas abiertas
+## 5. Pendiente de definir
 
-- ¿El usuario lleva DNI y celular? (punto 4.4)
-- ¿Los rangos de volumen (hasta 10 000 m³ por partida y 2 000 m³ por sector) y de desperdicio
-  (0–20 %) son realistas para las obras?
+- Los valores del estado del proyecto y quién lo cambia (el del usuario es activo o inactivo).
+- Si el ingeniero responsable se elige solo entre los usuarios con rol «Ingeniero de producción».
+- Las listas de elementos estructurales y de resistencias f'c.
+- Si el total de la partida se calcula sobre el volumen con desperdicio o sobre el metrado.
