@@ -124,7 +124,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
 
 <template>
   <PaginaListado
-    titulo="Presupuesto de concreto"
+    titulo="Presupuesto del proyecto"
     subtitulo="Volúmenes en m³ e importes en soles, con dos decimales"
   >
     <template #acciones>

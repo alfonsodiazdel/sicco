@@ -131,6 +131,7 @@ describe('PartidasView', () => {
   it('lista las partidas del primer proyecto con su total y el total presupuestado', async () => {
     const vista = await montar()
 
+    expect(vista.get('h2').text()).toBe('Presupuesto del proyecto')
     expect(selectorProyecto(vista).props('modelValue')).toBe(1)
     expect(vista.findAll('th').map((th) => th.text())).toEqual([
       'Elemento',
