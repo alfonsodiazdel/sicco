@@ -26,11 +26,11 @@ const usuario: Usuario = {
   rol: { id: 4, clave: 'oficina_tecnica', nombre: 'Oficina técnica', descripcion: null },
 }
 
-function error401() {
-  return new AxiosError('No autenticado', '401', undefined, undefined, {
-    status: 401,
-    statusText: 'Unauthorized',
-    data: {},
+function errorHttp(status: number, data: object = {}) {
+  return new AxiosError('Error', String(status), undefined, undefined, {
+    status,
+    statusText: '',
+    data,
     headers: {},
     config: { headers: new AxiosHeaders() },
   })
@@ -69,13 +69,27 @@ describe('auth store', () => {
   })
 
   it('queda sin sesión cuando /auth/me responde 401', async () => {
-    vi.mocked(authApi.me).mockRejectedValue(error401())
+    vi.mocked(authApi.me).mockRejectedValue(errorHttp(401))
     const auth = useAuthStore()
 
     await auth.cargarSesion()
 
     expect(auth.inicializado).toBe(true)
     expect(auth.autenticado).toBe(false)
+  })
+
+  it.each([
+    ['responde 500', errorHttp(500, { message: 'SQLSTATE[HY000] [2002] Connection refused' })],
+    ['no responde', new AxiosError('Network Error')],
+  ])('si /auth/me %s, queda sin sesión y con un aviso, sin romper la navegación', async (_, error) => {
+    vi.mocked(authApi.me).mockRejectedValue(error)
+    const auth = useAuthStore()
+
+    await expect(auth.cargarSesion()).resolves.toBeUndefined()
+
+    expect(auth.inicializado).toBe(true)
+    expect(auth.autenticado).toBe(false)
+    expect(auth.errorSesion).toBe('Ocurrió un error inesperado.')
   })
 
   it('limpia la sesión aunque falle el logout en el servidor', async () => {

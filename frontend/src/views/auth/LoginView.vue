@@ -9,6 +9,7 @@ import Password from 'primevue/password'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useAuthStore } from '@/stores/auth'
+import { destinoTrasLogin } from '@/router'
 import { erroresDeValidacion, esErrorApi, mensajeDeError } from '@/api/http'
 
 const auth = useAuthStore()
@@ -31,14 +32,13 @@ const { defineField, handleSubmit, errors, setErrors, isSubmitting } = useForm({
 
 const [email, emailAttrs] = defineField('email')
 const [password, passwordAttrs] = defineField('password')
-const errorGeneral = ref<string | null>(null)
+const errorGeneral = ref<string | null>(auth.errorSesion)
 
 const ingresar = handleSubmit(async (valores) => {
   errorGeneral.value = null
   try {
     await auth.login(valores)
-    const destino = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    await router.replace(destino)
+    await router.replace(destinoTrasLogin(route.query.redirect))
   } catch (error) {
     const status = esErrorApi(error) ? error.response?.status : undefined
     if (status === 422) {

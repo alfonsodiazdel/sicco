@@ -14,6 +14,8 @@ declare module 'vue-router' {
   }
 }
 
+const implementados = ['/', '/usuarios', '/proyectos', '/partidas', '/niveles']
+
 // Vistas de los módulos ya implementados, por ruta del menú.
 const vistas: Record<string, RouteRecordRaw['component']> = {
   '/proveedores': () => import('@/views/proveedores/ProveedoresView.vue'),
@@ -21,7 +23,7 @@ const vistas: Record<string, RouteRecordRaw['component']> = {
 
 // Los módulos aún no implementados comparten una vista provisional y ya respetan los roles.
 const modulos: RouteRecordRaw[] = menu
-  .filter((item) => item.ruta !== '/')
+  .filter((item) => !implementados.includes(item.ruta))
   .map((item) => ({
     path: item.ruta.slice(1),
     component: vistas[item.ruta] ?? (() => import('@/views/EnConstruccionView.vue')),
@@ -50,6 +52,30 @@ const routes: RouteRecordRaw[] = [
         name: 'inicio',
         component: () => import('@/views/InicioView.vue'),
         meta: { titulo: 'Inicio' },
+      },
+      {
+        path: 'usuarios',
+        name: 'usuarios',
+        component: () => import('@/views/UsuariosView.vue'),
+        meta: { roles: ['administrador'], titulo: 'Usuarios' },
+      },
+      {
+        path: 'proyectos',
+        name: 'proyectos',
+        component: () => import('@/views/ProyectosView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Proyectos' },
+      },
+      {
+        path: 'partidas',
+        name: 'partidas',
+        component: () => import('@/views/PartidasView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto' },
+      },
+      {
+        path: 'niveles',
+        name: 'niveles',
+        component: () => import('@/views/NivelesView.vue'),
+        meta: { roles: ['ingeniero_produccion'], titulo: 'Niveles y sectores' },
       },
       ...modulos,
       {
@@ -99,5 +125,10 @@ router.beforeEach(async (to) => {
 router.afterEach((to) => {
   document.title = to.meta.titulo ? `${to.meta.titulo} · SICCO` : 'SICCO'
 })
+
+// Solo rutas del propio sitio: «//host» y «/\\host» los navegadores los leen como otro origen.
+export function destinoTrasLogin(redirect: unknown) {
+  return typeof redirect === 'string' && /^\/(?![/\\])/.test(redirect) ? redirect : '/'
+}
 
 export default router

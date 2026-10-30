@@ -20,7 +20,19 @@ export const menu: ItemMenu[] = [
     etiqueta: 'Proyectos',
     icono: 'pi pi-building',
     ruta: '/proyectos',
-    roles: ['oficina_tecnica', 'ingeniero_produccion', 'gerencia'],
+    roles: ['oficina_tecnica'],
+  },
+  {
+    etiqueta: 'Presupuesto',
+    icono: 'pi pi-calculator',
+    ruta: '/partidas',
+    roles: ['oficina_tecnica'],
+  },
+  {
+    etiqueta: 'Niveles y sectores',
+    icono: 'pi pi-sitemap',
+    ruta: '/niveles',
+    roles: ['ingeniero_produccion'],
   },
   {
     etiqueta: 'Registrar guía',

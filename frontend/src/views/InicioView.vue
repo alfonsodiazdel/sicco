@@ -11,7 +11,7 @@ const accesos = computed(() =>
 </script>
 
 <template>
-  <section class="mx-auto max-w-5xl">
+  <section>
     <h2 class="text-2xl font-semibold tracking-tight text-surface-900">
       Hola, {{ auth.usuario?.nombres }}
     </h2>

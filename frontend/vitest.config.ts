@@ -8,6 +8,8 @@ export default mergeConfig(
     test: {
       environment: 'jsdom',
       exclude: [...configDefaults.exclude, 'e2e/**'],
+      // Una vista monta PrimeVue entero: con la CPU repartida entre archivos pasa de 5 s.
+      testTimeout: 20000,
       root: fileURLToPath(new URL('./', import.meta.url)),
     },
   }),
