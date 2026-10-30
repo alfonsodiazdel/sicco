@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\ProyectoController;
 use App\Http\Controllers\Api\V1\RolController;
+use App\Http\Controllers\Api\V1\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -30,6 +31,14 @@ Route::prefix('v1')->group(function () {
                 Route::post('proyectos', [ProyectoController::class, 'store']);
                 Route::put('proyectos/{proyecto}', [ProyectoController::class, 'update'])->whereNumber('proyecto');
                 Route::get('proyectos/ingenieros', [ProyectoController::class, 'ingenieros']);
+            });
+
+            // CU02 Gestionar usuarios y roles
+            Route::middleware('rol:administrador')->group(function () {
+                Route::get('usuarios', [UsuarioController::class, 'index']);
+                Route::post('usuarios', [UsuarioController::class, 'store']);
+                Route::put('usuarios/{usuario}', [UsuarioController::class, 'update'])->whereNumber('usuario');
+                Route::patch('usuarios/{usuario}/estado', [UsuarioController::class, 'estado'])->whereNumber('usuario');
             });
         });
     });
