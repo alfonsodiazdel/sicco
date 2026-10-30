@@ -14,7 +14,7 @@ declare module 'vue-router' {
   }
 }
 
-const implementados = ['/', '/usuarios', '/proyectos']
+const implementados = ['/', '/usuarios', '/proyectos', '/partidas']
 
 // Módulos aún no implementados: comparten una vista provisional y ya respetan los roles.
 const modulosPendientes: RouteRecordRaw[] = menu
@@ -62,6 +62,12 @@ const routes: RouteRecordRaw[] = [
           roles: ['oficina_tecnica', 'ingeniero_produccion', 'gerencia'],
           titulo: 'Proyectos',
         },
+      },
+      {
+        path: 'partidas',
+        name: 'partidas',
+        component: () => import('@/views/PartidasView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto' },
       },
       ...modulosPendientes,
       {

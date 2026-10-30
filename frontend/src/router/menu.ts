@@ -22,6 +22,12 @@ export const menu: ItemMenu[] = [
     roles: ['oficina_tecnica', 'ingeniero_produccion', 'gerencia'],
   },
   {
+    etiqueta: 'Presupuesto',
+    icono: 'pi pi-calculator',
+    ruta: '/partidas',
+    roles: ['oficina_tecnica'],
+  },
+  {
     etiqueta: 'Registrar guía',
     icono: 'pi pi-camera',
     ruta: '/guias/registrar',

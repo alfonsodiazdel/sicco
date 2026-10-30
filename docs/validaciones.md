@@ -85,11 +85,16 @@ presupuestado al pie (Figura 14). Al guardar: «Partida registrada» y se actual
 | Elemento estructural | `PRESUPUESTO.elemento` | lista | S | — | — | No existe. |
 | Resistencia f'c | `PRESUPUESTO.resistencia_fc` | lista | S | — | — | No existe. |
 | Metrado (m³) | `PRESUPUESTO.metrado_m3` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
-| Factor de desperdicio (%) | `PRESUPUESTO.factor_desperdicio` | número | S | ≥ 0, dos decimales; si pasa de 15 %, se pide confirmar el valor | — | No existe. |
+| Factor de desperdicio (%) | `PRESUPUESTO.factor_desperdicio` | número | S | ≥ 0, dos decimales; si pasa de 15 %, se pide confirmar el valor | Ingrese un valor mayor o igual a cero (no está en la tesis; el control no deja escribir negativos) | No existe. |
 | Precio unitario (S/ por m³) | `PRESUPUESTO.precio_unitario` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
 
 Cálculo: volumen con desperdicio = metrado × (1 + desperdicio ÷ 100); total de la partida = volumen
-con desperdicio × precio unitario.
+con desperdicio × precio unitario, redondeado a dos decimales. El total presupuestado es la suma de
+los totales de las partidas. En el front, las dos fórmulas están solo en
+`frontend/src/services/presupuesto.ts`.
+
+Las opciones de elemento estructural y de f'c son las de la maqueta y están solo en
+`frontend/src/catalogos/partidas.ts`, hasta que se confirmen.
 
 ### Niveles y sectores (CU05)
 
@@ -141,4 +146,4 @@ El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asig
 - Los valores del estado del proyecto y quién lo cambia (el del usuario es activo o inactivo).
 - Si el ingeniero responsable se elige solo entre los usuarios con rol «Ingeniero de producción».
 - Las listas de elementos estructurales y de resistencias f'c.
-- Si el total de la partida se calcula sobre el volumen con desperdicio o sobre el metrado.
+- Que la tesis confirme la fórmula del total de la partida, que hoy se infirió (ver CU04).

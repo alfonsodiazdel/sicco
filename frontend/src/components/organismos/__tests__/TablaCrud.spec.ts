@@ -55,6 +55,23 @@ describe('TablaCrud', () => {
     }
   })
 
+  it('alinea a la derecha y sin cortes las columnas numéricas', () => {
+    const tabla = mount(TablaCrud, {
+      props: {
+        filas: [{ id: 1, total: '1,250.00' }],
+        columnas: [{ campo: 'total', encabezado: 'Total S/', numerica: true }],
+        clave: 'id',
+        vacio: '',
+      },
+      global: { plugins: [PrimeVue] },
+    })
+
+    expect(tabla.get('th').classes()).toContain('[&>div]:justify-end')
+    expect(tabla.get('tbody td').classes()).toEqual(
+      expect.arrayContaining(['text-right', 'whitespace-nowrap']),
+    )
+  })
+
   it('muestra el texto de vacío sin filas', () => {
     expect(montar([]).text()).toContain('No hay registros.')
   })

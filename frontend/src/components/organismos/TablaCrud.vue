@@ -4,8 +4,11 @@ import Column from 'primevue/column'
 
 defineProps<{
   filas: T[]
-  /** `secundaria` oculta la columna por debajo de 640 px para que entren las acciones. */
-  columnas: { campo: string; encabezado: string; secundaria?: boolean }[]
+  /**
+   * `secundaria` oculta la columna por debajo de 640 px para que entren las acciones.
+   * `numerica` la alinea a la derecha, sin partir el valor.
+   */
+  columnas: { campo: string; encabezado: string; secundaria?: boolean; numerica?: boolean }[]
   clave: string
   vacio: string
   cargando?: boolean
@@ -33,8 +36,14 @@ defineSlots<{
       :key="columna.campo"
       :field="columna.campo"
       :header="columna.encabezado"
-      :header-class="{ 'hidden sm:table-cell': columna.secundaria }"
-      :body-class="{ 'hidden sm:table-cell': columna.secundaria }"
+      :header-class="{
+        'hidden sm:table-cell': columna.secundaria,
+        '[&>div]:justify-end': columna.numerica,
+      }"
+      :body-class="{
+        'hidden sm:table-cell': columna.secundaria,
+        'text-right whitespace-nowrap': columna.numerica,
+      }"
     >
       <template v-if="$slots[`col-${columna.campo}`]" #body="{ data }">
         <slot :name="`col-${columna.campo}`" :fila="data" />
