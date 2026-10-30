@@ -18,7 +18,7 @@ import { usuariosServicio } from '@/services/usuarios'
 import { esquemaUsuario } from '@/validaciones/usuario'
 import type { RolClave } from '@/types/auth'
 import { etiquetasRol, type ProyectoOpcion, type UsuarioFila } from '@/types/usuarios'
-import { erroresDeValidacion, mensajeDeError } from '@/api/http'
+import { erroresDeValidacion, esErrorApi, mensajeDeError } from '@/api/http'
 
 const toast = useToast()
 
@@ -91,6 +91,29 @@ function abrir(usuario: UsuarioFila | null = null) {
   dialogo.value = true
 }
 
+const camposFormulario = ['nombres', 'apellidos', 'email', 'rol', 'proyecto_ids'] as const
+type CampoUsuario = (typeof camposFormulario)[number]
+
+// Laravel informa cada elemento del arreglo aparte (proyecto_ids.0); se muestra en el campo.
+function separarErrores(error: unknown) {
+  const campos: Partial<Record<CampoUsuario, string>> = {}
+  const otros: string[] = []
+  for (const [clave, mensaje] of Object.entries(erroresDeValidacion(error))) {
+    const campo = clave.split('.')[0] as CampoUsuario
+    if (camposFormulario.includes(campo)) campos[campo] ??= mensaje
+    else otros.push(mensaje)
+  }
+  return { campos, otros }
+}
+
+// mensajeDeError oculta todo 5xx; el aviso de correo no enviado es para el administrador.
+function mensajeDelServidor(error: unknown) {
+  if (esErrorApi(error) && error.response?.data?.code === 'correo_no_enviado') {
+    return error.response.data.message
+  }
+  return Object.values(erroresDeValidacion(error))[0] ?? mensajeDeError(error)
+}
+
 const guardar = handleSubmit(async (valores) => {
   try {
     if (editando.value) await usuariosServicio.actualizar(editando.value.id, valores)
@@ -103,9 +126,12 @@ const guardar = handleSubmit(async (valores) => {
     dialogo.value = false
     await cargar()
   } catch (error) {
-    const campos = erroresDeValidacion(error)
-    if (Object.keys(campos).length) setErrors(campos)
-    else toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
+    const { campos, otros } = separarErrores(error)
+    setErrors(campos)
+    if (otros.length) toast.add({ severity: 'error', summary: otros[0], life: 5000 })
+    else if (!Object.keys(campos).length) {
+      toast.add({ severity: 'error', summary: mensajeDelServidor(error), life: 5000 })
+    }
   }
 })
 
@@ -119,7 +145,7 @@ async function alternarEstado(usuario: UsuarioFila) {
     })
     await cargar()
   } catch (error) {
-    toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
+    toast.add({ severity: 'error', summary: mensajeDelServidor(error), life: 5000 })
   }
 }
 </script>

@@ -4,6 +4,8 @@ import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
+import { AxiosError, AxiosHeaders } from 'axios'
+import { errorDeValidacion } from '@/services/errores'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { UsuariosServicio } from '@/services/usuarios'
 import UsuariosView from '@/views/UsuariosView.vue'
@@ -73,6 +75,16 @@ async function llenar(vista: VueWrapper, email: string) {
     .find((s) => !esFiltroRol(s))!
     .setValue('gerencia')
   await vista.findComponent(MultiSelect).setValue([2])
+}
+
+function errorHttp(status: number, data: { message: string; code?: string }) {
+  return new AxiosError(data.message, String(status), undefined, undefined, {
+    status,
+    statusText: '',
+    data,
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+  })
 }
 
 async function filtrarPorRol(vista: VueWrapper, rol: string) {
@@ -199,5 +211,110 @@ describe('UsuariosView', () => {
     expect(vista.text()).not.toMatch(/eliminar/i)
     expect(vista.find('[aria-label^="Eliminar"]').exists()).toBe(false)
     expect(vista.find('.pi-trash').exists()).toBe(false)
+  })
+
+  it('muestra junto a cada campo los errores 422 del servidor, también los de proyecto_ids.*', async () => {
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'crear').mockRejectedValue(
+      errorDeValidacion({
+        nombres: ['Los nombres no deben superar los 100 caracteres.'],
+        apellidos: ['Los apellidos no deben superar los 100 caracteres.'],
+        rol: ['El rol seleccionado no es válido.'],
+        'proyecto_ids.0': ['El proyecto seleccionado no existe.'],
+      }),
+    )
+    await abrirNuevo(vista)
+    await llenar(vista, 'ana.torres@sicco.test')
+    await guardar(vista)
+
+    expect(vista.get('#nombres-error').text()).toBe('Los nombres no deben superar los 100 caracteres.')
+    expect(vista.get('#apellidos-error').text()).toBe(
+      'Los apellidos no deben superar los 100 caracteres.',
+    )
+    expect(vista.get('#rol-error').text()).toBe('El rol seleccionado no es válido.')
+    expect(vista.get('#proyecto_ids-error').text()).toBe('El proyecto seleccionado no existe.')
+    expect(toast.add).not.toHaveBeenCalled()
+  })
+
+  it('muestra junto al rol que no puede cambiar su propio rol', async () => {
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'actualizar').mockRejectedValue(
+      errorDeValidacion({ rol: ['No puede cambiar su propio rol.'] }),
+    )
+    await vista.get('button[aria-label="Editar Administrador Demo"]').trigger('click')
+    await asentar()
+    await guardar(vista)
+
+    expect(vista.get('#rol-error').text()).toBe('No puede cambiar su propio rol.')
+    expect(vista.findAll('small.text-red-600')).toHaveLength(1)
+    expect(vista.find('form').exists()).toBe(true)
+    expect(toast.add).not.toHaveBeenCalled()
+  })
+
+  it('avisa con el mensaje del servidor si el error 422 no es de un campo del formulario', async () => {
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'actualizar').mockRejectedValue(
+      errorDeValidacion({ activo: ['Debe quedar al menos un administrador activo.'] }),
+    )
+    await vista.get('button[aria-label="Editar Administrador Demo"]').trigger('click')
+    await asentar()
+    await guardar(vista)
+
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Debe quedar al menos un administrador activo.',
+      }),
+    )
+    expect(vista.find('form').exists()).toBe(true)
+  })
+
+  it('al desactivarse a sí mismo muestra el mensaje del servidor y no cambia el estado', async () => {
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'cambiarEstado').mockRejectedValue(
+      errorDeValidacion({ activo: ['No puede desactivar su propio usuario.'] }),
+    )
+    await vista.get('button[aria-label="Desactivar Administrador Demo"]').trigger('click')
+    await asentar()
+
+    expect(toast.add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ severity: 'error', summary: 'No puede desactivar su propio usuario.' }),
+    )
+    expect(filas(vista)[0]?.[3]).toBe('Activo')
+  })
+
+  it('si no se pudo enviar el correo, muestra el aviso del servidor y conserva el formulario', async () => {
+    const mensaje =
+      'No se pudo enviar la contraseña temporal al correo. El usuario no se registró; inténtelo de nuevo.'
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'crear').mockRejectedValue(
+      errorHttp(503, { message: mensaje, code: 'correo_no_enviado' }),
+    )
+    await abrirNuevo(vista)
+    await llenar(vista, 'ana.torres@sicco.test')
+    await guardar(vista)
+
+    expect(toast.add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ severity: 'error', summary: mensaje }),
+    )
+    expect(vista.find('form').exists()).toBe(true)
+    expect((vista.get('#nombres').element as HTMLInputElement).value).toBe('Ana')
+    expect((vista.get('#email').element as HTMLInputElement).value).toBe('ana.torres@sicco.test')
+    expect(vista.get('form').text()).toContain('contraseña temporal al correo')
+    expect(filas(vista)).toHaveLength(4)
+  })
+
+  it('no muestra el detalle de otros errores 5xx del servidor', async () => {
+    const vista = await montar()
+    vi.spyOn(servicio.actual!, 'crear').mockRejectedValue(
+      errorHttp(500, { message: 'SQLSTATE[HY000] Connection refused' }),
+    )
+    await abrirNuevo(vista)
+    await llenar(vista, 'ana.torres@sicco.test')
+    await guardar(vista)
+
+    expect(toast.add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ severity: 'error', summary: 'Ocurrió un error inesperado.' }),
+    )
   })
 })

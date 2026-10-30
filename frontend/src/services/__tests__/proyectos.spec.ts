@@ -6,6 +6,12 @@ import type { ProyectoDatos, ProyectoFila } from '@/types/proyectos'
 import { useAuthStore } from '@/stores/auth'
 import type { Usuario } from '@/types/auth'
 
+// La versión en memoria de proyectos lee las asignaciones de la de usuarios, no de la API.
+vi.mock('@/services/usuarios', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/usuarios')>()
+  return { ...real, usuariosServicio: real.crearUsuariosEnMemoria() }
+})
+
 const sesion = (email: string) =>
   ({ email, rol: { clave: 'ingeniero_produccion' } }) as unknown as Usuario
 

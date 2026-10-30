@@ -1,3 +1,4 @@
+import { http } from '@/api/http'
 import { errorDeValidacion } from '@/services/errores'
 import { proyectosServicio } from '@/services/proyectos'
 import type { IngenieroOpcion, ProyectoOpcion, UsuarioDatos, UsuarioFila } from '@/types/usuarios'
@@ -101,5 +102,28 @@ export function crearUsuariosEnMemoria(): UsuariosServicio {
   }
 }
 
-// Hasta que exista el endpoint; la implementación con la API solo reemplaza esta línea.
-export const usuariosServicio: UsuariosServicio = crearUsuariosEnMemoria()
+export function crearUsuariosApi(): UsuariosServicio {
+  return {
+    async listar() {
+      return (await http.get<UsuarioFila[]>('/usuarios')).data
+    },
+    async crear(datos) {
+      return (await http.post<UsuarioFila>('/usuarios', datos)).data
+    },
+    async actualizar(id, datos) {
+      return (await http.put<UsuarioFila>(`/usuarios/${id}`, datos)).data
+    },
+    async cambiarEstado(id, activo) {
+      return (await http.patch<UsuarioFila>(`/usuarios/${id}/estado`, { activo })).data
+    },
+    async proyectos() {
+      return proyectosServicio.opciones()
+    },
+    // Los responsables salen del módulo de proyectos: /usuarios es solo del administrador.
+    async ingenieros(conservarId) {
+      return proyectosServicio.ingenieros(conservarId)
+    },
+  }
+}
+
+export const usuariosServicio: UsuariosServicio = crearUsuariosApi()
