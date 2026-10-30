@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
+import { asentar, usarRelojFalso } from './asentar'
 import { createMemoryHistory, createRouter, type LocationQueryRaw } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
@@ -58,7 +59,7 @@ async function montar(
   const vista = mount(PartidasView, {
     global: { plugins: [PrimeVue, router], stubs: { teleport: true } },
   })
-  await flushPromises()
+  await asentar()
   return vista
 }
 
@@ -80,12 +81,12 @@ const totalPresupuestado = (vista: VueWrapper) => vista.get('[data-total-presupu
 
 async function elegirProyecto(vista: VueWrapper, id: number) {
   await selectorProyecto(vista).setValue(id)
-  await flushPromises()
+  await asentar()
 }
 
 async function abrirNuevo(vista: VueWrapper) {
   await vista.get('button[aria-label="Agregar partida"]').trigger('click')
-  await flushPromises()
+  await asentar()
 }
 
 async function llenar(
@@ -105,10 +106,12 @@ async function llenar(
 
 async function guardar(vista: VueWrapper) {
   await vista.get('form').trigger('submit')
-  await flushPromises()
+  await asentar()
 }
 
 enableAutoUnmount(afterEach)
+beforeEach(usarRelojFalso)
+afterEach(() => vi.useRealTimers())
 
 describe('PartidasView', () => {
   beforeEach(() => {
@@ -299,7 +302,7 @@ describe('PartidasView', () => {
   it('edita una partida y recalcula los totales', async () => {
     const vista = await montar()
     await vista.get('button[aria-label="Editar partida Zapata"]').trigger('click')
-    await flushPromises()
+    await asentar()
 
     const metrado = vista
       .findAllComponents(InputNumber)

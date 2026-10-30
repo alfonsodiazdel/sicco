@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
+import { asentar, usarRelojFalso } from './asentar'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import PrimeVue from 'primevue/config'
@@ -67,7 +68,7 @@ async function montar(
   const vista = mount(ProyectosView, {
     global: { plugins: [PrimeVue, pinia, router], stubs: { teleport: true } },
   })
-  await flushPromises()
+  await asentar()
   return vista
 }
 
@@ -77,7 +78,7 @@ function filas(vista: VueWrapper) {
 
 async function abrirNuevo(vista: VueWrapper) {
   await vista.get('button[aria-label="Nuevo proyecto"]').trigger('click')
-  await flushPromises()
+  await asentar()
 }
 
 async function llenar(vista: VueWrapper, codigo: string, inicio: Date, fin: Date) {
@@ -92,12 +93,14 @@ async function llenar(vista: VueWrapper, codigo: string, inicio: Date, fin: Date
 
 async function guardar(vista: VueWrapper) {
   await vista.get('form').trigger('submit')
-  await flushPromises()
+  await asentar()
 }
 
 const etiquetas = (vista: VueWrapper) => vista.findAll('form label').map((l) => l.text())
 
 enableAutoUnmount(afterEach)
+beforeEach(usarRelojFalso)
+afterEach(() => vi.useRealTimers())
 
 describe('ProyectosView', () => {
   beforeEach(() => {
@@ -223,7 +226,7 @@ describe('ProyectosView', () => {
     expect(etiquetas(vista)).not.toContain('Estado *')
 
     await vista.get('button[aria-label="Editar Residencial Los Álamos"]').trigger('click')
-    await flushPromises()
+    await asentar()
     expect(etiquetas(vista)).toContain('Estado *')
     const selects = vista.findAllComponents(Select)
     const estado = selects[selects.length - 1]!
@@ -296,7 +299,7 @@ describe('ProyectosView', () => {
     )
 
     await botones[1]!.trigger('click')
-    await flushPromises()
+    await asentar()
     expect(router.currentRoute.value.fullPath).toBe('/partidas?proyecto=2')
   })
 

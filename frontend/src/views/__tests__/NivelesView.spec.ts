@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
+import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
@@ -63,7 +64,7 @@ async function montar(preparar?: (s: Servicios) => Promise<void>) {
   const vista = mount(NivelesView, {
     global: { plugins: [PrimeVue], stubs: { teleport: true } },
   })
-  await flushPromises()
+  await asentar()
   return vista
 }
 
@@ -97,7 +98,7 @@ const errores = (vista: VueWrapper) =>
 
 async function elegirProyecto(vista: VueWrapper, id: number) {
   await selectorProyecto(vista).setValue(id)
-  await flushPromises()
+  await asentar()
 }
 
 async function elegirNivel(vista: VueWrapper, nombre: string) {
@@ -105,17 +106,17 @@ async function elegirNivel(vista: VueWrapper, nombre: string) {
     .findAll('ul[aria-label="Niveles"] button[aria-current]')
     .find((b) => b.text() === nombre)!
   await boton.trigger('click')
-  await flushPromises()
+  await asentar()
 }
 
 async function pulsar(vista: VueWrapper, etiqueta: string) {
   await vista.get(`button[aria-label="${etiqueta}"]`).trigger('click')
-  await flushPromises()
+  await asentar()
 }
 
 async function guardar(vista: VueWrapper) {
   await vista.get('form').trigger('submit')
-  await flushPromises()
+  await asentar()
 }
 
 async function llenarNivel(vista: VueWrapper, nombre: string, orden: number) {
@@ -133,6 +134,8 @@ async function llenarSector(
 }
 
 enableAutoUnmount(afterEach)
+beforeEach(usarRelojFalso)
+afterEach(() => vi.useRealTimers())
 
 describe('NivelesView', () => {
   beforeEach(() => {

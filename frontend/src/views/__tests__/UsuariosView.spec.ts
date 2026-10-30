@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
+import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
@@ -30,7 +31,7 @@ async function montar() {
   const vista = mount(UsuariosView, {
     global: { plugins: [PrimeVue], stubs: { teleport: true } },
   })
-  await flushPromises()
+  await asentar()
   return vista
 }
 
@@ -43,7 +44,7 @@ const esFiltroRol = (s: VueWrapper) =>
 
 async function abrirNuevo(vista: VueWrapper) {
   await vista.get('button[aria-label="Nuevo usuario"]').trigger('click')
-  await flushPromises()
+  await asentar()
 }
 
 async function llenar(vista: VueWrapper, email: string) {
@@ -63,10 +64,12 @@ async function filtrarPorRol(vista: VueWrapper, rol: string) {
 
 async function guardar(vista: VueWrapper) {
   await vista.get('form').trigger('submit')
-  await flushPromises()
+  await asentar()
 }
 
 enableAutoUnmount(afterEach)
+beforeEach(usarRelojFalso)
+afterEach(() => vi.useRealTimers())
 
 describe('UsuariosView', () => {
   beforeEach(() => {
@@ -164,7 +167,7 @@ describe('UsuariosView', () => {
   it('desactiva un usuario', async () => {
     const vista = await montar()
     await vista.get('button[aria-label="Desactivar Carlos Quispe"]').trigger('click')
-    await flushPromises()
+    await asentar()
 
     expect(filas(vista)[1]?.[3]).toBe('Inactivo')
     expect(vista.find('button[aria-label="Activar Carlos Quispe"]').exists()).toBe(true)
