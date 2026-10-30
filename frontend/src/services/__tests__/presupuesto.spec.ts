@@ -46,7 +46,8 @@ describe('presupuesto', () => {
           const metrado = Math.round((m / 100 + 0.01 * (m % 13)) * 100) / 100
           combinaciones++
           const total = totalPartida(partida(metrado, d, p))
-          if (total !== exacto(metrado, d, p)) distintos.push(`${metrado} × ${d} % × ${p} = ${total}`)
+          if (total !== exacto(metrado, d, p))
+            distintos.push(`${metrado} × ${d} % × ${p} = ${total}`)
         }
       }
     }
