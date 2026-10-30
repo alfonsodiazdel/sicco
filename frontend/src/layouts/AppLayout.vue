@@ -82,11 +82,11 @@ watch([() => route.fullPath, escritorio], () => (menuMovilAbierto.value = false)
         >
           <i class="pi pi-box text-sm" aria-hidden="true" />
         </div>
-        <div v-if="!menuContraido" class="min-w-0 whitespace-nowrap">
+        <div v-if="!menuContraido" class="min-w-0">
           <span class="block font-semibold leading-tight tracking-tight text-surface-900"
             >SICCO</span
           >
-          <span class="block truncate text-xs text-surface-500"
+          <span class="block text-xs leading-tight text-surface-500"
             >Control de concreto premezclado</span
           >
         </div>
