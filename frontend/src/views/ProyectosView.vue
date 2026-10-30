@@ -17,7 +17,6 @@ import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 import { proyectosServicio } from '@/services/proyectos'
 import { useAuthStore } from '@/stores/auth'
 import { menu } from '@/router/menu'
-import { usuariosServicio } from '@/services/usuarios'
 import { datosDeProyecto, esquemaProyecto, valoresDeProyecto } from '@/validaciones/proyecto'
 import { estadosProyecto, type ProyectoFila } from '@/types/proyectos'
 import type { IngenieroOpcion } from '@/types/usuarios'
@@ -74,7 +73,8 @@ async function cargar() {
 }
 
 async function cargarIngenieros() {
-  ingenieros.value = await usuariosServicio.ingenieros()
+  // Solo quien gestiona abre el formulario; la API no le da los responsables a nadie más.
+  if (puedeGestionar.value) ingenieros.value = await proyectosServicio.ingenieros()
 }
 
 onMounted(async () => {
@@ -113,7 +113,7 @@ async function abrir(proyecto: ProyectoFila | null = null) {
   const id = proyecto?.ingeniero_id
   if (id !== undefined && !ingenieros.value.some((i) => i.id === id)) {
     try {
-      const actual = (await usuariosServicio.ingenieros(id)).find((i) => i.id === id)
+      const actual = (await proyectosServicio.ingenieros(id)).find((i) => i.id === id)
       if (actual) ingenieroInactivo.value = { id, nombre: `${actual.nombre} (inactivo)` }
     } catch (error) {
       toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })

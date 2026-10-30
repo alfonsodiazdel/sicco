@@ -4,12 +4,16 @@ import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
+import type { ProyectosServicio } from '@/services/proyectos'
 import type { UsuariosServicio } from '@/services/usuarios'
 import UsuariosView from '@/views/UsuariosView.vue'
 
 const { toast, servicio } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
-  servicio: { actual: null as UsuariosServicio | null },
+  servicio: {
+    actual: null as UsuariosServicio | null,
+    proyectos: null as ProyectosServicio | null,
+  },
 }))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
@@ -25,9 +29,22 @@ vi.mock('@/services/usuarios', async (importOriginal) => {
   }
 })
 
+// Las opciones de proyectos salen del servicio de proyectos; aquí, sin la API.
+vi.mock('@/services/proyectos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/proyectos')>()
+  return {
+    ...real,
+    get proyectosServicio() {
+      return servicio.proyectos
+    },
+  }
+})
+
 async function montar() {
   const { crearUsuariosEnMemoria } = await import('@/services/usuarios')
+  const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   servicio.actual = crearUsuariosEnMemoria()
+  servicio.proyectos = crearProyectosEnMemoria()
   const vista = mount(UsuariosView, {
     global: { plugins: [PrimeVue], stubs: { teleport: true } },
   })
