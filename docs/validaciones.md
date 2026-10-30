@@ -98,19 +98,39 @@ Las opciones de elemento estructural y de f'c son las de la maqueta y están sol
 
 ### Niveles y sectores (CU05)
 
-Para registrar sectores, el proyecto ya tiene presupuesto. Si no hay niveles, se registra primero
-uno con «Nuevo nivel». Al guardar un sector: «Sector registrado».
+Una sola pantalla: a la izquierda los niveles del proyecto ordenados por `orden`, a la derecha los
+sectores del nivel elegido con su elemento (`elemento · f'c`, leído de la partida), el volumen
+presupuestado y el vaciado (solo lectura; lo suma la asignación de guías, CU09). Solo el Ingeniero
+de producción entra a `/niveles`. Al guardar: «Registro creado.» para un nivel nuevo, «Sector
+registrado» para un sector nuevo y «Cambios guardados.» al editar.
+
+Si el proyecto no tiene partidas (precondición de CU04), se muestra «Este proyecto aún no tiene
+presupuesto registrado. Oficina técnica debe registrar sus partidas antes de definir los
+sectores.» y se bloquean «Nuevo nivel» y «Nuevo sector». Sin niveles, «Nuevo sector» avisa
+«Primero registre un nivel con «Nuevo nivel».» (flujo alternativo 1).
 
 | Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|
-| Nivel · nombre | `NIVEL.nombre` | texto (1–40) | S | — | — | No existe. |
-| Nivel · orden | `NIVEL.orden` | número entero | S | > 0 | — | No existe. |
-| Sector · nombre | `SECTOR.nombre` | texto (1–40) | S | — | — | No existe. |
-| Sector · elemento estructural | `SECTOR.presupuesto_id` | lista de partidas del proyecto | S | — | — | No existe. |
-| Sector · volumen presupuestado (m³) | `SECTOR.volumen_presup_m3` | número | S | > 0, dos decimales, no mayor que el metrado de la partida menos lo ya asignado a otros sectores | El volumen excede lo presupuestado para el elemento | No existe. |
+| Nivel · nombre | `NIVEL.nombre` | texto (1–40) | S | — | Este dato es requerido | No existe. |
+| Nivel · orden | `NIVEL.orden` | número entero | S | > 0 | Este dato es requerido; Ingrese un valor mayor a cero; Ingrese un número entero (el control no deja escribir decimales) | No existe. |
+| Sector · nombre | `SECTOR.nombre` | texto (1–40) | S | — | Este dato es requerido | No existe. |
+| Sector · elemento estructural | `SECTOR.presupuesto_id` | lista de partidas del proyecto | S | — | Este dato es requerido | No existe. |
+| Sector · volumen presupuestado (m³) | `SECTOR.volumen_presup_m3` | número | S | > 0, dos decimales, no mayor que el disponible del elemento | Este dato es requerido; Ingrese un valor mayor a cero; El volumen excede lo presupuestado para el elemento | No existe. |
+
+Disponible del elemento = metrado de la partida − volumen presupuestado de los demás sectores
+enlazados a esa partida, en todos los niveles del proyecto; al editar un sector no se descuenta el
+suyo. Se redondea a dos decimales y no aplica el desperdicio, que CU14 aplica después sobre el
+volumen del sector. La tesis solo dice «presupuesto disponible del elemento»: la fórmula es la de
+la maqueta y está solo en `frontend/src/services/presupuesto.ts` (`volumenDisponible`). El
+formulario muestra el disponible de cada partida: «Disponible por elemento: Zapata · f'c 210
+kg/cm², 244.00 m³; …».
+
+No están en la tesis y se infirieron: el largo máximo de 40 de los dos nombres (de la maqueta), que
+no se pueda eliminar niveles ni sectores (el flujo solo describe el registro, igual que en CU04) y
+que los nombres no tengan que ser únicos (la tesis no lo pide).
 
 El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asignación de guías
-(`SECTOR.volumen_vaciado_m3` y `ASIGNACION`).
+(`SECTOR.volumen_vaciado_m3` y `ASIGNACION`). Un sector nuevo empieza con 0 m³ vaciados.
 
 ## 4. Diferencias entre el front y el backend
 

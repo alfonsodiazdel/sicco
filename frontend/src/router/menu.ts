@@ -28,6 +28,12 @@ export const menu: ItemMenu[] = [
     roles: ['oficina_tecnica'],
   },
   {
+    etiqueta: 'Niveles y sectores',
+    icono: 'pi pi-sitemap',
+    ruta: '/niveles',
+    roles: ['ingeniero_produccion'],
+  },
+  {
     etiqueta: 'Registrar guía',
     icono: 'pi pi-camera',
     ruta: '/guias/registrar',

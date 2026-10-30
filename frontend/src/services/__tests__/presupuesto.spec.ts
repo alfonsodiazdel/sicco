@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { soles, totalPartida, totalPresupuesto } from '@/services/presupuesto'
+import { soles, totalPartida, totalPresupuesto, volumenDisponible } from '@/services/presupuesto'
 
 const partida = (metrado_m3: number, factor_desperdicio: number, precio_unitario: number) => ({
   metrado_m3,
@@ -35,5 +35,34 @@ describe('presupuesto', () => {
   it('muestra los importes en soles con dos decimales', () => {
     expect(soles(307771.8)).toBe('S/ 307,771.80')
     expect(soles(0)).toBe('S/ 0.00')
+  })
+
+  describe('volumen disponible del elemento', () => {
+    const columna = { id: 2, metrado_m3: 180.5 }
+    const sector = (id: number, presupuesto_id: number, volumen_presup_m3: number) => ({
+      id,
+      presupuesto_id,
+      volumen_presup_m3,
+    })
+
+    it('sin sectores es todo el metrado de la partida', () => {
+      expect(volumenDisponible(columna, [])).toBe(180.5)
+    })
+
+    it('descuenta solo los sectores enlazados a esa partida, con dos decimales', () => {
+      // 180.5 − 60.25 − 40.1 da 80.15000000000001 en coma flotante.
+      expect(
+        volumenDisponible(columna, [sector(1, 2, 60.25), sector(2, 2, 40.1), sector(3, 1, 99)]),
+      ).toBe(80.15)
+    })
+
+    it('al editar un sector no descuenta su propio volumen', () => {
+      const sectores = [sector(1, 2, 60.25), sector(2, 2, 40.1)]
+      expect(volumenDisponible(columna, sectores, 1)).toBe(140.4)
+    })
+
+    it('queda en cero cuando la partida ya está repartida', () => {
+      expect(volumenDisponible(columna, [sector(1, 2, 120.25), sector(2, 2, 60.25)])).toBe(0)
+    })
   })
 })
