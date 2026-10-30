@@ -22,8 +22,12 @@ export function esErrorApi(error: unknown): error is AxiosError<ErrorApi> {
   return axios.isAxiosError(error)
 }
 
+// El mensaje de un 5xx puede traer detalles internos (con APP_DEBUG, la excepción entera).
 export function mensajeDeError(error: unknown, porDefecto = 'Ocurrió un error inesperado.') {
-  return esErrorApi(error) ? (error.response?.data?.message ?? porDefecto) : porDefecto
+  if (!esErrorApi(error)) return porDefecto
+  const status = error.response?.status ?? 0
+  if (!status || status >= 500) return porDefecto
+  return error.response?.data?.message ?? porDefecto
 }
 
 /** Errores de validación (422) aplanados para VeeValidate: { campo: 'mensaje' }. */

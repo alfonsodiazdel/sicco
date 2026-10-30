@@ -32,7 +32,7 @@ const { defineField, handleSubmit, errors, setErrors, isSubmitting } = useForm({
 
 const [email, emailAttrs] = defineField('email')
 const [password, passwordAttrs] = defineField('password')
-const errorGeneral = ref<string | null>(null)
+const errorGeneral = ref<string | null>(auth.errorSesion)
 
 const ingresar = handleSubmit(async (valores) => {
   errorGeneral.value = null

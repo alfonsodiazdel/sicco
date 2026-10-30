@@ -1,13 +1,15 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/auth'
-import { esErrorApi } from '@/api/http'
+import { esErrorApi, mensajeDeError } from '@/api/http'
 import type { CambioPassword, Credenciales, RolClave, Usuario } from '@/types/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const usuario = ref<Usuario | null>(null)
   /** true cuando ya se consultó /auth/me al menos una vez (haya o no sesión). */
   const inicializado = ref(false)
+  /** Por qué no se pudo saber si hay sesión (servidor caído o sin red); lo muestra el login. */
+  const errorSesion = ref<string | null>(null)
 
   const autenticado = computed(() => usuario.value !== null)
   const rol = computed(() => usuario.value?.rol.clave ?? null)
@@ -20,7 +22,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       usuario.value = await authApi.me()
     } catch (error) {
-      if (!esErrorApi(error) || ![401, 403].includes(error.response?.status ?? 0)) throw error
+      // Si se relanza, el guard del router falla y la pantalla queda en blanco: se va al login.
+      if (!esErrorApi(error) || ![401, 403].includes(error.response?.status ?? 0)) {
+        errorSesion.value = mensajeDeError(error)
+      }
       usuario.value = null
     } finally {
       inicializado.value = true
@@ -52,6 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     usuario,
     inicializado,
+    errorSesion,
     autenticado,
     rol,
     tieneRol,
