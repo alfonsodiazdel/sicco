@@ -3,6 +3,8 @@ import type { ProyectoDatos, ProyectoFila } from '@/types/proyectos'
 
 export interface ProyectosServicio {
   listar(): Promise<ProyectoFila[]>
+  /** Los asignados al usuario de la sesión (USUARIO_PROYECTO); la API los saca de la sesión. */
+  asignados(): Promise<ProyectoFila[]>
   crear(datos: ProyectoDatos): Promise<ProyectoFila>
   actualizar(id: number, datos: ProyectoDatos): Promise<ProyectoFila>
 }
@@ -40,7 +42,21 @@ const proyectosEjemplo: ProyectoFila[] = [
   },
 ]
 
-export function crearProyectosEnMemoria(): ProyectosServicio {
+// Import diferido: usuarios depende de proyectos para ofrecer las asignaciones. Se busca por
+// correo porque los ids de la sesión son los de la base y no los de estos datos de ejemplo.
+async function asignadosAlUsuarioActual() {
+  const [{ useAuthStore }, { usuariosServicio }] = await Promise.all([
+    import('@/stores/auth'),
+    import('@/services/usuarios'),
+  ])
+  const correo = useAuthStore().usuario?.email.toLowerCase()
+  const usuario = (await usuariosServicio.listar()).find((u) => u.email.toLowerCase() === correo)
+  return usuario?.proyecto_ids ?? []
+}
+
+export function crearProyectosEnMemoria(
+  idsAsignados: () => Promise<number[]> = asignadosAlUsuarioActual,
+): ProyectosServicio {
   const proyectos = proyectosEjemplo.map((p) => ({ ...p }))
   let siguienteId = proyectos.length + 1
 
@@ -60,6 +76,10 @@ export function crearProyectosEnMemoria(): ProyectosServicio {
   return {
     async listar() {
       return proyectos.map((p) => ({ ...p }))
+    },
+    async asignados() {
+      const ids = await idsAsignados()
+      return proyectos.filter((p) => ids.includes(p.id)).map((p) => ({ ...p }))
     },
     async crear(datos) {
       validarCodigo(datos.codigo)

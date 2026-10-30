@@ -56,8 +56,8 @@ watch(proyectoId, async () => {
 
 onMounted(async () => {
   try {
-    proyectos.value = (await proyectosServicio.listar()).filter((p) => p.estado === 'Activo')
-    // Desde Proyectos llega ?proyecto=<id>; solo se respeta si es uno de los activos.
+    proyectos.value = (await proyectosServicio.asignados()).filter((p) => p.estado === 'Activo')
+    // Desde Proyectos llega ?proyecto=<id>; solo se respeta si es uno de los activos asignados.
     const pedido = proyectos.value.find((p) => String(p.id) === route.query.proyecto)
     proyectoId.value = (pedido ?? proyectos.value[0])?.id ?? null
   } catch (error) {

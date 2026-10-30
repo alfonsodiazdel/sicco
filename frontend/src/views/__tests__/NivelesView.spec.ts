@@ -15,6 +15,7 @@ const { toast, servicios } = vi.hoisted(() => ({
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
     niveles: null as NivelesServicio | null,
+    asignados: [] as number[],
   },
 }))
 
@@ -57,7 +58,7 @@ async function montar(preparar?: (s: Servicios) => Promise<void>) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
   const { crearNivelesEnMemoria } = await import('@/services/niveles')
-  servicios.proyectos = crearProyectosEnMemoria()
+  servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria()
   servicios.niveles = crearNivelesEnMemoria(servicios.partidas)
   await preparar?.({ proyectos: servicios.proyectos, partidas: servicios.partidas })
@@ -140,6 +141,7 @@ afterEach(() => vi.useRealTimers())
 describe('NivelesView', () => {
   beforeEach(() => {
     toast.add.mockClear()
+    servicios.asignados = [1, 2, 3]
     // Select de PrimeVue lo usa al montarse; jsdom no lo trae.
     vi.stubGlobal(
       'matchMedia',
@@ -405,5 +407,17 @@ describe('NivelesView', () => {
       expect.objectContaining({ summary: 'Primero registre un nivel con «Nuevo nivel».' }),
     )
     expect(vista.find('form').exists()).toBe(false)
+  })
+
+  it('ofrece solo los proyectos asignados al usuario', async () => {
+    servicios.asignados = [2, 3]
+    const vista = await montar()
+
+    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
+    expect(opciones.map((o) => o.nombre)).toEqual([
+      'Torre Empresarial Javier Prado',
+      'Condominio Las Palmeras',
+    ])
+    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
   })
 })

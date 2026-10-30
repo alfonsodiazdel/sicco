@@ -101,7 +101,7 @@ watch(proyectoId, async () => {
 
 onMounted(async () => {
   try {
-    proyectos.value = (await proyectosServicio.listar()).filter((p) => p.estado === 'Activo')
+    proyectos.value = (await proyectosServicio.asignados()).filter((p) => p.estado === 'Activo')
     proyectoId.value = proyectos.value[0]?.id ?? null
   } catch (error) {
     avisarError(error)

@@ -15,6 +15,7 @@ const { toast, confirm, servicios } = vi.hoisted(() => ({
   servicios: {
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
+    asignados: [] as number[],
   },
 }))
 
@@ -50,7 +51,7 @@ async function montar(
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
   const { crearNivelesEnMemoria } = await import('@/services/niveles')
   const niveles = crearNivelesEnMemoria()
-  servicios.proyectos = crearProyectosEnMemoria()
+  servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria(async () => niveles)
   await preparar?.(servicios.proyectos)
   const router = createRouter({
@@ -118,6 +119,7 @@ afterEach(() => vi.useRealTimers())
 describe('PartidasView', () => {
   beforeEach(() => {
     toast.add.mockClear()
+    servicios.asignados = [1, 2, 3]
     confirm.require.mockReset()
     // Select de PrimeVue lo usa al montarse; jsdom no lo trae.
     vi.stubGlobal(
@@ -336,5 +338,14 @@ describe('PartidasView', () => {
     )
     expect(toast.add).not.toHaveBeenCalled()
     expect(filas(vista)[0]?.slice(2, 6)).toEqual(['320.00', '5.00 %', '385.00', '129,360.00'])
+  })
+
+  it('ofrece solo los proyectos asignados al usuario', async () => {
+    servicios.asignados = [2]
+    const vista = await montar(undefined, { proyecto: '1' })
+
+    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
+    expect(opciones.map((o) => o.nombre)).toEqual(['Torre Empresarial Javier Prado'])
+    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
   })
 })
