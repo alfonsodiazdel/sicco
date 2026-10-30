@@ -85,3 +85,33 @@ it('expulsa a un usuario desactivado con la sesión abierta', function () {
         ->assertForbidden()
         ->assertJsonPath('code', 'usuario_inactivo');
 });
+
+it('rechaza un correo de más de 255 caracteres sin intentar el acceso', function () {
+    // Correo válido de 253 caracteres: parte local de 64 y etiquetas de dominio de 61.
+    $dominio = str_repeat('b', 61).'.'.str_repeat('c', 61).'.'.str_repeat('d', 61).'.pe';
+    $correo253 = str_repeat('a', 64).'@'.$dominio;
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'xxx'.$correo253, 'password' => 'password'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['email' => 'El campo correo electrónico no debe ser mayor que 255 caracteres.']);
+    $this->assertGuest();
+
+    $this->postJson('/api/v1/auth/login', ['email' => $correo253, 'password' => 'password'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['email' => 'Correo o contraseña incorrectos.']);
+});
+
+it('rechaza una contraseña de más de 255 caracteres sin intentar el acceso', function () {
+    User::factory()->create(['email' => 'ana@sicco.test']);
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'ana@sicco.test', 'password' => str_repeat('a', 256)])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['password' => 'El campo contraseña no debe ser mayor que 255 caracteres.'])
+        ->assertJsonMissingValidationErrors(['email']);
+    $this->assertGuest();
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'ana@sicco.test', 'password' => str_repeat('a', 255)])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['email' => 'Correo o contraseña incorrectos.'])
+        ->assertJsonMissingValidationErrors(['password']);
+});
