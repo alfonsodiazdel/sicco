@@ -91,7 +91,7 @@ export function crearUsuariosEnMemoria(): UsuariosServicio {
       return copia(Object.assign(buscar(id), { activo }))
     },
     async proyectos() {
-      return (await proyectosServicio.listar()).map(({ id, nombre }) => ({ id, nombre }))
+      return proyectosServicio.opciones()
     },
     async ingenieros(conservarId) {
       return usuarios

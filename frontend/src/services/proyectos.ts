@@ -1,5 +1,7 @@
+import { http } from '@/api/http'
 import { errorDeValidacion } from '@/services/errores'
 import type { ProyectoDatos, ProyectoFila } from '@/types/proyectos'
+import type { IngenieroOpcion, ProyectoOpcion } from '@/types/usuarios'
 
 export interface ProyectosServicio {
   listar(): Promise<ProyectoFila[]>
@@ -7,6 +9,13 @@ export interface ProyectosServicio {
   asignados(): Promise<ProyectoFila[]>
   crear(datos: ProyectoDatos): Promise<ProyectoFila>
   actualizar(id: number, datos: ProyectoDatos): Promise<ProyectoFila>
+  /** Solo id y nombre, para asignar proyectos a los usuarios. */
+  opciones(): Promise<ProyectoOpcion[]>
+  /**
+   * Responsables posibles: ingenieros de producción activos, solo id y nombre. Con `conservarId`
+   * incluye además al responsable actual aunque esté inactivo, para editar sin cambiarlo.
+   */
+  ingenieros(conservarId?: number): Promise<IngenieroOpcion[]>
 }
 
 const proyectosEjemplo: ProyectoFila[] = [
@@ -92,8 +101,38 @@ export function crearProyectosEnMemoria(
       const proyecto = buscar(id)
       return { ...Object.assign(proyecto, datos, { estado: datos.estado ?? proyecto.estado }) }
     },
+    async opciones() {
+      return proyectos.map(({ id, nombre }) => ({ id, nombre }))
+    },
+    async ingenieros(conservarId) {
+      const { usuariosServicio } = await import('@/services/usuarios')
+      return usuariosServicio.ingenieros(conservarId)
+    },
   }
 }
 
-// Hasta que exista el endpoint; la implementación con la API solo reemplaza esta línea.
-export const proyectosServicio: ProyectosServicio = crearProyectosEnMemoria()
+export function crearProyectosApi(): ProyectosServicio {
+  return {
+    async listar() {
+      return (await http.get<ProyectoFila[]>('/proyectos')).data
+    },
+    async asignados() {
+      return (await http.get<ProyectoFila[]>('/proyectos/asignados')).data
+    },
+    async crear(datos) {
+      return (await http.post<ProyectoFila>('/proyectos', datos)).data
+    },
+    async actualizar(id, datos) {
+      return (await http.put<ProyectoFila>(`/proyectos/${id}`, datos)).data
+    },
+    async opciones() {
+      return (await http.get<ProyectoOpcion[]>('/proyectos/opciones')).data
+    },
+    async ingenieros(conservarId) {
+      const params = { conservar: conservarId }
+      return (await http.get<IngenieroOpcion[]>('/proyectos/ingenieros', { params })).data
+    },
+  }
+}
+
+export const proyectosServicio: ProyectosServicio = crearProyectosApi()

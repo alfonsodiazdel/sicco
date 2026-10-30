@@ -56,7 +56,7 @@ eliminan). Al guardar: «Usuario registrado correctamente» y se envía la contr
 | Apellidos | `USUARIO.apellidos` | texto | S | 1–100 | — | — | ídem |
 | Correo | `USUARIO.correo` | correo | S | ≤ 255 | correo con dominio, único | El correo ya está registrado | Solo el índice `UNIQUE` en la base. `LoginRequest.php:19` valida `email` solo al iniciar sesión. |
 | Rol | `USUARIO.rol_id` | lista | S | — | uno de `App\Enums\Rol` | — | El enum existe (`Rol.php:11-15`), pero ninguna regla lo usa. |
-| Proyectos asignados | `USUARIO_PROYECTO` | lista múltiple | S | al menos 1 | proyectos existentes | — | No existe (sin tabla de proyectos). |
+| Proyectos asignados | `USUARIO_PROYECTO` | lista múltiple | S | al menos 1 | proyectos existentes | — | La tabla `usuario_proyecto` existe (migración `..._create_proyectos_table.php`) y la lee `GET /proyectos/asignados`; ninguna ruta la escribe todavía. Las opciones salen de `GET /proyectos/opciones` (solo id y nombre). |
 
 ### Proyectos (CU03)
 
@@ -65,15 +65,19 @@ correctamente».
 
 | Campo | Columna (DER) | Tipo | Oblig. | Longitud | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|---|
-| Código | `PROYECTO.codigo` | texto | S | 1–20 | único | El código de proyecto ya existe | No existe (sin tabla, modelo ni ruta). |
-| Nombre | `PROYECTO.nombre` | texto | S | 1–120 | — | — | No existe. |
-| Dirección | `PROYECTO.direccion` | texto | S | 1–150 | — | — | No existe. |
-| Fecha de inicio | `PROYECTO.fecha_inicio` | fecha | S | — | — | — | No existe. |
-| Fecha de fin estimada | `PROYECTO.fecha_fin` | fecha | S | — | posterior a la de inicio | La fecha de fin debe ser posterior a la de inicio | No existe. |
-| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario activo con rol Ingeniero de producción; al editar se conserva el que ya tenía aunque haya quedado inactivo | — | No existe. |
+| Código | `PROYECTO.codigo` | texto | S | 1–20 | único | El código de proyecto ya existe | `GuardarProyectoRequest.php`: `required`, `max:20`, `unique` (sin distinguir mayúsculas por la intercalación de MySQL) e índice `UNIQUE`. |
+| Nombre | `PROYECTO.nombre` | texto | S | 1–120 | — | — | `GuardarProyectoRequest.php`: `required`, `max:120`. |
+| Dirección | `PROYECTO.direccion` | texto | S | 1–150 | — | — | `GuardarProyectoRequest.php`: `required`, `max:150`. |
+| Fecha de inicio | `PROYECTO.fecha_inicio` | fecha | S | — | — | — | `GuardarProyectoRequest.php`: `required`, `date_format:Y-m-d`. |
+| Fecha de fin estimada | `PROYECTO.fecha_fin` | fecha | S | — | posterior a la de inicio | La fecha de fin debe ser posterior a la de inicio | `GuardarProyectoRequest.php`: `required`, `date_format:Y-m-d`, `after:fecha_inicio`. |
+| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario activo con rol Ingeniero de producción; al editar se conserva el que ya tenía aunque haya quedado inactivo | — | `GuardarProyectoRequest.php`: `exists` con esa condición, y clave foránea a `users`. Las opciones salen de `GET /proyectos/ingenieros` (solo id y nombre; `?conservar=` solo agrega al responsable de un proyecto existente). |
 
 `PROYECTO.estado` (Activo o Finalizado) se muestra en la lista y solo aparece en el formulario al
-editar: un proyecto nuevo empieza Activo (la Figura 13 no lo trae en el registro).
+editar: un proyecto nuevo empieza Activo (la Figura 13 no lo trae en el registro). En el backend,
+`POST` ignora el estado que llegue y `PUT` lo valida con `App\Enums\EstadoProyecto`.
+
+Registran y actualizan solo Oficina técnica (actor de CU03); el administrador puede consultar la
+lista sin modificarla, como en el resto de módulos. No hay ruta para eliminar proyectos.
 
 ### Partidas del presupuesto (CU04)
 

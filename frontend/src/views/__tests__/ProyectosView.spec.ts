@@ -220,6 +220,20 @@ describe('ProyectosView', () => {
     expect(listar).not.toHaveBeenCalled()
   })
 
+  it('pide los responsables al servicio de proyectos, con el ingeniero a conservar al editar', async () => {
+    let ingenieros: ReturnType<typeof vi.spyOn> | undefined
+    const vista = await montar(async (usuarios) => {
+      await usuarios.cambiarEstado(3, false)
+      ingenieros = vi.spyOn(servicios.proyectos!, 'ingenieros')
+    })
+    expect(ingenieros).toHaveBeenCalledWith()
+
+    await vista.get('button[aria-label="Editar Residencial Los Álamos"]').trigger('click')
+    await asentar()
+
+    expect(ingenieros).toHaveBeenLastCalledWith(3)
+  })
+
   it('al editar conserva al ingeniero que quedó inactivo, sin ofrecerlo en un proyecto nuevo', async () => {
     const vista = await montar(async (usuarios) => {
       await usuarios.cambiarEstado(3, false)
@@ -337,7 +351,13 @@ describe('ProyectosView', () => {
   )
 
   it('al administrador le muestra los proyectos sin ninguna acción de escritura', async () => {
-    const vista = await montar(undefined, 'administrador')
+    let ingenieros: ReturnType<typeof vi.spyOn> | undefined
+    const vista = await montar(async () => {
+      ingenieros = vi.spyOn(servicios.proyectos!, 'ingenieros')
+    }, 'administrador')
+
+    // La API solo le da los responsables a Oficina técnica.
+    expect(ingenieros).not.toHaveBeenCalled()
 
     expect(filas(vista)).toHaveLength(3)
     expect(vista.find('button[aria-label="Nuevo proyecto"]').exists()).toBe(false)
