@@ -26,11 +26,11 @@ el largo y el rango) y OWASP ASVS 5.0, capítulos V2 (validación y lógica de n
 
 | Tipo | Control en el front | Por qué | Regla en Laravel |
 |---|---|---|---|
-| Cantidad (m³, S/, %) | `type="number"` con `min` y `step="0.01"`; bloquea `e`, `+` y `-` | Teclado numérico; la tesis pide dos decimales | `numeric\|gt:0` (o `min:0` en el desperdicio) + `decimal:0,2` |
-| Texto libre | `maxlength` igual al de la columna | Evita errores de la base | `string\|max:n` |
-| Correo | `type="email"` + comprobación de dominio con punto | El navegador acepta `x@y` | `email:rfc\|max:255`, guardado en minúsculas |
-| Fecha | `type="date"`; el fin, con `min` = inicio + 1 día | Calendario nativo | `date`; el fin, `after:fecha_inicio` |
-| Lista (rol, ingeniero, elemento) | `<select>` con opción vacía «Seleccione…» | Obliga a elegir | `Rule::enum(...)`, `in:...` o `exists:tabla,id` |
+| Cantidad (m³, S/, %) | `InputNumber` de PrimeVue con dos decimales como máximo y sin negativos | Teclado numérico; la tesis pide dos decimales | `numeric\|gt:0` (o `min:0` en el desperdicio) + `decimal:0,2` |
+| Texto libre | `InputText` con `maxlength` igual al de la columna | Evita errores de la base | `string\|max:n` |
+| Correo | `InputText` con `type="email"` + comprobación de dominio con punto en el esquema | El navegador acepta `x@y` | `email:rfc\|max:255`, guardado en minúsculas |
+| Fecha | `DatePicker` de PrimeVue; el fin, con fecha mínima = inicio + 1 día | Calendario | `date`; el fin, `after:fecha_inicio` |
+| Lista (rol, ingeniero, elemento) | `Select` de PrimeVue sin valor inicial, con el texto «Seleccione» | Obliga a elegir | `Rule::enum(...)`, `in:...` o `exists:tabla,id` |
 
 En Vue, la columna «Control en el front» se arma con un esquema zod por formulario, en un módulo
 compartido, para no repetir la regla en cada vista.
@@ -70,9 +70,10 @@ correctamente».
 | Dirección | `PROYECTO.direccion` | texto | S | 1–150 | — | — | No existe. |
 | Fecha de inicio | `PROYECTO.fecha_inicio` | fecha | S | — | — | — | No existe. |
 | Fecha de fin estimada | `PROYECTO.fecha_fin` | fecha | S | — | posterior a la de inicio | La fecha de fin debe ser posterior a la de inicio | No existe. |
-| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario existente | — | No existe. |
+| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario activo con rol Ingeniero de producción | — | No existe. |
 
-`PROYECTO.estado` no está en el formulario (Figura 13): se muestra en la lista.
+`PROYECTO.estado` (Activo o Finalizado) se muestra en la lista y solo aparece en el formulario al
+editar: un proyecto nuevo empieza Activo (la Figura 13 no lo trae en el registro).
 
 ### Partidas del presupuesto (CU04)
 
@@ -89,9 +90,20 @@ presupuestado al pie (Figura 14). Al guardar: «Partida registrada» y se actual
 | Precio unitario (S/ por m³) | `PRESUPUESTO.precio_unitario` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
 
 Cálculo: volumen con desperdicio = metrado × (1 + desperdicio ÷ 100); total de la partida = volumen
-con desperdicio × precio unitario, redondeado a dos decimales. El total presupuestado es la suma de
-los totales de las partidas. En el front, las dos fórmulas están solo en
+con desperdicio × precio unitario, redondeado a dos decimales con medio céntimo hacia arriba. El
+cálculo se hace en céntimos enteros, no en coma flotante: 0,31 m³ × S/ 420,50 = S/ 130,36 (en coma
+flotante da 130,354999… y se redondearía a 130,35). El total presupuestado es la suma de los
+totales ya redondeados de las partidas, y el disponible de CU05 también se resta en céntimos. En el front, las dos fórmulas están solo en
 `frontend/src/services/presupuesto.ts`.
+
+Al editar una partida, el metrado no puede quedar por debajo del volumen ya repartido en sectores
+de cualquier nivel (CU05): «El metrado es menor al volumen ya repartido en sectores (76.00 m³)».
+Sin esta regla, el disponible del elemento quedaría negativo. No está en la tesis: se deduce de
+CU05.
+
+El selector de proyecto ofrece solo los proyectos asignados al usuario de la sesión
+(`USUARIO_PROYECTO`), no todos. Tampoco está escrito en CU04: se deduce de la descripción de
+`USUARIO_PROYECTO` en el DER («Proyectos a los que tiene acceso cada usuario») y de la maqueta.
 
 Las opciones de elemento estructural y de f'c son las de la maqueta y están solo en
 `frontend/src/catalogos/partidas.ts`, hasta que se confirmen.
@@ -126,8 +138,10 @@ formulario muestra el disponible de cada partida: «Disponible por elemento: Zap
 kg/cm², 244.00 m³; …».
 
 No están en la tesis y se infirieron: el largo máximo de 40 de los dos nombres (de la maqueta), que
-no se pueda eliminar niveles ni sectores (el flujo solo describe el registro, igual que en CU04) y
-que los nombres no tengan que ser únicos (la tesis no lo pide).
+no se pueda eliminar niveles ni sectores (el flujo solo describe el registro, igual que en CU04),
+que los nombres no tengan que ser únicos (la tesis no lo pide; dos niveles con el mismo nombre y
+orden se listan por orden de registro) y que el selector ofrezca solo los proyectos activos
+asignados al usuario de la sesión (igual que en CU04).
 
 El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asignación de guías
 (`SECTOR.volumen_vaciado_m3` y `ASIGNACION`). Un sector nuevo empieza con 0 m³ vaciados.
@@ -160,10 +174,15 @@ El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asig
    y se prueba en los dos lados con los mismos casos.
 7. **«Distinta de la actual»** (`different:password_actual`) solo la valida el backend. Es correcto:
    el front no conoce la contraseña actual.
+8. **Dos decimales solo en el control:** el `InputNumber` no deja escribir más de dos decimales, pero
+   los esquemas zod de partida y sector aceptan 1,005, 1e15 e `Infinity`. El `FormRequest` de cada
+   caso de uso tiene que rechazarlos con `decimal:0,2` y un tope (`max:`) según la precisión de la
+   columna, que el DER todavía no fija.
 
 ## 5. Pendiente de definir
 
-- Los valores del estado del proyecto y quién lo cambia (el del usuario es activo o inactivo).
-- Si el ingeniero responsable se elige solo entre los usuarios con rol «Ingeniero de producción».
+- Que la tesis confirme los valores del estado del proyecto (hoy Activo o Finalizado, lo cambia
+  Oficina técnica al editar) y que el ingeniero responsable sea un usuario activo con rol
+  «Ingeniero de producción», como hace hoy el front.
 - Las listas de elementos estructurales y de resistencias f'c.
 - Que la tesis confirme la fórmula del total de la partida, que hoy se infirió (ver CU04).
