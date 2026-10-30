@@ -48,8 +48,10 @@ async function montar(
 ) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
+  const { crearNivelesEnMemoria } = await import('@/services/niveles')
+  const niveles = crearNivelesEnMemoria()
   servicios.proyectos = crearProyectosEnMemoria()
-  servicios.partidas = crearPartidasEnMemoria()
+  servicios.partidas = crearPartidasEnMemoria(async () => niveles)
   await preparar?.(servicios.proyectos)
   const router = createRouter({
     history: createMemoryHistory(),
@@ -316,5 +318,23 @@ describe('PartidasView', () => {
     )
     expect(filas(vista)[0]?.slice(2, 6)).toEqual(['300.00', '5.00 %', '385.00', '121,275.00'])
     expect(totalPresupuestado(vista)).toBe('S/ 299,686.80')
+  })
+
+  it('no deja bajar el metrado por debajo de lo ya repartido en sectores', async () => {
+    const vista = await montar()
+    await vista.get('button[aria-label="Editar partida Zapata"]').trigger('click')
+    await asentar()
+
+    await vista
+      .findAllComponents(InputNumber)
+      .find((n) => n.props('inputId') === 'metrado_m3')!
+      .setValue(50)
+    await guardar(vista)
+
+    expect(vista.get('form').text()).toContain(
+      'El metrado es menor al volumen ya repartido en sectores (76.00 m³)',
+    )
+    expect(toast.add).not.toHaveBeenCalled()
+    expect(filas(vista)[0]?.slice(2, 6)).toEqual(['320.00', '5.00 %', '385.00', '129,360.00'])
   })
 })

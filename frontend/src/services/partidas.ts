@@ -1,3 +1,6 @@
+import { errorDeValidacion } from '@/services/errores'
+import type { NivelesServicio } from '@/services/niveles'
+import { decimales, volumenDisponible } from '@/services/presupuesto'
 import type { PartidaDatos, PartidaFila } from '@/types/partidas'
 
 export interface PartidasServicio {
@@ -45,7 +48,12 @@ const partidasEjemplo: PartidaFila[] = [
   },
 ]
 
-export function crearPartidasEnMemoria(): PartidasServicio {
+// Import diferido: niveles depende de partidas para validar el volumen de cada sector.
+const nivelesPorDefecto = async () => (await import('@/services/niveles')).nivelesServicio
+
+export function crearPartidasEnMemoria(
+  niveles: () => Promise<Pick<NivelesServicio, 'listarSectores'>> = nivelesPorDefecto,
+): PartidasServicio {
   const partidas = partidasEjemplo.map((p) => ({ ...p }))
   let siguienteId = partidas.length + 1
 
@@ -61,6 +69,16 @@ export function crearPartidasEnMemoria(): PartidasServicio {
     async actualizar(id, datos) {
       const partida = partidas.find((p) => p.id === id)
       if (!partida) throw new Error('Partida no encontrada.')
+      // El metrado no puede quedar debajo de lo ya repartido: el disponible de CU05 quedaría negativo.
+      const sectores = await (await niveles()).listarSectores(partida.proyecto_id)
+      const repartido = -volumenDisponible({ id, metrado_m3: 0 }, sectores)
+      if (datos.metrado_m3 < repartido) {
+        throw errorDeValidacion({
+          metrado_m3: [
+            `El metrado es menor al volumen ya repartido en sectores (${decimales(repartido)} m³)`,
+          ],
+        })
+      }
       return { ...Object.assign(partida, datos) }
     },
   }
