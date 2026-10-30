@@ -3,8 +3,8 @@ import { mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 
-function montar(activo: boolean) {
-  return mount(EstadoTag, { props: { activo }, global: { plugins: [PrimeVue] } })
+function montar(activo: boolean, inactivo?: string) {
+  return mount(EstadoTag, { props: { activo, inactivo }, global: { plugins: [PrimeVue] } })
 }
 
 describe('EstadoTag', () => {
@@ -19,6 +19,13 @@ describe('EstadoTag', () => {
     const tag = montar(false)
 
     expect(tag.text()).toBe('Inactivo')
+    expect(tag.classes()).toContain('p-tag-secondary')
+  })
+
+  it('usa la etiqueta de inactivo que recibe, también en gris', () => {
+    const tag = montar(false, 'Finalizado')
+
+    expect(tag.text()).toBe('Finalizado')
     expect(tag.classes()).toContain('p-tag-secondary')
   })
 })

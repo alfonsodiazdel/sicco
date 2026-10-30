@@ -2,9 +2,9 @@ import { z } from 'zod'
 import type { RolClave } from '@/types/auth'
 import { etiquetasRol } from '@/types/usuarios'
 
-const requerido = 'Este dato es requerido'
+export const requerido = 'Este dato es requerido'
 
-const texto = (maximo: number) =>
+export const texto = (maximo: number) =>
   z
     .string({ required_error: requerido })
     .trim()

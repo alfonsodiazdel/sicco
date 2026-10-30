@@ -1,5 +1,5 @@
-import { AxiosError, type AxiosResponse } from 'axios'
-import type { ErrorApi } from '@/api/http'
+import { errorDeValidacion } from '@/services/errores'
+import { proyectosServicio } from '@/services/proyectos'
 import type { ProyectoOpcion, UsuarioDatos, UsuarioFila } from '@/types/usuarios'
 
 export interface UsuariosServicio {
@@ -9,12 +9,6 @@ export interface UsuariosServicio {
   cambiarEstado(id: number, activo: boolean): Promise<UsuarioFila>
   proyectos(): Promise<ProyectoOpcion[]>
 }
-
-const proyectosEjemplo: ProyectoOpcion[] = [
-  { id: 1, nombre: 'Residencial Los Álamos' },
-  { id: 2, nombre: 'Torre Empresarial Javier Prado' },
-  { id: 3, nombre: 'Condominio Las Palmeras' },
-]
 
 const usuariosEjemplo: UsuarioFila[] = [
   {
@@ -57,15 +51,6 @@ const usuariosEjemplo: UsuarioFila[] = [
 
 const copia = (u: UsuarioFila): UsuarioFila => ({ ...u, proyecto_ids: [...u.proyecto_ids] })
 
-// Misma forma que un 422 de la API, para que la vista lo trate con erroresDeValidacion.
-function errorDeValidacion(errors: Record<string, string[]>) {
-  const data: ErrorApi = { message: Object.values(errors)[0]?.[0] ?? '', errors }
-  return new AxiosError(data.message, AxiosError.ERR_BAD_REQUEST, undefined, undefined, {
-    status: 422,
-    data,
-  } as AxiosResponse<ErrorApi>)
-}
-
 export function crearUsuariosEnMemoria(): UsuariosServicio {
   const usuarios = usuariosEjemplo.map(copia)
   let siguienteId = usuarios.length + 1
@@ -101,7 +86,7 @@ export function crearUsuariosEnMemoria(): UsuariosServicio {
       return copia(Object.assign(buscar(id), { activo }))
     },
     async proyectos() {
-      return proyectosEjemplo.map((p) => ({ ...p }))
+      return (await proyectosServicio.listar()).map(({ id, nombre }) => ({ id, nombre }))
     },
   }
 }

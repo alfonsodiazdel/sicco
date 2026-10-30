@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import Tag from 'primevue/tag'
 
-defineProps<{ activo: boolean }>()
+const { inactivo = 'Inactivo' } = defineProps<{ activo: boolean; inactivo?: string }>()
 </script>
 
 <template>
-  <Tag :value="activo ? 'Activo' : 'Inactivo'" :severity="activo ? 'success' : 'secondary'" />
+  <Tag :value="activo ? 'Activo' : inactivo" :severity="activo ? 'success' : 'secondary'" />
 </template>
