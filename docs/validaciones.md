@@ -48,15 +48,17 @@ al 29/10/2026; se actualiza en el mismo commit que agrega el `FormRequest` de ca
 ### Usuarios (CU02)
 
 Columnas de la lista: nombre, correo, rol y estado. Acciones: «Editar» y «Desactivar» (no se
-eliminan). Al guardar: «Usuario registrado correctamente» y se envía la contraseña temporal al correo.
+eliminan; nadie puede desactivarse a sí mismo). Al guardar: «Usuario registrado correctamente» y se envía la
+contraseña temporal al correo: el usuario nace con `debe_cambiar_password` y debe cambiarla al ingresar. Si el correo
+no sale, el alta se revierte y se muestra «No se pudo enviar la contraseña temporal al correo…».
 
 | Campo | Columna (DER) | Tipo | Oblig. | Longitud | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|---|
-| Nombres | `USUARIO.nombres` | texto | S | 1–100 | — | — | Solo la columna `varchar(100) NOT NULL` (migración `..._000000_create_users_table.php`). Sin regla en ningún `FormRequest`. |
-| Apellidos | `USUARIO.apellidos` | texto | S | 1–100 | — | — | ídem |
-| Correo | `USUARIO.correo` | correo | S | ≤ 255 | correo con dominio, único | El correo ya está registrado | Solo el índice `UNIQUE` en la base. `LoginRequest.php:19` valida `email` solo al iniciar sesión. |
-| Rol | `USUARIO.rol_id` | lista | S | — | uno de `App\Enums\Rol` | — | El enum existe (`Rol.php:11-15`), pero ninguna regla lo usa. |
-| Proyectos asignados | `USUARIO_PROYECTO` | lista múltiple | S | al menos 1 | proyectos existentes | — | La tabla `usuario_proyecto` existe (migración `..._create_proyectos_table.php`) y la lee `GET /proyectos/asignados`; ninguna ruta la escribe todavía. Las opciones salen de `GET /proyectos/opciones` (solo id y nombre). |
+| Nombres | `USUARIO.nombres` | texto | S | 1–100 | — | — | `GuardarUsuarioRequest.php`: `required`, `max:100`. |
+| Apellidos | `USUARIO.apellidos` | texto | S | 1–100 | — | — | `GuardarUsuarioRequest.php`: `required`, `max:100`. |
+| Correo | `USUARIO.correo` | correo | S | ≤ 255 | correo con dominio, único | El correo ya está registrado | `GuardarUsuarioRequest.php`: `required`, `max:255`, `email:rfc` con punto en el dominio y `unique` (sin distinguir mayúsculas por la intercalación de MySQL), más el índice `UNIQUE`. |
+| Rol | `USUARIO.rol_id` | lista | S | — | uno de `App\Enums\Rol` | — | `GuardarUsuarioRequest.php`: `Rule::enum` y que exista en `roles`; el `rol_id` se resuelve por la clave. Nadie cambia su propio rol, y siempre queda al menos un administrador activo (`UsuarioController.php`). |
+| Proyectos asignados | `USUARIO_PROYECTO` | lista múltiple | S | al menos 1 | proyectos existentes | — | `GuardarUsuarioRequest.php`: `array`, `min:1`, cada id `integer`, `distinct` y `exists:proyectos,id`. `POST`/`PUT /usuarios` reemplazan las filas de `usuario_proyecto`. Las opciones salen de `GET /proyectos/opciones` (solo id y nombre). |
 
 ### Proyectos (CU03)
 
