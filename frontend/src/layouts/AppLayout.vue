@@ -15,7 +15,7 @@ const route = useRoute()
 const menuMovilAbierto = ref(false)
 const menuUsuario = ref<InstanceType<typeof Menu> | null>(null)
 
-const opciones = computed(() => menu.filter((item) => !item.roles || auth.tieneRol(...item.roles)))
+const opciones = computed(() => menu.filter((item) => !item.roles || auth.puedeVer(...item.roles)))
 
 const iniciales = computed(() => {
   const u = auth.usuario

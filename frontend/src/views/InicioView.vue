@@ -6,7 +6,7 @@ import { menu } from '@/router/menu'
 const auth = useAuthStore()
 
 const accesos = computed(() =>
-  menu.filter((item) => item.ruta !== '/' && (!item.roles || auth.tieneRol(...item.roles))),
+  menu.filter((item) => item.ruta !== '/' && (!item.roles || auth.puedeVer(...item.roles))),
 )
 </script>
 

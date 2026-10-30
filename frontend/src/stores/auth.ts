@@ -16,6 +16,11 @@ export const useAuthStore = defineStore('auth', () => {
     return rol.value !== null && roles.includes(rol.value)
   }
 
+  /** Acceso de consulta a un módulo: el administrador ve todo; los demás, solo los de su rol. */
+  function puedeVer(...roles: RolClave[]) {
+    return tieneRol('administrador', ...roles)
+  }
+
   async function cargarSesion() {
     try {
       usuario.value = await authApi.me()
@@ -55,6 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
     autenticado,
     rol,
     tieneRol,
+    puedeVer,
     cargarSesion,
     login,
     logout,
