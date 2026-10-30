@@ -5,7 +5,7 @@ import InputText from 'primevue/inputtext'
 
 const texto = defineModel<string>({ default: '' })
 
-defineProps<{ placeholder: string; etiqueta: string }>()
+const { largo = 100 } = defineProps<{ placeholder: string; etiqueta: string; largo?: number }>()
 </script>
 
 <template>
@@ -14,7 +14,7 @@ defineProps<{ placeholder: string; etiqueta: string }>()
     <InputText
       v-model="texto"
       type="search"
-      maxlength="100"
+      :maxlength="largo"
       :placeholder="placeholder"
       :aria-label="etiqueta"
       fluid
