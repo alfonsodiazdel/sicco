@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
@@ -25,6 +25,16 @@ function montar(filas: Fila[]) {
 }
 
 describe('TablaCrud', () => {
+  it('pasa las clases de las columnas como texto, sin avisos de Vue', () => {
+    const avisos = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const tabla = montar([ana])
+
+    expect(avisos.mock.calls.filter(([m]) => String(m).includes('Invalid prop'))).toEqual([])
+    expect(tabla.get('th:nth-child(2)').classes()).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
+    expect(tabla.get('td:nth-child(2)').classes()).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
+    avisos.mockRestore()
+  })
+
   it('muestra el campo, la celda personalizada y las acciones de cada fila', () => {
     const tabla = montar([ana])
     const celdas = tabla.findAll('tbody td').map((td) => td.text())

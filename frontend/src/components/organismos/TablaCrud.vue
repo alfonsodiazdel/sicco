@@ -18,6 +18,12 @@ defineSlots<{
   [columna: `col-${string}`]: (props: { fila: T }) => unknown
   acciones?: (props: { fila: T }) => unknown
 }>()
+
+// Column declara header-class y body-class como String: un objeto funciona, pero Vue avisa en cada celda.
+const clases = (columna: { secundaria?: boolean; numerica?: boolean }, deNumerica: string) =>
+  [columna.secundaria && 'hidden sm:table-cell', columna.numerica && deNumerica]
+    .filter(Boolean)
+    .join(' ')
 </script>
 
 <template>
@@ -36,14 +42,8 @@ defineSlots<{
       :key="columna.campo"
       :field="columna.campo"
       :header="columna.encabezado"
-      :header-class="{
-        'hidden sm:table-cell': columna.secundaria,
-        '[&>div]:justify-end': columna.numerica,
-      }"
-      :body-class="{
-        'hidden sm:table-cell': columna.secundaria,
-        'text-right whitespace-nowrap': columna.numerica,
-      }"
+      :header-class="clases(columna, '[&>div]:justify-end')"
+      :body-class="clases(columna, 'text-right whitespace-nowrap')"
     >
       <template v-if="$slots[`col-${columna.campo}`]" #body="{ data }">
         <slot :name="`col-${columna.campo}`" :fila="data" />
