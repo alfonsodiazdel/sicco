@@ -8,8 +8,11 @@ export interface UsuariosServicio {
   actualizar(id: number, datos: UsuarioDatos): Promise<UsuarioFila>
   cambiarEstado(id: number, activo: boolean): Promise<UsuarioFila>
   proyectos(): Promise<ProyectoOpcion[]>
-  /** Responsables posibles de un proyecto: no expone correo, rol ni asignaciones. */
-  ingenieros(): Promise<IngenieroOpcion[]>
+  /**
+   * Responsables posibles de un proyecto: no expone correo, rol ni asignaciones. Con `conservarId`
+   * incluye además a ese ingeniero aunque esté inactivo, para editar un proyecto sin cambiarlo.
+   */
+  ingenieros(conservarId?: number): Promise<IngenieroOpcion[]>
 }
 
 const usuariosEjemplo: UsuarioFila[] = [
@@ -90,9 +93,9 @@ export function crearUsuariosEnMemoria(): UsuariosServicio {
     async proyectos() {
       return (await proyectosServicio.listar()).map(({ id, nombre }) => ({ id, nombre }))
     },
-    async ingenieros() {
+    async ingenieros(conservarId) {
       return usuarios
-        .filter((u) => u.rol === 'ingeniero_produccion' && u.activo)
+        .filter((u) => u.rol === 'ingeniero_produccion' && (u.activo || u.id === conservarId))
         .map((u) => ({ id: u.id, nombre: `${u.nombres} ${u.apellidos}` }))
     },
   }

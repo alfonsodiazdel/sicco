@@ -100,7 +100,23 @@ const [fechaFin, fechaFinAttrs] = defineField('fecha_fin')
 const [ingenieroId, ingenieroIdAttrs] = defineField('ingeniero_id')
 const [estado, estadoAttrs] = defineField('estado')
 
-function abrir(proyecto: ProyectoFila | null = null) {
+// Un proyecto conserva a su ingeniero aunque haya quedado inactivo; no se ofrece para otros.
+const ingenieroInactivo = ref<IngenieroOpcion | null>(null)
+const opcionesIngeniero = computed(() =>
+  ingenieroInactivo.value ? [...ingenieros.value, ingenieroInactivo.value] : ingenieros.value,
+)
+
+async function abrir(proyecto: ProyectoFila | null = null) {
+  ingenieroInactivo.value = null
+  const id = proyecto?.ingeniero_id
+  if (id !== undefined && !ingenieros.value.some((i) => i.id === id)) {
+    try {
+      const actual = (await usuariosServicio.ingenieros(id)).find((i) => i.id === id)
+      if (actual) ingenieroInactivo.value = { id, nombre: `${actual.nombre} (inactivo)` }
+    } catch (error) {
+      toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
+    }
+  }
   editando.value = proyecto
   resetForm({ values: proyecto ? valoresDeProyecto(proyecto) : {} })
   dialogo.value = true
@@ -301,7 +317,7 @@ const guardar = handleSubmit(async (valores) => {
             v-model="ingenieroId"
             v-bind="ingenieroIdAttrs"
             label-id="ingeniero_id"
-            :options="ingenieros"
+            :options="opcionesIngeniero"
             option-label="nombre"
             option-value="id"
             placeholder="Seleccione"

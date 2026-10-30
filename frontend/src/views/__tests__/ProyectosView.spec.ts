@@ -220,6 +220,29 @@ describe('ProyectosView', () => {
     expect(listar).not.toHaveBeenCalled()
   })
 
+  it('al editar conserva al ingeniero que quedó inactivo, sin ofrecerlo en un proyecto nuevo', async () => {
+    const vista = await montar(async (usuarios) => {
+      await usuarios.cambiarEstado(3, false)
+    })
+
+    await vista.get('button[aria-label="Editar Residencial Los Álamos"]').trigger('click')
+    await asentar()
+    const ingeniero = vista.findComponent(Select)
+    expect(ingeniero.props('modelValue')).toBe(3)
+    expect(ingeniero.props('options')).toStrictEqual([{ id: 3, nombre: 'Lucía Ramos (inactivo)' }])
+
+    await vista.get('#nombre').setValue('Residencial Los Álamos II')
+    await guardar(vista)
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Cambios guardados.' }),
+    )
+    const guardado = (await servicios.proyectos!.listar()).find((p) => p.id === 1)
+    expect(guardado).toMatchObject({ nombre: 'Residencial Los Álamos II', ingeniero_id: 3 })
+
+    await abrirNuevo(vista)
+    expect(vista.findComponent(Select).props('options')).toStrictEqual([])
+  })
+
   it('muestra el estado solo al editar y permite finalizar el proyecto', async () => {
     const vista = await montar()
     await abrirNuevo(vista)

@@ -70,7 +70,7 @@ correctamente».
 | Dirección | `PROYECTO.direccion` | texto | S | 1–150 | — | — | No existe. |
 | Fecha de inicio | `PROYECTO.fecha_inicio` | fecha | S | — | — | — | No existe. |
 | Fecha de fin estimada | `PROYECTO.fecha_fin` | fecha | S | — | posterior a la de inicio | La fecha de fin debe ser posterior a la de inicio | No existe. |
-| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario activo con rol Ingeniero de producción | — | No existe. |
+| Ingeniero responsable | `PROYECTO.ingeniero_id` | lista | S | — | usuario activo con rol Ingeniero de producción; al editar se conserva el que ya tenía aunque haya quedado inactivo | — | No existe. |
 
 `PROYECTO.estado` (Activo o Finalizado) se muestra en la lista y solo aparece en el formulario al
 editar: un proyecto nuevo empieza Activo (la Figura 13 no lo trae en el registro).
