@@ -16,6 +16,7 @@ import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 import { usuariosServicio } from '@/services/usuarios'
 import { esquemaUsuario } from '@/validaciones/usuario'
+import type { RolClave } from '@/types/auth'
 import { etiquetasRol, type ProyectoOpcion, type UsuarioFila } from '@/types/usuarios'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 
@@ -25,6 +26,7 @@ const usuarios = ref<UsuarioFila[]>([])
 const proyectos = ref<ProyectoOpcion[]>([])
 const cargando = ref(true)
 const busqueda = ref('')
+const rolFiltrado = ref<RolClave | ''>('')
 
 const columnas = [
   { campo: 'nombre', encabezado: 'Nombre' },
@@ -33,13 +35,16 @@ const columnas = [
   { campo: 'activo', encabezado: 'Estado' },
 ]
 const opcionesRol = Object.entries(etiquetasRol).map(([valor, etiqueta]) => ({ valor, etiqueta }))
+const opcionesFiltroRol = [{ valor: '', etiqueta: 'Todos los roles' }, ...opcionesRol]
 
 const nombreCompleto = (u: UsuarioFila) => `${u.nombres} ${u.apellidos}`
 
 const filtrados = computed(() => {
   const texto = busqueda.value.trim().toLowerCase()
-  return usuarios.value.filter((u) =>
-    [nombreCompleto(u), u.email].some((v) => v.toLowerCase().includes(texto)),
+  return usuarios.value.filter(
+    (u) =>
+      (!rolFiltrado.value || u.rol === rolFiltrado.value) &&
+      [nombreCompleto(u), u.email].some((v) => v.toLowerCase().includes(texto)),
   )
 })
 
@@ -126,11 +131,22 @@ async function alternarEstado(usuario: UsuarioFila) {
     </template>
 
     <template #herramientas>
-      <div class="w-full sm:max-w-sm">
-        <BuscadorTabla
-          v-model="busqueda"
-          placeholder="Buscar por nombre o correo"
-          etiqueta="Buscar por nombre o correo"
+      <div class="flex w-full flex-col gap-3 sm:flex-row">
+        <div class="w-full sm:max-w-sm">
+          <BuscadorTabla
+            v-model="busqueda"
+            placeholder="Buscar por nombre o correo"
+            etiqueta="Buscar por nombre o correo"
+          />
+        </div>
+        <Select
+          v-model="rolFiltrado"
+          :options="opcionesFiltroRol"
+          option-label="etiqueta"
+          option-value="valor"
+          placeholder="Todos los roles"
+          aria-label="Filtrar por rol"
+          class="w-full sm:w-56"
         />
       </div>
     </template>

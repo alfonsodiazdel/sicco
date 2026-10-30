@@ -38,6 +38,9 @@ function filas(vista: VueWrapper) {
   return vista.findAll('tbody tr').map((tr) => tr.findAll('td').map((td) => td.text()))
 }
 
+const esFiltroRol = (s: VueWrapper) =>
+  (s.props() as { ariaLabel?: string }).ariaLabel === 'Filtrar por rol'
+
 async function abrirNuevo(vista: VueWrapper) {
   await vista.get('button[aria-label="Nuevo usuario"]').trigger('click')
   await flushPromises()
@@ -47,8 +50,15 @@ async function llenar(vista: VueWrapper, email: string) {
   await vista.get('#nombres').setValue('Ana')
   await vista.get('#apellidos').setValue('Torres')
   await vista.get('#email').setValue(email)
-  await vista.findComponent(Select).setValue('gerencia')
+  await vista
+    .findAllComponents(Select)
+    .find((s) => !esFiltroRol(s))!
+    .setValue('gerencia')
   await vista.findComponent(MultiSelect).setValue([2])
+}
+
+async function filtrarPorRol(vista: VueWrapper, rol: string) {
+  await vista.findAllComponents(Select).find(esFiltroRol)!.setValue(rol)
 }
 
 async function guardar(vista: VueWrapper) {
@@ -85,6 +95,22 @@ describe('UsuariosView', () => {
       'Inactivo',
     ])
     expect(vista.get('tbody tr:nth-child(4) td span').text()).toBe('Jorge Salas')
+  })
+
+  it('filtra por rol y vuelve a todos con «Todos los roles»', async () => {
+    const vista = await montar()
+    const filtro = vista.findAllComponents(Select).find(esFiltroRol)
+
+    expect(filtro?.text()).toBe('Todos los roles')
+    await filtrarPorRol(vista, 'oficina_tecnica')
+    expect(filas(vista).map((f) => f[1])).toEqual(['oficina_tecnica@sicco.test'])
+
+    await vista.get('input[type=search]').setValue('lucia')
+    expect(vista.text()).toContain('No hay usuarios que coincidan con la búsqueda.')
+
+    await vista.get('input[type=search]').setValue('')
+    await filtrarPorRol(vista, '')
+    expect(filas(vista)).toHaveLength(4)
   })
 
   it('en celular oculta correo y rol, y muestra el rol bajo el nombre', async () => {
