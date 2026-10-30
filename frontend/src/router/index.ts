@@ -58,10 +58,7 @@ const routes: RouteRecordRaw[] = [
         path: 'proyectos',
         name: 'proyectos',
         component: () => import('@/views/ProyectosView.vue'),
-        meta: {
-          roles: ['oficina_tecnica', 'ingeniero_produccion', 'gerencia'],
-          titulo: 'Proyectos',
-        },
+        meta: { roles: ['oficina_tecnica'], titulo: 'Proyectos' },
       },
       {
         path: 'partidas',

@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import AppLayout from '@/layouts/AppLayout.vue'
+import { useAuthStore } from '@/stores/auth'
+import type { RolClave, Usuario } from '@/types/auth'
 
 function simularPantalla(escritorio: boolean) {
   vi.stubGlobal(
@@ -78,5 +80,40 @@ describe('AppLayout', () => {
     await boton.trigger('click')
     expect(boton.attributes('aria-expanded')).toBe('true')
     expect(localStorage.getItem('sicco-menu-contraido')).toBeNull()
+  })
+})
+
+describe('AppLayout · menú por rol', () => {
+  beforeEach(() => simularPantalla(true))
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function montarComo(rol: RolClave) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useAuthStore().usuario = { nombres: 'Ana', apellidos: 'Paz', rol: { clave: rol } } as Usuario
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:ruta(.*)*', component: { template: '<p>Vista</p>' } }],
+    })
+    await router.push('/')
+    const wrapper = mount(AppLayout, { global: { plugins: [pinia, router, PrimeVue] } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it.each<RolClave>(['administrador', 'almacenero', 'ingeniero_produccion', 'gerencia'])(
+    'no muestra Proyectos a %s',
+    async (rol) => {
+      const wrapper = await montarComo(rol)
+
+      expect(wrapper.find('nav a[href="/proyectos"]').exists()).toBe(false)
+    },
+  )
+
+  it('muestra Proyectos a Oficina técnica', async () => {
+    const wrapper = await montarComo('oficina_tecnica')
+
+    expect(wrapper.find('nav a[href="/proyectos"]').exists()).toBe(true)
   })
 })

@@ -19,7 +19,7 @@ export const menu: ItemMenu[] = [
     etiqueta: 'Proyectos',
     icono: 'pi pi-building',
     ruta: '/proyectos',
-    roles: ['oficina_tecnica', 'ingeniero_produccion', 'gerencia'],
+    roles: ['oficina_tecnica'],
   },
   {
     etiqueta: 'Presupuesto',
