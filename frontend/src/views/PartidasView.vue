@@ -20,10 +20,15 @@ import { esquemaPartida, valoresDePartida } from '@/validaciones/partida'
 import type { PartidaFila } from '@/types/partidas'
 import type { ProyectoFila } from '@/types/proyectos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToast()
 const confirm = useConfirm()
 const route = useRoute()
+const auth = useAuthStore()
+
+// El administrador entra en modo consulta: registrar y editar quedan para Oficina técnica.
+const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 
 const proyectos = ref<ProyectoFila[]>([])
 const proyectoId = ref<number | null>(null)
@@ -127,7 +132,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
     titulo="Presupuesto del proyecto"
     subtitulo="Volúmenes en m³ e importes en soles, con dos decimales"
   >
-    <template #acciones>
+    <template v-if="puedeGestionar" #acciones>
       <Button
         label="Agregar partida"
         icon="pi pi-plus"
@@ -171,7 +176,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
       >
       <template #col-precio_unitario="{ fila }">{{ decimales(fila.precio_unitario) }}</template>
       <template #col-total="{ fila }">{{ decimales(totalPartida(fila)) }}</template>
-      <template #acciones="{ fila }">
+      <template v-if="puedeGestionar" #acciones="{ fila }">
         <Button
           icon="pi pi-pencil"
           text

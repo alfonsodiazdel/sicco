@@ -15,22 +15,37 @@ describe('acceso por URL', () => {
     setActivePinia(createPinia())
   })
 
-  it.each<RolClave>(['administrador', 'almacenero', 'ingeniero_produccion', 'gerencia'])(
+  // El router es uno solo para todo el archivo: se parte de Inicio para que cada prueba pase
+  // por la guarda y no herede la ruta de la anterior.
+  async function abrir(ruta: string) {
+    await router.push('/')
+    await router.push(ruta)
+    return router.currentRoute.value.name
+  }
+
+  it.each<RolClave>(['almacenero', 'ingeniero_produccion', 'gerencia'])(
     'manda a %s a la página sin acceso al abrir /proyectos',
     async (rol) => {
       iniciarSesion(rol)
-      await router.push('/proyectos')
 
-      expect(router.currentRoute.value.name).toBe('no-autorizado')
+      expect(await abrir('/proyectos')).toBe('no-autorizado')
     },
   )
 
   it('deja entrar a Oficina técnica a /proyectos', async () => {
     iniciarSesion('oficina_tecnica')
-    await router.push('/proyectos')
 
-    expect(router.currentRoute.value.name).toBe('proyectos')
+    expect(await abrir('/proyectos')).toBe('proyectos')
   })
+
+  it.each(['/proyectos', '/partidas', '/niveles'])(
+    'deja entrar al administrador a %s en modo consulta',
+    async (ruta) => {
+      iniciarSesion('administrador')
+
+      expect(await abrir(ruta)).toBe(ruta.slice(1))
+    },
+  )
 })
 
 describe('destino tras iniciar sesión', () => {

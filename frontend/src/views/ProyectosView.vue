@@ -30,6 +30,8 @@ const auth = useAuthStore()
 const rutaPresupuesto = '/partidas'
 const rolesPresupuesto = menu.find((item) => item.ruta === rutaPresupuesto)?.roles
 const verPresupuesto = computed(() => !rolesPresupuesto || auth.tieneRol(...rolesPresupuesto))
+// El administrador entra en modo consulta: crear y editar quedan para Oficina técnica.
+const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 // En celular las acciones van apiladas y angostas: lado a lado, la tabla se desplaza a lo ancho
 // y la columna fija de acciones tapa el estado.
 // El tema de PrimeVue va en una capa posterior a las utilidades: por eso el `!`.
@@ -144,7 +146,7 @@ const guardar = handleSubmit(async (valores) => {
 
 <template>
   <PaginaListado titulo="Proyectos" subtitulo="Obras registradas y su presupuesto de concreto">
-    <template #acciones>
+    <template v-if="puedeGestionar" #acciones>
       <Button
         label="Nuevo proyecto"
         icon="pi pi-plus"
@@ -175,7 +177,7 @@ const guardar = handleSubmit(async (valores) => {
       <template #col-estado="{ fila }">
         <EstadoTag :activo="fila.estado === 'Activo'" inactivo="Finalizado" />
       </template>
-      <template #acciones="{ fila }">
+      <template v-if="puedeGestionar" #acciones="{ fila }">
         <div class="flex flex-col items-center sm:flex-row sm:gap-1">
           <Button
             v-if="verPresupuesto"

@@ -51,6 +51,21 @@ describe('auth store', () => {
     expect(auth.autenticado).toBe(true)
     expect(auth.tieneRol('oficina_tecnica', 'gerencia')).toBe(true)
     expect(auth.tieneRol('administrador')).toBe(false)
+    expect(auth.puedeVer('gerencia')).toBe(false)
+  })
+
+  it('permite al administrador ver todos los módulos sin darle los demás roles', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({
+      ...usuario,
+      rol: { id: 1, clave: 'administrador', nombre: 'Administrador', descripcion: null },
+    })
+    const auth = useAuthStore()
+
+    await auth.login({ email: usuario.email, password: 'password' })
+
+    expect(auth.puedeVer('gerencia')).toBe(true)
+    expect(auth.puedeVer('oficina_tecnica')).toBe(true)
+    expect(auth.tieneRol('oficina_tecnica')).toBe(false)
   })
 
   it('queda sin sesión cuando /auth/me responde 401', async () => {

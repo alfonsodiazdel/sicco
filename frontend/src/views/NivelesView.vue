@@ -23,8 +23,13 @@ import type { NivelFila, SectorFila } from '@/types/niveles'
 import type { PartidaFila } from '@/types/partidas'
 import type { ProyectoFila } from '@/types/proyectos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToast()
+const auth = useAuthStore()
+
+// El administrador entra en modo consulta: niveles y sectores los gestiona el ingeniero de producción.
+const puedeGestionar = computed(() => auth.tieneRol('ingeniero_produccion'))
 
 const proyectos = ref<ProyectoFila[]>([])
 const proyectoId = ref<number | null>(null)
@@ -210,7 +215,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
     :titulo="proyecto ? `Niveles y sectores – ${proyecto.nombre}` : 'Niveles y sectores'"
     subtitulo="Sectores de vaciado por nivel, cada uno enlazado a una partida del presupuesto"
   >
-    <template #acciones>
+    <template v-if="puedeGestionar" #acciones>
       <Button
         label="Nuevo nivel"
         icon="pi pi-plus"
@@ -263,6 +268,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
               {{ n.nombre }}
             </button>
             <Button
+              v-if="puedeGestionar"
               icon="pi pi-pencil"
               text
               rounded
@@ -285,6 +291,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             {{ nivel ? `Sectores de vaciado – ${nivel.nombre}` : 'Sectores de vaciado' }}
           </h3>
           <Button
+            v-if="puedeGestionar"
             label="Nuevo sector"
             icon="pi pi-plus"
             aria-label="Nuevo sector"
@@ -324,7 +331,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           <template #col-volumen_vaciado_m3="{ fila }">{{
             decimales(fila.volumen_vaciado_m3)
           }}</template>
-          <template #acciones="{ fila }">
+          <template v-if="puedeGestionar" #acciones="{ fila }">
             <Button
               icon="pi pi-pencil"
               text

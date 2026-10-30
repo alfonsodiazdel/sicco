@@ -335,4 +335,13 @@ describe('ProyectosView', () => {
       expect(vista.find('button[aria-label^="Presupuesto de "]').exists()).toBe(false)
     },
   )
+
+  it('al administrador le muestra los proyectos sin ninguna acción de escritura', async () => {
+    const vista = await montar(undefined, 'administrador')
+
+    expect(filas(vista)).toHaveLength(3)
+    expect(vista.find('button[aria-label="Nuevo proyecto"]').exists()).toBe(false)
+    expect(vista.find('button[aria-label^="Editar "]').exists()).toBe(false)
+    expect(vista.find('button[aria-label^="Presupuesto de "]').exists()).toBe(false)
+  })
 })

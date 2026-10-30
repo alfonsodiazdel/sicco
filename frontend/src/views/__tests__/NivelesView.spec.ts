@@ -7,7 +7,10 @@ import InputNumber from 'primevue/inputnumber'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
 import type { NivelesServicio } from '@/services/niveles'
+import { createPinia, setActivePinia } from 'pinia'
 import NivelesView from '@/views/NivelesView.vue'
+import { useAuthStore } from '@/stores/auth'
+import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
@@ -54,7 +57,10 @@ vi.mock('@/services/niveles', async (importOriginal) => {
 
 type Servicios = { proyectos: ProyectosServicio; partidas: PartidasServicio }
 
-async function montar(preparar?: (s: Servicios) => Promise<void>) {
+async function montar(
+  preparar?: (s: Servicios) => Promise<void>,
+  rol: RolClave = 'ingeniero_produccion',
+) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
   const { crearNivelesEnMemoria } = await import('@/services/niveles')
@@ -62,8 +68,11 @@ async function montar(preparar?: (s: Servicios) => Promise<void>) {
   servicios.partidas = crearPartidasEnMemoria()
   servicios.niveles = crearNivelesEnMemoria(servicios.partidas)
   await preparar?.({ proyectos: servicios.proyectos, partidas: servicios.partidas })
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().usuario = { rol: { clave: rol } } as Usuario
   const vista = mount(NivelesView, {
-    global: { plugins: [PrimeVue], stubs: { teleport: true } },
+    global: { plugins: [PrimeVue, pinia], stubs: { teleport: true } },
   })
   await asentar()
   return vista
@@ -419,5 +428,17 @@ describe('NivelesView', () => {
       'Condominio Las Palmeras',
     ])
     expect(selectorProyecto(vista).props('modelValue')).toBe(2)
+  })
+
+  it('al administrador le muestra niveles y sectores sin ninguna acción de escritura', async () => {
+    const vista = await montar(undefined, 'administrador')
+
+    expect(vista.findAll('ul[aria-label="Niveles"] li').length).toBeGreaterThan(0)
+    expect(filas(vista).length).toBeGreaterThan(0)
+    for (const etiqueta of ['Nuevo nivel', 'Nuevo sector']) {
+      expect(vista.find(`button[aria-label="${etiqueta}"]`).exists()).toBe(false)
+    }
+    expect(vista.find('button[aria-label^="Editar nivel "]').exists()).toBe(false)
+    expect(vista.find('button[aria-label^="Editar sector "]').exists()).toBe(false)
   })
 })

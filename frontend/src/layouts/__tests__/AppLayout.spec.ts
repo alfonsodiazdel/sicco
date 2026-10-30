@@ -102,7 +102,7 @@ describe('AppLayout · menú por rol', () => {
     return wrapper
   }
 
-  it.each<RolClave>(['administrador', 'almacenero', 'ingeniero_produccion', 'gerencia'])(
+  it.each<RolClave>(['almacenero', 'ingeniero_produccion', 'gerencia'])(
     'no muestra Proyectos a %s',
     async (rol) => {
       const wrapper = await montarComo(rol)
@@ -111,8 +111,8 @@ describe('AppLayout · menú por rol', () => {
     },
   )
 
-  it('muestra Proyectos a Oficina técnica', async () => {
-    const wrapper = await montarComo('oficina_tecnica')
+  it.each<RolClave>(['oficina_tecnica', 'administrador'])('muestra Proyectos a %s', async (rol) => {
+    const wrapper = await montarComo(rol)
 
     expect(wrapper.find('nav a[href="/proyectos"]').exists()).toBe(true)
   })

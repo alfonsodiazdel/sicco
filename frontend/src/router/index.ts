@@ -8,7 +8,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     /** Ruta accesible sin sesión (login). */
     publica?: boolean
-    /** Roles permitidos; si se omite, cualquier usuario autenticado. */
+    /** Roles permitidos (el administrador entra a todo); si se omite, cualquier usuario autenticado. */
     roles?: RolClave[]
     titulo?: string
   }
@@ -16,12 +16,17 @@ declare module 'vue-router' {
 
 const implementados = ['/', '/usuarios', '/proyectos', '/partidas', '/niveles']
 
-// Módulos aún no implementados: comparten una vista provisional y ya respetan los roles.
-const modulosPendientes: RouteRecordRaw[] = menu
+// Vistas de los módulos ya implementados, por ruta del menú.
+const vistas: Record<string, RouteRecordRaw['component']> = {
+  '/proveedores': () => import('@/views/proveedores/ProveedoresView.vue'),
+}
+
+// Los módulos aún no implementados comparten una vista provisional y ya respetan los roles.
+const modulos: RouteRecordRaw[] = menu
   .filter((item) => !implementados.includes(item.ruta))
   .map((item) => ({
     path: item.ruta.slice(1),
-    component: () => import('@/views/EnConstruccionView.vue'),
+    component: vistas[item.ruta] ?? (() => import('@/views/EnConstruccionView.vue')),
     meta: { roles: item.roles, titulo: item.etiqueta },
   }))
 
@@ -72,7 +77,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/NivelesView.vue'),
         meta: { roles: ['ingeniero_produccion'], titulo: 'Niveles y sectores' },
       },
-      ...modulosPendientes,
+      ...modulos,
       {
         path: 'no-autorizado',
         name: 'no-autorizado',
@@ -110,7 +115,7 @@ router.beforeEach(async (to) => {
     return { name: 'cambiar-password' }
   }
 
-  if (to.meta.roles && !auth.tieneRol(...to.meta.roles)) {
+  if (to.meta.roles && !auth.puedeVer(...to.meta.roles)) {
     return { name: 'no-autorizado' }
   }
 

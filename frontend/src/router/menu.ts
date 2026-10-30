@@ -4,13 +4,14 @@ export interface ItemMenu {
   etiqueta: string
   icono: string
   ruta: string
-  /** Roles que ven la opción; si se omite, la ven todos. */
+  /** Roles que ven la opción (el administrador ve todas); si se omite, la ven todos. */
   roles?: RolClave[]
 }
 
 /**
  * Opciones del menú por rol (CU01: «el sistema muestra solo las opciones de su rol»).
  * Los roles se toman de los actores de cada caso de uso del documento SICCO.
+ * El administrador ve todas las opciones en modo consulta (auth.puedeVer).
  */
 export const menu: ItemMenu[] = [
   { etiqueta: 'Inicio', icono: 'pi pi-home', ruta: '/' },
@@ -44,6 +45,12 @@ export const menu: ItemMenu[] = [
     icono: 'pi pi-inbox',
     ruta: '/guias/sin-sector',
     roles: ['ingeniero_produccion', 'oficina_tecnica'],
+  },
+  {
+    etiqueta: 'Proveedores',
+    icono: 'pi pi-truck',
+    ruta: '/proveedores',
+    roles: ['almacenero', 'ingeniero_produccion', 'oficina_tecnica', 'gerencia'],
   },
   { etiqueta: 'Facturas', icono: 'pi pi-file', ruta: '/facturas', roles: ['oficina_tecnica'] },
   {

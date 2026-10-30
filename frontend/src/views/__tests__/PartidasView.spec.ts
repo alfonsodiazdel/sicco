@@ -7,7 +7,10 @@ import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
+import { createPinia, setActivePinia } from 'pinia'
 import PartidasView from '@/views/PartidasView.vue'
+import { useAuthStore } from '@/stores/auth'
+import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, confirm, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
@@ -46,6 +49,7 @@ vi.mock('@/services/partidas', async (importOriginal) => {
 async function montar(
   preparar?: (proyectos: ProyectosServicio) => Promise<void>,
   consulta: LocationQueryRaw = {},
+  rol: RolClave = 'oficina_tecnica',
 ) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
@@ -54,13 +58,16 @@ async function montar(
   servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria(async () => niveles)
   await preparar?.(servicios.proyectos)
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().usuario = { rol: { clave: rol } } as Usuario
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/partidas', component: PartidasView }],
   })
   await router.push({ path: '/partidas', query: consulta })
   const vista = mount(PartidasView, {
-    global: { plugins: [PrimeVue, router], stubs: { teleport: true } },
+    global: { plugins: [PrimeVue, router, pinia], stubs: { teleport: true } },
   })
   await asentar()
   return vista
@@ -348,5 +355,13 @@ describe('PartidasView', () => {
     const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
     expect(opciones.map((o) => o.nombre)).toEqual(['Torre Empresarial Javier Prado'])
     expect(selectorProyecto(vista).props('modelValue')).toBe(2)
+  })
+
+  it('al administrador le muestra el presupuesto sin ninguna acción de escritura', async () => {
+    const vista = await montar(undefined, {}, 'administrador')
+
+    expect(filas(vista).length).toBeGreaterThan(0)
+    expect(vista.find('button[aria-label="Agregar partida"]').exists()).toBe(false)
+    expect(vista.find('button[aria-label^="Editar partida "]').exists()).toBe(false)
   })
 })

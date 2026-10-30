@@ -24,7 +24,7 @@ const menuContraido = ref(localStorage.getItem(CLAVE_MENU_CONTRAIDO) === '1')
 const menuMovilAbierto = ref(false)
 const menuUsuario = ref<InstanceType<typeof Menu> | null>(null)
 
-const opciones = computed(() => menu.filter((item) => !item.roles || auth.tieneRol(...item.roles)))
+const opciones = computed(() => menu.filter((item) => !item.roles || auth.puedeVer(...item.roles)))
 
 const menuVisible = computed(() =>
   escritorio.value ? !menuContraido.value : menuMovilAbierto.value,
