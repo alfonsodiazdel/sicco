@@ -14,7 +14,9 @@ function errorHttp(status: number, message: string) {
 
 describe('mensajeDeError', () => {
   it('muestra el mensaje del servidor en los errores del usuario', () => {
-    expect(mensajeDeError(errorHttp(403, 'Su cuenta está inactiva.'))).toBe('Su cuenta está inactiva.')
+    expect(mensajeDeError(errorHttp(403, 'Su cuenta está inactiva.'))).toBe(
+      'Su cuenta está inactiva.',
+    )
   })
 
   it('no muestra el detalle interno de un error 500', () => {
