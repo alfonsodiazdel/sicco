@@ -1,6 +1,6 @@
 import { errorDeValidacion } from '@/services/errores'
 import { proyectosServicio } from '@/services/proyectos'
-import type { ProyectoOpcion, UsuarioDatos, UsuarioFila } from '@/types/usuarios'
+import type { IngenieroOpcion, ProyectoOpcion, UsuarioDatos, UsuarioFila } from '@/types/usuarios'
 
 export interface UsuariosServicio {
   listar(): Promise<UsuarioFila[]>
@@ -8,6 +8,8 @@ export interface UsuariosServicio {
   actualizar(id: number, datos: UsuarioDatos): Promise<UsuarioFila>
   cambiarEstado(id: number, activo: boolean): Promise<UsuarioFila>
   proyectos(): Promise<ProyectoOpcion[]>
+  /** Responsables posibles de un proyecto: no expone correo, rol ni asignaciones. */
+  ingenieros(): Promise<IngenieroOpcion[]>
 }
 
 const usuariosEjemplo: UsuarioFila[] = [
@@ -87,6 +89,11 @@ export function crearUsuariosEnMemoria(): UsuariosServicio {
     },
     async proyectos() {
       return (await proyectosServicio.listar()).map(({ id, nombre }) => ({ id, nombre }))
+    },
+    async ingenieros() {
+      return usuarios
+        .filter((u) => u.rol === 'ingeniero_produccion' && u.activo)
+        .map((u) => ({ id: u.id, nombre: `${u.nombres} ${u.apellidos}` }))
     },
   }
 }

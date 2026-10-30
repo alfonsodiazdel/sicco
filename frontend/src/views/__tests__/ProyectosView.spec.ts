@@ -180,7 +180,9 @@ describe('ProyectosView', () => {
   })
 
   it('ofrece como responsables solo a los ingenieros de producción activos', async () => {
+    let listar: ReturnType<typeof vi.spyOn> | undefined
     const vista = await montar(async (usuarios) => {
+      listar = vi.spyOn(usuarios, 'listar')
       const base = { proyecto_ids: [1] }
       const inactivo = await usuarios.crear({
         ...base,
@@ -207,8 +209,12 @@ describe('ProyectosView', () => {
     })
     await abrirNuevo(vista)
 
-    const opciones = vista.findComponent(Select).props('options') as { nombre: string }[]
-    expect(opciones.map((o) => o.nombre)).toEqual(['Lucía Ramos', 'Rosa Díaz'])
+    // Solo id y nombre: sin correo, rol ni proyectos de nadie.
+    expect(vista.findComponent(Select).props('options')).toStrictEqual([
+      { id: 3, nombre: 'Lucía Ramos' },
+      { id: 7, nombre: 'Rosa Díaz' },
+    ])
+    expect(listar).not.toHaveBeenCalled()
   })
 
   it('muestra el estado solo al editar y permite finalizar el proyecto', async () => {

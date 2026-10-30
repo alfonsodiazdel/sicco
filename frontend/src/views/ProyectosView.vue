@@ -20,6 +20,7 @@ import { menu } from '@/router/menu'
 import { usuariosServicio } from '@/services/usuarios'
 import { datosDeProyecto, esquemaProyecto, valoresDeProyecto } from '@/validaciones/proyecto'
 import { estadosProyecto, type ProyectoFila } from '@/types/proyectos'
+import type { IngenieroOpcion } from '@/types/usuarios'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 
 const toast = useToast()
@@ -44,7 +45,7 @@ function abrirPresupuesto(proyecto: ProyectoFila) {
 }
 
 const proyectos = ref<ProyectoFila[]>([])
-const ingenieros = ref<{ id: number; nombre: string }[]>([])
+const ingenieros = ref<IngenieroOpcion[]>([])
 const cargando = ref(true)
 const busqueda = ref('')
 
@@ -71,10 +72,7 @@ async function cargar() {
 }
 
 async function cargarIngenieros() {
-  const usuarios = await usuariosServicio.listar()
-  ingenieros.value = usuarios
-    .filter((u) => u.rol === 'ingeniero_produccion' && u.activo)
-    .map((u) => ({ id: u.id, nombre: `${u.nombres} ${u.apellidos}` }))
+  ingenieros.value = await usuariosServicio.ingenieros()
 }
 
 onMounted(async () => {

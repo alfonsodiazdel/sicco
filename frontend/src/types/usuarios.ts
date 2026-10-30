@@ -18,6 +18,11 @@ export interface ProyectoOpcion {
   nombre: string
 }
 
+export interface IngenieroOpcion {
+  id: number
+  nombre: string
+}
+
 export const etiquetasRol: Record<RolClave, string> = {
   administrador: 'Administrador',
   almacenero: 'Almacenero',
