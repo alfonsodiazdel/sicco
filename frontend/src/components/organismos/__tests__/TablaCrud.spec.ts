@@ -5,10 +5,15 @@ import TablaCrud from '@/components/organismos/TablaCrud.vue'
 
 const columnas = [
   { campo: 'nombre', encabezado: 'Nombre' },
+  { campo: 'email', encabezado: 'Correo', secundaria: true },
   { campo: 'activo', encabezado: 'Estado' },
 ]
 
-function montar(filas: { id: number; nombre: string; activo: boolean }[]) {
+type Fila = { id: number; nombre: string; email: string; activo: boolean }
+
+const ana: Fila = { id: 1, nombre: 'Ana', email: 'ana@sicco.test', activo: true }
+
+function montar(filas: Fila[]) {
   return mount(TablaCrud, {
     props: { filas, columnas, clave: 'id', vacio: 'No hay registros.' },
     slots: {
@@ -21,12 +26,33 @@ function montar(filas: { id: number; nombre: string; activo: boolean }[]) {
 
 describe('TablaCrud', () => {
   it('muestra el campo, la celda personalizada y las acciones de cada fila', () => {
-    const tabla = montar([{ id: 1, nombre: 'Ana', activo: true }])
+    const tabla = montar([ana])
     const celdas = tabla.findAll('tbody td').map((td) => td.text())
 
-    expect(tabla.findAll('th').map((th) => th.text())).toEqual(['Nombre', 'Estado', 'Acciones'])
+    expect(tabla.findAll('th').map((th) => th.text())).toEqual([
+      'Nombre',
+      'Correo',
+      'Estado',
+      'Acciones',
+    ])
     expect(tabla.get('th .sr-only').text()).toBe('Acciones')
-    expect(celdas).toEqual(['Ana', 'Sí', 'Editar Ana'])
+    expect(celdas).toEqual(['Ana', 'ana@sicco.test', 'Sí', 'Editar Ana'])
+  })
+
+  it('oculta las columnas secundarias en celular y fija las acciones a la derecha', () => {
+    const tabla = montar([ana])
+    const encabezados = tabla.findAll('th')
+    const celdas = tabla.findAll('tbody td')
+
+    for (const celda of [encabezados[1]!, celdas[1]!]) {
+      expect(celda.classes()).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
+    }
+    for (const celda of [encabezados[0]!, encabezados[2]!, celdas[0]!, celdas[2]!]) {
+      expect(celda.classes()).not.toContain('hidden')
+    }
+    for (const celda of [encabezados[3]!, celdas[3]!]) {
+      expect(celda.classes()).toContain('p-datatable-frozen-column')
+    }
   })
 
   it('muestra el texto de vacío sin filas', () => {

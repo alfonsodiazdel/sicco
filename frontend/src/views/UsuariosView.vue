@@ -28,8 +28,8 @@ const busqueda = ref('')
 
 const columnas = [
   { campo: 'nombre', encabezado: 'Nombre' },
-  { campo: 'email', encabezado: 'Correo' },
-  { campo: 'rol', encabezado: 'Rol' },
+  { campo: 'email', encabezado: 'Correo', secundaria: true },
+  { campo: 'rol', encabezado: 'Rol', secundaria: true },
   { campo: 'activo', encabezado: 'Estado' },
 ]
 const opcionesRol = Object.entries(etiquetasRol).map(([valor, etiqueta]) => ({ valor, etiqueta }))
@@ -142,7 +142,10 @@ async function alternarEstado(usuario: UsuarioFila) {
       vacio="No hay usuarios que coincidan con la búsqueda."
       :cargando="cargando"
     >
-      <template #col-nombre="{ fila }">{{ nombreCompleto(fila) }}</template>
+      <template #col-nombre="{ fila }">
+        <span>{{ nombreCompleto(fila) }}</span>
+        <span class="block text-sm text-surface-500 sm:hidden">{{ etiquetasRol[fila.rol] }}</span>
+      </template>
       <template #col-rol="{ fila }">{{ etiquetasRol[fila.rol] }}</template>
       <template #col-activo="{ fila }"><EstadoTag :activo="fila.activo" /></template>
       <template #acciones="{ fila }">

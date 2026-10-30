@@ -4,7 +4,8 @@ import Column from 'primevue/column'
 
 defineProps<{
   filas: T[]
-  columnas: { campo: string; encabezado: string }[]
+  /** `secundaria` oculta la columna por debajo de 640 px para que entren las acciones. */
+  columnas: { campo: string; encabezado: string; secundaria?: boolean }[]
   clave: string
   vacio: string
   cargando?: boolean
@@ -22,7 +23,7 @@ defineSlots<{
     :data-key="clave"
     :loading="cargando"
     scrollable
-    table-style="min-width: 40rem"
+    table-class="sm:min-w-[40rem]"
   >
     <template #empty>
       <p class="py-6 text-center text-surface-500">{{ vacio }}</p>
@@ -32,12 +33,14 @@ defineSlots<{
       :key="columna.campo"
       :field="columna.campo"
       :header="columna.encabezado"
+      :header-class="{ 'hidden sm:table-cell': columna.secundaria }"
+      :body-class="{ 'hidden sm:table-cell': columna.secundaria }"
     >
       <template v-if="$slots[`col-${columna.campo}`]" #body="{ data }">
         <slot :name="`col-${columna.campo}`" :fila="data" />
       </template>
     </Column>
-    <Column v-if="$slots.acciones" class="w-32">
+    <Column v-if="$slots.acciones" class="w-px" frozen align-frozen="right">
       <template #header>
         <span class="sr-only">Acciones</span>
       </template>
@@ -49,3 +52,12 @@ defineSlots<{
     </Column>
   </DataTable>
 </template>
+
+<style scoped>
+@media (width < 40rem) {
+  :deep(.p-datatable-thead > tr > th),
+  :deep(.p-datatable-tbody > tr > td) {
+    padding-inline: 0.5rem;
+  }
+}
+</style>

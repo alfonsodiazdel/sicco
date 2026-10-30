@@ -79,12 +79,23 @@ describe('UsuariosView', () => {
       'Acciones',
     ])
     expect(filas(vista)).toHaveLength(4)
-    expect(filas(vista)[3]?.slice(0, 4)).toEqual([
-      'Jorge Salas',
+    expect(filas(vista)[3]?.slice(1, 4)).toEqual([
       'oficina_tecnica@sicco.test',
       'Oficina técnica',
       'Inactivo',
     ])
+    expect(vista.get('tbody tr:nth-child(4) td span').text()).toBe('Jorge Salas')
+  })
+
+  it('en celular oculta correo y rol, y muestra el rol bajo el nombre', async () => {
+    const vista = await montar()
+    const encabezados = vista.findAll('th')
+    const rolBajoNombre = vista.get('tbody tr:nth-child(4) td:first-child .sm\\:hidden')
+
+    expect(encabezados[1]!.classes()).toContain('hidden')
+    expect(encabezados[2]!.classes()).toContain('hidden')
+    expect(encabezados[3]!.classes()).not.toContain('hidden')
+    expect(rolBajoNombre.text()).toBe('Oficina técnica')
   })
 
   it('exige los cinco campos obligatorios y no registra nada', async () => {
@@ -109,12 +120,8 @@ describe('UsuariosView', () => {
     )
     expect(vista.find('form').exists()).toBe(false)
     expect(filas(vista)).toHaveLength(5)
-    expect(filas(vista)[4]?.slice(0, 4)).toEqual([
-      'Ana Torres',
-      'ana.torres@sicco.test',
-      'Gerencia',
-      'Activo',
-    ])
+    expect(filas(vista)[4]?.slice(1, 4)).toEqual(['ana.torres@sicco.test', 'Gerencia', 'Activo'])
+    expect(vista.get('tbody tr:nth-child(5) td span').text()).toBe('Ana Torres')
   })
 
   it('rechaza un correo ya registrado', async () => {
