@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
 use App\Http\Controllers\Api\V1\RolController;
 use App\Http\Controllers\Api\V1\UsuarioController;
@@ -39,6 +40,19 @@ Route::prefix('v1')->group(function () {
                 Route::post('usuarios', [UsuarioController::class, 'store']);
                 Route::put('usuarios/{usuario}', [UsuarioController::class, 'update'])->whereNumber('usuario');
                 Route::patch('usuarios/{usuario}/estado', [UsuarioController::class, 'estado'])->whereNumber('usuario');
+            });
+
+            // Proveedores (concreteras): los consultan todos los roles (el administrador ve todo)
+            // y los gestiona Oficina técnica.
+            Route::middleware('rol:administrador,almacenero,ingeniero_produccion,oficina_tecnica,gerencia')->group(function () {
+                Route::apiResource('proveedores', ProveedorController::class)
+                    ->only(['index', 'show'])
+                    ->parameters(['proveedores' => 'proveedor']);
+            });
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::apiResource('proveedores', ProveedorController::class)
+                    ->only(['store', 'update', 'destroy'])
+                    ->parameters(['proveedores' => 'proveedor']);
             });
         });
     });

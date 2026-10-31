@@ -28,7 +28,7 @@ enum Rol: string
     public function descripcion(): string
     {
         return match ($this) {
-            self::Administrador => 'Gestiona los usuarios del sistema y sus roles.',
+            self::Administrador => 'Gestiona los usuarios del sistema y sus roles, y consulta todos los módulos.',
             self::Almacenero => 'Recibe el concreto en obra y registra las guías de remisión desde el celular.',
             self::IngenieroProduccion => 'Gestiona niveles y sectores, asigna guías a sectores de vaciado y controla el desperdicio.',
             self::OficinaTecnica => 'Gestiona proyectos y presupuestos, registra facturas y genera los reportes de costos.',

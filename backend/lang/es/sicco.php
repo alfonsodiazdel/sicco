@@ -10,4 +10,8 @@ return [
         'debe_cambiar_password' => 'Debe cambiar su contraseña temporal antes de continuar.',
         'password_actualizada' => 'Contraseña actualizada correctamente.',
     ],
+    'proveedores' => [
+        'ruc_invalido' => 'El RUC debe tener 11 dígitos y empezar con 10, 15, 16, 17 o 20.',
+        'ruc_duplicado' => 'Ya existe un proveedor con este RUC.',
+    ],
 ];

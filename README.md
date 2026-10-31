@@ -61,6 +61,10 @@ docker compose --profile queue up -d queue         # worker de colas (correos)
   `oficina_tecnica`, `gerencia` (`backend/app/Enums/Rol.php` y `frontend/src/types/auth.ts`).
 - Backend: `->middleware('rol:oficina_tecnica,gerencia')`. Frontend: `meta.roles` en
   la ruta y `src/router/menu.ts` para el menú.
+- El administrador **consulta todo** (solo lectura): en el backend se agrega
+  `administrador` a los grupos de rutas de lectura (`index`/`show`), no a los de gestión;
+  en el frontend `auth.puedeVer(...)` lo deja pasar en el menú y las rutas, y
+  `auth.tieneRol(...)` sigue decidiendo quién crea, edita o elimina.
 
 ## Despliegue de la demo
 
