@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useToast } from 'primevue/usetoast'
@@ -14,28 +14,26 @@ import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import { elementosEstructurales, resistenciasFc } from '@/catalogos/partidas'
 import { partidasServicio } from '@/services/partidas'
-import { proyectosServicio } from '@/services/proyectos'
 import { decimales, soles, totalPartida, totalPresupuesto } from '@/services/presupuesto'
 import { esquemaPartida, valoresDePartida } from '@/validaciones/partida'
 import type { PartidaFila } from '@/types/partidas'
-import type { ProyectoFila } from '@/types/proyectos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
 const confirm = useConfirm()
-const route = useRoute()
 const auth = useAuthStore()
+const proyectoActual = useProyectoActualStore()
 
 // El administrador entra en modo consulta: registrar y editar quedan para Oficina técnica.
 const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 
-const proyectos = ref<ProyectoFila[]>([])
-const proyectoId = ref<number | null>(null)
+// El proyecto se elige en el encabezado (SelectorProyecto).
+const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const cargando = ref(true)
 
-const proyecto = computed(() => proyectos.value.find((p) => p.id === proyectoId.value))
 const total = computed(() => totalPresupuesto(partidas.value))
 
 const columnas = [
@@ -47,27 +45,35 @@ const columnas = [
   { campo: 'total', encabezado: 'Total S/', numerica: true },
 ]
 
-async function cargarPartidas() {
-  partidas.value = proyectoId.value ? await partidasServicio.listar(proyectoId.value) : []
+function avisarError(error: unknown) {
+  toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
 }
 
-watch(proyectoId, async () => {
+async function cargarPartidas() {
+  if (!proyectoActual.cargado) return
+  const id = proyectoId.value
+  cargando.value = true
   try {
-    await cargarPartidas()
+    const filas = id ? await partidasServicio.listar(id) : []
+    // Si se eligió otro proyecto mientras cargaba, esta respuesta ya no aplica.
+    if (id !== proyectoId.value) return
+    partidas.value = filas
   } catch (error) {
-    toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
+    if (id !== proyectoId.value) return
+    partidas.value = []
+    avisarError(error)
   }
-})
+  cargando.value = false
+}
+
+// Al tener la lista de proyectos y cada vez que se elige otro en el encabezado.
+watch(() => proyectoActual.cargado && proyectoId.value, cargarPartidas, { immediate: true })
 
 onMounted(async () => {
   try {
-    proyectos.value = (await proyectosServicio.asignados()).filter((p) => p.estado === 'Activo')
-    // Desde Proyectos llega ?proyecto=<id>; solo se respeta si es uno de los activos asignados.
-    const pedido = proyectos.value.find((p) => String(p.id) === route.query.proyecto)
-    proyectoId.value = (pedido ?? proyectos.value[0])?.id ?? null
+    await proyectoActual.cargar()
   } catch (error) {
-    toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
-  } finally {
+    avisarError(error)
     cargando.value = false
   }
 })
@@ -129,7 +135,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
 
 <template>
   <PaginaListado
-    titulo="Presupuesto del proyecto"
+    :titulo="proyecto ? `Presupuesto – ${proyecto.nombre}` : 'Presupuesto del proyecto'"
     subtitulo="Volúmenes en m³ e importes en soles, con dos decimales"
   >
     <template v-if="puedeGestionar" #acciones>
@@ -142,23 +148,13 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
       />
     </template>
 
-    <template #herramientas>
-      <Select
-        v-model="proyectoId"
-        :options="proyectos"
-        option-label="nombre"
-        option-value="id"
-        placeholder="Seleccione un proyecto"
-        aria-label="Proyecto"
-        class="w-full sm:w-80"
-      />
-    </template>
-
     <TablaCrud
       :filas="partidas"
       :columnas="columnas"
       clave="id"
-      vacio="Este proyecto aún no tiene partidas."
+      :vacio="
+        proyecto ? 'Este proyecto aún no tiene partidas.' : 'No tiene proyectos activos asignados.'
+      "
       :cargando="cargando"
     >
       <template #col-elemento="{ fila }">

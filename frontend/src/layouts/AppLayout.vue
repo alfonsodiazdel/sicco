@@ -5,14 +5,19 @@ import Button from 'primevue/button'
 import Drawer from 'primevue/drawer'
 import Menu from 'primevue/menu'
 import Avatar from 'primevue/avatar'
+import { useToast } from 'primevue/usetoast'
+import SelectorProyecto from '@/components/organismos/SelectorProyecto.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import { menu } from '@/router/menu'
 
 const CLAVE_MENU_CONTRAIDO = 'sicco-menu-contraido'
 
 const auth = useAuthStore()
+const proyectoActual = useProyectoActualStore()
 const router = useRouter()
 const route = useRoute()
+const toast = useToast()
 
 const consultaEscritorio = window.matchMedia('(min-width: 768px)')
 const escritorio = ref(consultaEscritorio.matches)
@@ -64,6 +69,35 @@ watch(menuContraido, (contraido) =>
 )
 
 watch([() => route.fullPath, escritorio], () => (menuMovilAbierto.value = false))
+
+// Un enlace con ?proyecto=<id> elige ese proyecto en el encabezado. Si no es uno de los activos
+// asignados se avisa en vez de mostrar otro en silencio; luego se quita de la URL, que ya no
+// seguiría al selector.
+watch(
+  () => [route.meta.porProyecto, route.query.proyecto],
+  async () => {
+    if (!route.meta.porProyecto) return
+    try {
+      await proyectoActual.cargar()
+    } catch {
+      return // La vista ya avisa que no se pudieron traer los proyectos.
+    }
+    const { proyecto: pedido, ...resto } = route.query
+    if (pedido === undefined) return
+    if (!proyectoActual.elegir(pedido)) {
+      toast.add({
+        severity: 'warn',
+        summary: 'No tiene acceso a ese proyecto o ya no está activo.',
+        detail: proyectoActual.proyecto
+          ? `Se muestra ${proyectoActual.proyecto.nombre}.`
+          : undefined,
+        life: 6000,
+      })
+    }
+    await router.replace({ query: resto })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -149,21 +183,24 @@ watch([() => route.fullPath, escritorio], () => (menuMovilAbierto.value = false)
           <h1 class="truncate text-base font-semibold text-surface-900">{{ route.meta.titulo }}</h1>
         </div>
 
-        <button
-          type="button"
-          class="flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-100"
-          aria-haspopup="true"
-          aria-controls="menu-usuario"
-          @click="menuUsuario?.toggle($event)"
-        >
-          <span class="hidden text-right sm:block">
-            <span class="block text-sm font-medium leading-tight text-surface-900">
-              {{ auth.usuario?.nombre_completo }}
+        <div class="flex shrink-0 items-center gap-2 sm:gap-4">
+          <SelectorProyecto v-if="route.meta.porProyecto" />
+          <button
+            type="button"
+            class="flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-100"
+            aria-haspopup="true"
+            aria-controls="menu-usuario"
+            @click="menuUsuario?.toggle($event)"
+          >
+            <span class="hidden text-right sm:block">
+              <span class="block text-sm font-medium leading-tight text-surface-900">
+                {{ auth.usuario?.nombre_completo }}
+              </span>
+              <span class="block text-xs text-surface-500">{{ auth.usuario?.rol.nombre }}</span>
             </span>
-            <span class="block text-xs text-surface-500">{{ auth.usuario?.rol.nombre }}</span>
-          </span>
-          <Avatar :label="iniciales" shape="circle" class="!bg-primary-100 !text-primary-700" />
-        </button>
+            <Avatar :label="iniciales" shape="circle" class="!bg-primary-100 !text-primary-700" />
+          </button>
+        </div>
         <Menu id="menu-usuario" ref="menuUsuario" :model="accionesUsuario" popup />
       </header>
 

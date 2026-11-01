@@ -10,6 +10,7 @@ import type { NivelesServicio } from '@/services/niveles'
 import { createPinia, setActivePinia } from 'pinia'
 import NivelesView from '@/views/NivelesView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, servicios } = vi.hoisted(() => ({
@@ -94,8 +95,8 @@ const niveles = (vista: VueWrapper) =>
 const nivelElegido = (vista: VueWrapper) =>
   vista.find('ul[aria-label="Niveles"] button[aria-current="true"]').text()
 
-const selectorProyecto = (vista: VueWrapper) =>
-  vista.findAllComponents(Select).find((s) => s.props('ariaLabel') === 'Proyecto')!
+// El proyecto se elige en el encabezado (SelectorProyecto); la vista lo toma del store.
+const nombresOfrecidos = () => useProyectoActualStore().proyectos.map((p) => p.nombre)
 
 const select = (vista: VueWrapper, id: string) =>
   vista.findAllComponents(Select).find((s) => s.props('labelId') === id)!
@@ -106,8 +107,8 @@ const numero = (vista: VueWrapper, id: string) =>
 const errores = (vista: VueWrapper) =>
   Object.fromEntries(vista.findAll('small.text-red-600').map((e) => [e.attributes('id'), e.text()]))
 
-async function elegirProyecto(vista: VueWrapper, id: number) {
-  await selectorProyecto(vista).setValue(id)
+async function elegirProyecto(id: number) {
+  useProyectoActualStore().elegir(id)
   await asentar()
 }
 
@@ -161,7 +162,7 @@ describe('NivelesView', () => {
   it('lista los niveles por orden y los sectores del primer nivel con su elemento y f’c', async () => {
     const vista = await montar()
 
-    expect(selectorProyecto(vista).props('modelValue')).toBe(1)
+    expect(useProyectoActualStore().proyectoId).toBe(1)
     expect(vista.get('h2').text()).toBe('Niveles y sectores – Residencial Los Álamos')
     expect(niveles(vista)).toEqual(['Sótano 1', 'Piso 1', 'Piso 2'])
     expect(nivelElegido(vista)).toBe('Sótano 1')
@@ -213,7 +214,7 @@ describe('NivelesView', () => {
 
   it('registra niveles ordenados por orden y un sector que guarda solo los ids', async () => {
     const vista = await montar()
-    await elegirProyecto(vista, 2)
+    await elegirProyecto(2)
     const crearSector = vi.spyOn(servicios.niveles!, 'crearSector')
 
     await pulsar(vista, 'Nuevo nivel')
@@ -364,8 +365,7 @@ describe('NivelesView', () => {
       await proyectos.actualizar(1, { ...primero!, estado: 'Finalizado' })
     })
 
-    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
-    expect(opciones.map((o) => o.nombre)).toEqual([
+    expect(nombresOfrecidos()).toEqual([
       'Torre Empresarial Javier Prado',
       'Condominio Las Palmeras',
     ])
@@ -375,7 +375,7 @@ describe('NivelesView', () => {
   it('al cambiar de proyecto deja de lado el nivel elegido', async () => {
     const vista = await montar()
     await elegirNivel(vista, 'Piso 2')
-    await elegirProyecto(vista, 2)
+    await elegirProyecto(2)
 
     expect(nivelElegido(vista)).toBe('Piso 1')
     expect(vista.text()).toContain('Sectores de vaciado – Piso 1')
@@ -384,7 +384,7 @@ describe('NivelesView', () => {
 
   it('sin presupuesto avisa y bloquea los dos botones', async () => {
     const vista = await montar()
-    await elegirProyecto(vista, 3)
+    await elegirProyecto(3)
 
     expect(vista.text()).toContain(
       'Este proyecto aún no tiene presupuesto registrado. Oficina técnica debe registrar sus partidas antes de definir los sectores.',
@@ -406,7 +406,7 @@ describe('NivelesView', () => {
         precio_unitario: 385,
       })
     })
-    await elegirProyecto(vista, 3)
+    await elegirProyecto(3)
 
     expect(vista.text()).not.toContain('aún no tiene presupuesto registrado')
     expect(vista.get('button[aria-label="Nuevo nivel"]').attributes('disabled')).toBeUndefined()
@@ -422,12 +422,12 @@ describe('NivelesView', () => {
     servicios.asignados = [2, 3]
     const vista = await montar()
 
-    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
-    expect(opciones.map((o) => o.nombre)).toEqual([
+    expect(nombresOfrecidos()).toEqual([
       'Torre Empresarial Javier Prado',
       'Condominio Las Palmeras',
     ])
-    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
+    expect(useProyectoActualStore().proyectoId).toBe(2)
+    expect(vista.get('h2').text()).toBe('Niveles y sectores – Torre Empresarial Javier Prado')
   })
 
   it('al administrador le muestra niveles y sectores sin ninguna acción de escritura', async () => {

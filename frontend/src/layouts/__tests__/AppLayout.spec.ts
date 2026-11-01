@@ -3,9 +3,29 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PrimeVue from 'primevue/config'
+import Select from 'primevue/select'
 import AppLayout from '@/layouts/AppLayout.vue'
+import type { ProyectosServicio } from '@/services/proyectos'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import type { RolClave, Usuario } from '@/types/auth'
+
+const { toast, servicios } = vi.hoisted(() => ({
+  toast: { add: vi.fn() },
+  servicios: { proyectos: null as ProyectosServicio | null, asignados: [] as number[] },
+}))
+
+vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
+
+vi.mock('@/services/proyectos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/proyectos')>()
+  return {
+    ...real,
+    get proyectosServicio() {
+      return servicios.proyectos
+    },
+  }
+})
 
 function simularPantalla(escritorio: boolean) {
   vi.stubGlobal(
@@ -116,4 +136,106 @@ describe('AppLayout · menú por rol', () => {
 
     expect(wrapper.find('nav a[href="/proyectos"]').exists()).toBe(true)
   })
+})
+
+describe('AppLayout · selector de proyecto', () => {
+  beforeEach(async () => {
+    simularPantalla(true)
+    toast.add.mockClear()
+    servicios.asignados = [1, 2, 3]
+    const { crearProyectosEnMemoria } = await import('@/services/proyectos')
+    servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function montarEn(ruta: string) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useAuthStore().usuario = {
+      nombres: 'Ana',
+      apellidos: 'Paz',
+      rol: { clave: 'oficina_tecnica' },
+    } as Usuario
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/partidas', component: { template: '<p>Vista</p>' }, meta: { porProyecto: true } },
+        { path: '/proveedores', component: { template: '<p>Vista</p>' } },
+      ],
+    })
+    await router.push(ruta)
+    const wrapper = mount(AppLayout, { global: { plugins: [pinia, router, PrimeVue] } })
+    await flushPromises()
+    return { wrapper, router }
+  }
+
+  const selector = (wrapper: Awaited<ReturnType<typeof montarEn>>['wrapper']) =>
+    wrapper.findAllComponents(Select).find((s) => s.props('ariaLabel') === 'Proyecto')
+
+  it('en una vista por proyecto ofrece los proyectos junto al perfil y cambia el elegido', async () => {
+    const { wrapper } = await montarEn('/partidas')
+    const select = selector(wrapper)!
+
+    expect(wrapper.get('header').text()).toContain('Residencial Los Álamos')
+    expect((select.props('options') as { nombre: string }[]).map((o) => o.nombre)).toEqual([
+      'Residencial Los Álamos',
+      'Torre Empresarial Javier Prado',
+      'Condominio Las Palmeras',
+    ])
+
+    await select.setValue(2)
+    expect(useProyectoActualStore().proyectoId).toBe(2)
+    expect(wrapper.get('header').text()).toContain('Torre Empresarial Javier Prado')
+  })
+
+  it('no aparece en las vistas que no dependen del proyecto', async () => {
+    const { wrapper } = await montarEn('/proveedores')
+
+    expect(selector(wrapper)).toBeUndefined()
+    expect(useProyectoActualStore().cargado).toBe(false)
+  })
+
+  it('con un solo proyecto lo muestra sin nada que elegir', async () => {
+    servicios.asignados = [2]
+    const { wrapper } = await montarEn('/partidas')
+
+    expect(selector(wrapper)).toBeUndefined()
+    expect(wrapper.get('[data-proyecto-actual]').attributes('title')).toBe(
+      'Torre Empresarial Javier Prado',
+    )
+  })
+
+  it('sin proyectos asignados lo dice', async () => {
+    servicios.asignados = []
+    const { wrapper } = await montarEn('/partidas')
+
+    expect(wrapper.get('header').text()).toContain('Sin proyectos asignados')
+  })
+
+  it('un enlace con ?proyecto= elige ese proyecto y lo quita de la URL', async () => {
+    const { router } = await montarEn('/partidas?proyecto=3')
+
+    expect(useProyectoActualStore().proyectoId).toBe(3)
+    expect(router.currentRoute.value.fullPath).toBe('/partidas')
+    expect(toast.add).not.toHaveBeenCalled()
+  })
+
+  it.each(['1', '99', 'abc'])(
+    'con ?proyecto=%s que no le corresponde avisa en vez de cambiar en silencio',
+    async (proyecto) => {
+      servicios.asignados = [2, 3]
+      const { router } = await montarEn(`/partidas?proyecto=${proyecto}`)
+
+      expect(useProyectoActualStore().proyectoId).toBe(2)
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'warn',
+          summary: 'No tiene acceso a ese proyecto o ya no está activo.',
+          detail: 'Se muestra Torre Empresarial Javier Prado.',
+        }),
+      )
+      expect(router.currentRoute.value.fullPath).toBe('/partidas')
+    },
+  )
 })

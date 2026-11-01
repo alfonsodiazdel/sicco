@@ -11,6 +11,8 @@ declare module 'vue-router' {
     /** Roles permitidos (el administrador entra a todo); si se omite, cualquier usuario autenticado. */
     roles?: RolClave[]
     titulo?: string
+    /** Vista que trabaja sobre el proyecto elegido en el encabezado (SelectorProyecto). */
+    porProyecto?: boolean
   }
 }
 
@@ -69,13 +71,13 @@ const routes: RouteRecordRaw[] = [
         path: 'partidas',
         name: 'partidas',
         component: () => import('@/views/PartidasView.vue'),
-        meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto' },
+        meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto', porProyecto: true },
       },
       {
         path: 'niveles',
         name: 'niveles',
         component: () => import('@/views/NivelesView.vue'),
-        meta: { roles: ['ingeniero_produccion'], titulo: 'Niveles y sectores' },
+        meta: { roles: ['ingeniero_produccion'], titulo: 'Niveles y sectores', porProyecto: true },
       },
       ...modulos,
       {

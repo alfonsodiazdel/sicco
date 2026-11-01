@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
 import { asentar, usarRelojFalso } from './asentar'
-import { createMemoryHistory, createRouter, type LocationQueryRaw } from 'vue-router'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import PartidasView from '@/views/PartidasView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, confirm, servicios } = vi.hoisted(() => ({
@@ -48,7 +48,6 @@ vi.mock('@/services/partidas', async (importOriginal) => {
 
 async function montar(
   preparar?: (proyectos: ProyectosServicio) => Promise<void>,
-  consulta: LocationQueryRaw = {},
   rol: RolClave = 'oficina_tecnica',
 ) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
@@ -61,13 +60,8 @@ async function montar(
   const pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().usuario = { rol: { clave: rol } } as Usuario
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/partidas', component: PartidasView }],
-  })
-  await router.push({ path: '/partidas', query: consulta })
   const vista = mount(PartidasView, {
-    global: { plugins: [PrimeVue, router, pinia], stubs: { teleport: true } },
+    global: { plugins: [PrimeVue, pinia], stubs: { teleport: true } },
   })
   await asentar()
   return vista
@@ -84,13 +78,14 @@ function filas(vista: VueWrapper) {
     )
 }
 
-const selectorProyecto = (vista: VueWrapper) =>
-  vista.findAllComponents(Select).find((s) => s.props('ariaLabel') === 'Proyecto')!
+// El proyecto se elige en el encabezado (SelectorProyecto); la vista lo toma del store.
+const proyectoActual = () => useProyectoActualStore()
+const nombresOfrecidos = () => proyectoActual().proyectos.map((p) => p.nombre)
 
 const totalPresupuestado = (vista: VueWrapper) => vista.get('[data-total-presupuesto]').text()
 
-async function elegirProyecto(vista: VueWrapper, id: number) {
-  await selectorProyecto(vista).setValue(id)
+async function elegirProyecto(id: number) {
+  proyectoActual().elegir(id)
   await asentar()
 }
 
@@ -138,8 +133,8 @@ describe('PartidasView', () => {
   it('lista las partidas del primer proyecto con su total y el total presupuestado', async () => {
     const vista = await montar()
 
-    expect(vista.get('h2').text()).toBe('Presupuesto del proyecto')
-    expect(selectorProyecto(vista).props('modelValue')).toBe(1)
+    expect(vista.get('h2').text()).toBe('Presupuesto – Residencial Los Álamos')
+    expect(proyectoActual().proyectoId).toBe(1)
     expect(vista.findAll('th').map((th) => th.text())).toEqual([
       'Elemento',
       "f'c",
@@ -173,47 +168,56 @@ describe('PartidasView', () => {
       await proyectos.actualizar(1, { ...primero!, estado: 'Finalizado' })
     })
 
-    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
-    expect(opciones.map((o) => o.nombre)).toEqual([
+    expect(nombresOfrecidos()).toEqual([
       'Torre Empresarial Javier Prado',
       'Condominio Las Palmeras',
     ])
     expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
   })
 
-  it('preselecciona el proyecto que llega desde la lista de proyectos', async () => {
-    const vista = await montar(undefined, { proyecto: '2' })
+  it('muestra el proyecto ya elegido en otra vista sin volver a pedir los proyectos', async () => {
+    await montar()
+    await elegirProyecto(2)
+    const asignados = vi.spyOn(servicios.proyectos!, 'asignados')
+    const otra = mount(PartidasView, {
+      global: { plugins: [PrimeVue, getActivePinia()!], stubs: { teleport: true } },
+    })
+    await asentar()
 
-    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
-    expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
+    expect(asignados).not.toHaveBeenCalled()
+    expect(filas(otra).map((f) => f[0])).toEqual(['Placa'])
   })
 
-  it.each(['99', 'abc'])(
-    'con un proyecto inexistente (%s) elige el primer proyecto activo',
-    async (proyecto) => {
-      const vista = await montar(undefined, { proyecto })
+  it('descarta la respuesta de un proyecto que se dejó de lado mientras cargaba', async () => {
+    const vista = await montar()
+    const real = servicios.partidas!.listar
+    let soltar!: () => void
+    vi.spyOn(servicios.partidas!, 'listar').mockImplementation(async (id) => {
+      if (id === 2) await new Promise<void>((r) => (soltar = r))
+      return real(id)
+    })
+    proyectoActual().elegir(2)
+    await asentar()
+    await elegirProyecto(3)
+    soltar()
+    await asentar()
 
-      expect(selectorProyecto(vista).props('modelValue')).toBe(1)
-      expect(filas(vista).map((f) => f[0])).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
-    },
-  )
+    expect(vista.text()).toContain('Este proyecto aún no tiene partidas.')
+    expect(totalPresupuestado(vista)).toBe('S/ 0.00')
+  })
 
-  it('no preselecciona un proyecto finalizado', async () => {
-    const vista = await montar(
-      async (proyectos) => {
-        const segundo = (await proyectos.listar()).find((p) => p.id === 2)
-        await proyectos.actualizar(2, { ...segundo!, estado: 'Finalizado' })
-      },
-      { proyecto: '2' },
-    )
+  it('sin proyectos activos asignados lo dice en vez de hablar de partidas', async () => {
+    servicios.asignados = []
+    const vista = await montar()
 
-    expect(selectorProyecto(vista).props('modelValue')).toBe(1)
-    expect(filas(vista).map((f) => f[0])).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
+    expect(vista.get('h2').text()).toBe('Presupuesto del proyecto')
+    expect(vista.text()).toContain('No tiene proyectos activos asignados.')
+    expect(vista.get('button[aria-label="Agregar partida"]').attributes('disabled')).toBeDefined()
   })
 
   it('al elegir otro proyecto muestra solo sus partidas y su total', async () => {
     const vista = await montar()
-    await elegirProyecto(vista, 3)
+    await elegirProyecto(3)
 
     expect(vista.text()).toContain('Este proyecto aún no tiene partidas.')
     expect(totalPresupuestado(vista)).toBe('S/ 0.00')
@@ -221,7 +225,7 @@ describe('PartidasView', () => {
 
   it('registra partidas con decimales y actualiza el total presupuestado', async () => {
     const vista = await montar()
-    await elegirProyecto(vista, 3)
+    await elegirProyecto(3)
 
     await abrirNuevo(vista)
     await llenar(vista, { metrado: 12.5, desperdicio: 5, precio: 33.33 })
@@ -350,15 +354,14 @@ describe('PartidasView', () => {
 
   it('ofrece solo los proyectos asignados al usuario', async () => {
     servicios.asignados = [2]
-    const vista = await montar(undefined, { proyecto: '1' })
+    const vista = await montar()
 
-    const opciones = selectorProyecto(vista).props('options') as { nombre: string }[]
-    expect(opciones.map((o) => o.nombre)).toEqual(['Torre Empresarial Javier Prado'])
-    expect(selectorProyecto(vista).props('modelValue')).toBe(2)
+    expect(nombresOfrecidos()).toEqual(['Torre Empresarial Javier Prado'])
+    expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
   })
 
   it('al administrador le muestra el presupuesto sin ninguna acción de escritura', async () => {
-    const vista = await montar(undefined, {}, 'administrador')
+    const vista = await montar(undefined, 'administrador')
 
     expect(filas(vista).length).toBeGreaterThan(0)
     expect(vista.find('button[aria-label="Agregar partida"]').exists()).toBe(false)

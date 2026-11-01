@@ -10,6 +10,7 @@ import type { ProyectosServicio } from '@/services/proyectos'
 import type { UsuariosServicio } from '@/services/usuarios'
 import ProyectosView from '@/views/ProyectosView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, servicios } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const { toast, servicios } = vi.hoisted(() => ({
   servicios: {
     proyectos: null as ProyectosServicio | null,
     usuarios: null as UsuariosServicio | null,
+    asignados: [] as number[],
   },
 }))
 
@@ -51,7 +53,7 @@ async function montar(
 ) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
   const { crearUsuariosEnMemoria } = await import('@/services/usuarios')
-  servicios.proyectos = crearProyectosEnMemoria()
+  servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.usuarios = crearUsuariosEnMemoria()
   await preparar?.(servicios.usuarios)
   const pinia = createPinia()
@@ -105,6 +107,7 @@ afterEach(() => vi.useRealTimers())
 describe('ProyectosView', () => {
   beforeEach(() => {
     toast.add.mockClear()
+    servicios.asignados = [1, 2, 3]
     // Select y DatePicker de PrimeVue lo usan al montarse; jsdom no lo trae.
     vi.stubGlobal(
       'matchMedia',
@@ -337,7 +340,37 @@ describe('ProyectosView', () => {
 
     await botones[1]!.trigger('click')
     await asentar()
-    expect(router.currentRoute.value.fullPath).toBe('/partidas?proyecto=2')
+    expect(router.currentRoute.value.fullPath).toBe('/partidas')
+    expect(useProyectoActualStore().proyectoId).toBe(2)
+  })
+
+  it('ofrece el presupuesto solo en los proyectos activos asignados al usuario', async () => {
+    servicios.asignados = [2, 3]
+    const vista = await montar(async () => {
+      const tercero = (await servicios.proyectos!.listar()).find((p) => p.id === 3)!
+      await servicios.proyectos!.actualizar(3, { ...tercero, estado: 'Finalizado' })
+    })
+
+    expect(filas(vista)).toHaveLength(3)
+    expect(
+      vista.findAll('button[aria-label^="Presupuesto de "]').map((b) => b.attributes('aria-label')),
+    ).toEqual(['Presupuesto de Torre Empresarial Javier Prado'])
+  })
+
+  it('al finalizar un proyecto deja de ofrecer su presupuesto', async () => {
+    const vista = await montar()
+    await vista.get('button[aria-label="Editar Torre Empresarial Javier Prado"]').trigger('click')
+    await asentar()
+    await vista
+      .findAllComponents(Select)
+      .find((s) => s.props('labelId') === 'estado')!
+      .setValue('Finalizado')
+    await guardar(vista)
+
+    expect(
+      vista.find('button[aria-label="Presupuesto de Torre Empresarial Javier Prado"]').exists(),
+    ).toBe(false)
+    expect(useProyectoActualStore().proyectos.map((p) => p.id)).toEqual([1, 3])
   })
 
   it.each<RolClave>(['ingeniero_produccion', 'gerencia'])(
@@ -362,6 +395,7 @@ describe('ProyectosView', () => {
     expect(filas(vista)).toHaveLength(3)
     expect(vista.find('button[aria-label="Nuevo proyecto"]').exists()).toBe(false)
     expect(vista.find('button[aria-label^="Editar "]').exists()).toBe(false)
-    expect(vista.find('button[aria-label^="Presupuesto de "]').exists()).toBe(false)
+    // Consultar el presupuesto no escribe nada: lo ve como en el menú.
+    expect(vista.findAll('button[aria-label^="Presupuesto de "]')).toHaveLength(3)
   })
 })

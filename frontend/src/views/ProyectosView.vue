@@ -16,6 +16,7 @@ import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 import { proyectosServicio } from '@/services/proyectos'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 import { menu } from '@/router/menu'
 import { datosDeProyecto, esquemaProyecto, valoresDeProyecto } from '@/validaciones/proyecto'
 import { estadosProyecto, type ProyectoFila } from '@/types/proyectos'
@@ -25,10 +26,16 @@ import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 const toast = useToast()
 const router = useRouter()
 const auth = useAuthStore()
+const proyectoActual = useProyectoActualStore()
 
 const rutaPresupuesto = '/partidas'
 const rolesPresupuesto = menu.find((item) => item.ruta === rutaPresupuesto)?.roles
-const verPresupuesto = computed(() => !rolesPresupuesto || auth.tieneRol(...rolesPresupuesto))
+// Como el menú: el administrador también entra a consultar el presupuesto.
+const verPresupuesto = computed(() => !rolesPresupuesto || auth.puedeVer(...rolesPresupuesto))
+// La lista trae todos los proyectos, pero el presupuesto solo se abre en los activos asignados:
+// con otro, la vista mostraba en silencio el presupuesto de un proyecto distinto.
+const conPresupuesto = (proyecto: ProyectoFila) =>
+  verPresupuesto.value && proyectoActual.proyectos.some((p) => p.id === proyecto.id)
 // El administrador entra en modo consulta: crear y editar quedan para Oficina técnica.
 const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 // En celular las acciones van apiladas y angostas: lado a lado, la tabla se desplaza a lo ancho
@@ -42,7 +49,8 @@ const presupuestoSoloIconoEnCelular = {
 }
 
 function abrirPresupuesto(proyecto: ProyectoFila) {
-  router.push({ path: rutaPresupuesto, query: { proyecto: String(proyecto.id) } })
+  proyectoActual.elegir(proyecto.id)
+  router.push(rutaPresupuesto)
 }
 
 const proyectos = ref<ProyectoFila[]>([])
@@ -79,7 +87,11 @@ async function cargarIngenieros() {
 
 onMounted(async () => {
   try {
-    await Promise.all([cargar(), cargarIngenieros()])
+    await Promise.all([
+      cargar(),
+      cargarIngenieros(),
+      verPresupuesto.value && proyectoActual.cargar(),
+    ])
   } catch (error) {
     toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
   } finally {
@@ -135,7 +147,8 @@ const guardar = handleSubmit(async (valores) => {
       life: 4000,
     })
     dialogo.value = false
-    await cargar()
+    // El selector del encabezado ofrece solo los activos: un cambio de estado o nombre lo afecta.
+    await Promise.all([cargar(), verPresupuesto.value && proyectoActual.recargar()])
   } catch (error) {
     const campos = erroresDeValidacion(error)
     if (Object.keys(campos).length) setErrors(campos)
@@ -177,10 +190,10 @@ const guardar = handleSubmit(async (valores) => {
       <template #col-estado="{ fila }">
         <EstadoTag :activo="fila.estado === 'Activo'" inactivo="Finalizado" />
       </template>
-      <template v-if="puedeGestionar" #acciones="{ fila }">
+      <template v-if="puedeGestionar || verPresupuesto" #acciones="{ fila }">
         <div class="flex flex-col items-center sm:flex-row sm:gap-1">
           <Button
-            v-if="verPresupuesto"
+            v-if="conPresupuesto(fila)"
             label="Presupuesto"
             icon="pi pi-calculator"
             text
@@ -190,6 +203,7 @@ const guardar = handleSubmit(async (valores) => {
             @click="abrirPresupuesto(fila)"
           />
           <Button
+            v-if="puedeGestionar"
             icon="pi pi-pencil"
             text
             rounded

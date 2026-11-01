@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useToast } from 'primevue/usetoast'
@@ -15,24 +16,24 @@ import BuscadorTabla from '@/components/moleculas/BuscadorTabla.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import { nivelesServicio } from '@/services/niveles'
 import { partidasServicio } from '@/services/partidas'
-import { proyectosServicio } from '@/services/proyectos'
 import { decimales, volumenDisponible } from '@/services/presupuesto'
 import { esquemaNivel, valoresDeNivel } from '@/validaciones/nivel'
 import { esquemaSector, valoresDeSector } from '@/validaciones/sector'
 import type { NivelFila, SectorFila } from '@/types/niveles'
 import type { PartidaFila } from '@/types/partidas'
-import type { ProyectoFila } from '@/types/proyectos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
 const auth = useAuthStore()
+const proyectoActual = useProyectoActualStore()
 
 // El administrador entra en modo consulta: niveles y sectores los gestiona el ingeniero de producción.
 const puedeGestionar = computed(() => auth.tieneRol('ingeniero_produccion'))
 
-const proyectos = ref<ProyectoFila[]>([])
-const proyectoId = ref<number | null>(null)
+// El proyecto se elige en el encabezado (SelectorProyecto).
+const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const niveles = ref<NivelFila[]>([])
 const sectores = ref<SectorFila[]>([])
@@ -40,7 +41,6 @@ const nivelId = ref<number | null>(null)
 const busqueda = ref('')
 const cargando = ref(true)
 
-const proyecto = computed(() => proyectos.value.find((p) => p.id === proyectoId.value))
 const nivel = computed(() => niveles.value.find((n) => n.id === nivelId.value))
 // Precondición de CU05: el proyecto tiene presupuesto registrado (CU04).
 const conPresupuesto = computed(() => partidas.value.length > 0)
@@ -92,25 +92,33 @@ function avisarError(error: unknown) {
   toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
 }
 
-watch(proyectoId, async () => {
-  nivelId.value = null
-  partidas.value = []
-  niveles.value = []
-  sectores.value = []
-  try {
-    await cargar()
-  } catch (error) {
-    avisarError(error)
-  }
-})
+// Al tener la lista de proyectos y cada vez que se elige otro en el encabezado.
+watch(
+  () => proyectoActual.cargado && proyectoId.value,
+  async () => {
+    if (!proyectoActual.cargado) return
+    const id = proyectoId.value
+    nivelId.value = null
+    partidas.value = []
+    niveles.value = []
+    sectores.value = []
+    cargando.value = true
+    try {
+      await cargar()
+    } catch (error) {
+      if (id === proyectoId.value) avisarError(error)
+    } finally {
+      if (id === proyectoId.value) cargando.value = false
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   try {
-    proyectos.value = (await proyectosServicio.asignados()).filter((p) => p.estado === 'Activo')
-    proyectoId.value = proyectos.value[0]?.id ?? null
+    await proyectoActual.cargar()
   } catch (error) {
     avisarError(error)
-  } finally {
     cargando.value = false
   }
 })
@@ -223,18 +231,6 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
         outlined
         :disabled="!conPresupuesto"
         @click="abrirNivel()"
-      />
-    </template>
-
-    <template #herramientas>
-      <Select
-        v-model="proyectoId"
-        :options="proyectos"
-        option-label="nombre"
-        option-value="id"
-        placeholder="Seleccione un proyecto"
-        aria-label="Proyecto"
-        class="w-full sm:w-80"
       />
     </template>
 
