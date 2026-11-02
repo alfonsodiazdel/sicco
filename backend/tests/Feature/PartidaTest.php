@@ -2,17 +2,7 @@
 
 use App\Enums\Rol;
 use App\Models\Partida;
-use App\Models\Proyecto;
 use App\Models\User;
-
-/** Usuario con el rol dado y asignado al proyecto (USUARIO_PROYECTO). */
-function asignadoA(Proyecto $proyecto, Rol $rol = Rol::OficinaTecnica): User
-{
-    $usuario = User::factory()->rol($rol)->create();
-    $proyecto->usuarios()->attach($usuario->id);
-
-    return $usuario;
-}
 
 const CAMPOS_PARTIDA = [
     'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_fc',

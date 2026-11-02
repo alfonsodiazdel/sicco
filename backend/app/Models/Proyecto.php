@@ -37,4 +37,10 @@ class Proyecto extends Model
     {
         return $this->hasMany(Partida::class);
     }
+
+    /** Niveles (pisos) donde se reparte el presupuesto en sectores (CU05). */
+    public function niveles(): HasMany
+    {
+        return $this->hasMany(Nivel::class);
+    }
 }

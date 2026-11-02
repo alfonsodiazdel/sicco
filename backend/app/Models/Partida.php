@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Partida del presupuesto de concreto de un proyecto (PRESUPUESTO, CU04). */
 #[Fillable([
@@ -30,5 +31,11 @@ class Partida extends Model
     public function grupo(): BelongsTo
     {
         return $this->belongsTo(GrupoPartida::class, 'grupo_id');
+    }
+
+    /** Sectores de vaciado entre los que se reparte su metrado (CU05). */
+    public function sectores(): HasMany
+    {
+        return $this->hasMany(Sector::class, 'presupuesto_id');
     }
 }

@@ -18,8 +18,19 @@ return [
         'duplicado' => 'El grupo ya existe',
         'en_uso' => 'El grupo tiene partidas registradas; reasígnelas antes de eliminarlo.',
     ],
-    'partidas' => [
+    'proyectos' => [
         'sin_acceso' => 'No tiene acceso a este proyecto.',
+    ],
+    'partidas' => [
+        'metrado_repartido' => 'El metrado es menor al volumen ya repartido en sectores (:repartido m³)',
         'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
+    ],
+    'niveles' => [
+        'duplicado' => 'El nivel ya existe en el proyecto',
+    ],
+    'sectores' => [
+        'duplicado' => 'El sector ya existe en el nivel',
+        'excede' => 'El volumen excede lo presupuestado para el elemento',
+        'partida_ajena' => 'La partida no pertenece al proyecto del nivel',
     ],
 ];

@@ -49,3 +49,12 @@ function datosPartida(array $cambios = []): array
         ...$cambios,
     ];
 }
+
+/** Usuario con el rol dado y asignado al proyecto (USUARIO_PROYECTO). */
+function asignadoA(Proyecto $proyecto, Rol $rol = Rol::OficinaTecnica): User
+{
+    $usuario = User::factory()->rol($rol)->create();
+    $proyecto->usuarios()->attach($usuario->id);
+
+    return $usuario;
+}

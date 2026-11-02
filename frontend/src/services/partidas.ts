@@ -101,8 +101,6 @@ export function crearPartidasEnMemoria(
   }
 }
 
-// La regla del metrado frente a lo repartido en sectores (ver arriba) queda pendiente en la API:
-// los niveles y sectores aún no tienen tablas.
 export function crearPartidasApi(): PartidasServicio {
   return {
     async listar(proyectoId) {

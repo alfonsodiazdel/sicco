@@ -1,3 +1,4 @@
+import { http } from '@/api/http'
 import { errorDeValidacion } from '@/services/errores'
 import { partidasServicio, type PartidasServicio } from '@/services/partidas'
 import { volumenDisponible } from '@/services/presupuesto'
@@ -100,5 +101,27 @@ export function crearNivelesEnMemoria(
   }
 }
 
-// Hasta que exista el endpoint; la implementación con la API solo reemplaza esta línea.
-export const nivelesServicio: NivelesServicio = crearNivelesEnMemoria()
+export function crearNivelesApi(): NivelesServicio {
+  return {
+    async listarNiveles(proyectoId) {
+      return (await http.get<NivelFila[]>(`/proyectos/${proyectoId}/niveles`)).data
+    },
+    async crearNivel(proyectoId, datos) {
+      return (await http.post<NivelFila>(`/proyectos/${proyectoId}/niveles`, datos)).data
+    },
+    async actualizarNivel(id, datos) {
+      return (await http.put<NivelFila>(`/niveles/${id}`, datos)).data
+    },
+    async listarSectores(proyectoId) {
+      return (await http.get<SectorFila[]>(`/proyectos/${proyectoId}/sectores`)).data
+    },
+    async crearSector(nivelId, datos) {
+      return (await http.post<SectorFila>(`/niveles/${nivelId}/sectores`, datos)).data
+    },
+    async actualizarSector(id, datos) {
+      return (await http.put<SectorFila>(`/sectores/${id}`, datos)).data
+    },
+  }
+}
+
+export const nivelesServicio: NivelesServicio = crearNivelesApi()

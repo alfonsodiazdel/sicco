@@ -66,7 +66,8 @@ async function montar(
   const { crearPartidasEnMemoria } = await import('@/services/partidas')
   const { crearNivelesEnMemoria } = await import('@/services/niveles')
   servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
-  servicios.partidas = crearPartidasEnMemoria()
+  // Partidas y niveles se consultan entre sí: el metrado no baja de lo repartido en sectores.
+  servicios.partidas = crearPartidasEnMemoria(async () => servicios.niveles!)
   servicios.niveles = crearNivelesEnMemoria(servicios.partidas)
   await preparar?.({ proyectos: servicios.proyectos, partidas: servicios.partidas })
   const pinia = createPinia()

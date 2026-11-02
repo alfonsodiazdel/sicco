@@ -2,21 +2,26 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Enums\Rol;
+use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PartidaRequest;
 use App\Http\Resources\PartidaResource;
 use App\Models\Partida;
 use App\Models\Proyecto;
+use App\Support\Volumen;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** CU04 Registrar el presupuesto de concreto de un proyecto. */
 class PartidaController extends Controller
 {
+    use AutorizaProyecto;
+
     public function index(Request $request, Proyecto $proyecto): AnonymousResourceCollection
     {
         $this->autorizarProyecto($request, $proyecto);
@@ -39,27 +44,22 @@ class PartidaController extends Controller
         $this->autorizarProyecto($request, $partida->proyecto);
         $this->exigirConfirmacion($request);
 
-        $partida->update($request->datos());
+        // Con la partida bloqueada, un sector nuevo no puede colarse entre la suma y el guardado.
+        DB::transaction(function () use ($request, $partida) {
+            Partida::whereKey($partida->id)->lockForUpdate()->first();
+
+            // El metrado no puede quedar debajo de lo ya repartido: el disponible de CU05 quedaría negativo.
+            $repartido = Volumen::centesimos($partida->sectores()->sum('volumen_presup_m3'));
+            if (Volumen::centesimos($request->validated('metrado_m3')) < $repartido) {
+                throw ValidationException::withMessages(['metrado_m3' => __('sicco.partidas.metrado_repartido', [
+                    'repartido' => number_format($repartido / 100, 2),
+                ])]);
+            }
+
+            $partida->update($request->datos());
+        });
 
         return PartidaResource::make($partida);
-    }
-
-    /**
-     * Solo los proyectos asignados al usuario (USUARIO_PROYECTO), como el selector del encabezado.
-     * El administrador consulta todos.
-     */
-    private function autorizarProyecto(Request $request, Proyecto $proyecto): void
-    {
-        $usuario = $request->user();
-        if ($usuario->tieneRol(Rol::Administrador)
-            || $proyecto->usuarios()->whereKey($usuario->id)->exists()) {
-            return;
-        }
-
-        throw new HttpResponseException(response()->json([
-            'message' => __('sicco.partidas.sin_acceso'),
-            'code' => 'sin_permiso',
-        ], Response::HTTP_FORBIDDEN));
     }
 
     /** Confirmación «blanda» de CU04: el desperdicio mayor a 15 % se acepta solo si se confirma. */

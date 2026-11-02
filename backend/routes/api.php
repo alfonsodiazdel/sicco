@@ -3,10 +3,12 @@
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
+use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
 use App\Http\Controllers\Api\V1\RolController;
+use App\Http\Controllers\Api\V1\SectorController;
 use App\Http\Controllers\Api\V1\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
@@ -52,6 +54,19 @@ Route::prefix('v1')->group(function () {
             Route::middleware('rol:oficina_tecnica')->group(function () {
                 Route::post('proyectos/{proyecto}/partidas', [PartidaController::class, 'store'])->whereNumber('proyecto');
                 Route::put('partidas/{partida}', [PartidaController::class, 'update'])->whereNumber('partida');
+            });
+
+            // CU05 Niveles y sectores de vaciado: los gestiona Producción y los consultan también
+            // Oficina técnica y Gerencia; solo de los proyectos asignados.
+            Route::middleware('rol:ingeniero_produccion,oficina_tecnica,gerencia,administrador')->group(function () {
+                Route::get('proyectos/{proyecto}/niveles', [NivelController::class, 'index'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/sectores', [SectorController::class, 'index'])->whereNumber('proyecto');
+            });
+            Route::middleware('rol:ingeniero_produccion')->group(function () {
+                Route::post('proyectos/{proyecto}/niveles', [NivelController::class, 'store'])->whereNumber('proyecto');
+                Route::put('niveles/{nivel}', [NivelController::class, 'update'])->whereNumber('nivel');
+                Route::post('niveles/{nivel}/sectores', [SectorController::class, 'store'])->whereNumber('nivel');
+                Route::put('sectores/{sector}', [SectorController::class, 'update'])->whereNumber('sector');
             });
 
             // CU02 Gestionar usuarios y roles

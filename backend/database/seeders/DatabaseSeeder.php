@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call([RolSeeder::class, GrupoPartidaSeeder::class]);
 
         if (app()->environment('local')) {
-            $this->call([UsuarioDemoSeeder::class, ProyectoDemoSeeder::class, PartidaDemoSeeder::class]);
+            $this->call([UsuarioDemoSeeder::class, ProyectoDemoSeeder::class, PartidaDemoSeeder::class, NivelDemoSeeder::class]);
         }
     }
 }
