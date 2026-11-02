@@ -28,6 +28,22 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // CU07 Leer guía con OCR. «fake» no llama a ninguna API (desarrollo y pruebas).
+    'ocr' => [
+        'driver' => env('OCR_DRIVER', 'fake'),
+        // CU07 flujo alternativo 1: sin respuesta en 20 segundos, «Lectura no disponible».
+        'timeout' => (float) env('OCR_TIMEOUT', 20),
+        // Por debajo de esta confianza el campo se marca para revisión (CU07 paso 4).
+        'umbral_confianza' => (float) env('OCR_UMBRAL_CONFIANZA', 0.8),
+        // Lecturas por minuto y usuario: cada una cuesta en la API de IA.
+        'por_minuto' => (int) env('OCR_POR_MINUTO', 20),
+    ],
+
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+        'ocr_model' => env('ANTHROPIC_OCR_MODEL', 'claude-opus-5-5'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

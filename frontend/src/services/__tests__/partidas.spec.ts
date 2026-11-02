@@ -10,7 +10,7 @@ const zapata = (metrado_m3: number): PartidaDatos => ({
   item: null,
   descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
   elemento: 'Zapata',
-  resistencia_fc: "f'c 210 kg/cm²",
+  resistencia_id: 2,
   metrado_m3,
   factor_desperdicio: 5,
   precio_unitario: 385,

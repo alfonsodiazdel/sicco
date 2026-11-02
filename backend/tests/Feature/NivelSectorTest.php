@@ -9,6 +9,7 @@ use Database\Seeders\GrupoPartidaSeeder;
 use Database\Seeders\NivelDemoSeeder;
 use Database\Seeders\PartidaDemoSeeder;
 use Database\Seeders\ProyectoDemoSeeder;
+use Database\Seeders\ResistenciaSeeder;
 use Database\Seeders\UsuarioDemoSeeder;
 
 /** Proyecto con una partida de columnas de 180.50 m³ y un ingeniero asignado. */
@@ -18,7 +19,7 @@ function obraConColumnas(): array
     $partida = $proyecto->partidas()->create(datosPartida([
         'descripcion' => "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
         'elemento' => 'Columna',
-        'resistencia_fc' => "f'c 280 kg/cm²",
+        'resistencia_id' => resistencia(280)->id,
         'metrado_m3' => 180.5,
     ]));
 
@@ -220,7 +221,7 @@ describe('relación con el presupuesto', function () {
             'grupo_id' => $columnas->grupo_id,
             'descripcion' => $columnas->descripcion,
             'elemento' => 'Columna',
-            'resistencia_fc' => "f'c 280 kg/cm²",
+            'resistencia_id' => resistencia(280)->id,
         ]);
 
         $this->actingAs($oficina)->putJson($url, [...$datos, 'metrado_m3' => 118.49])
@@ -237,7 +238,7 @@ describe('relación con el presupuesto', function () {
 });
 
 it('el seeder de demo arma los niveles y sectores de las pantallas', function () {
-    $this->seed([GrupoPartidaSeeder::class, UsuarioDemoSeeder::class, ProyectoDemoSeeder::class, PartidaDemoSeeder::class, NivelDemoSeeder::class]);
+    $this->seed([GrupoPartidaSeeder::class, ResistenciaSeeder::class, UsuarioDemoSeeder::class, ProyectoDemoSeeder::class, PartidaDemoSeeder::class, NivelDemoSeeder::class]);
     $this->seed(NivelDemoSeeder::class);
 
     $p1 = Proyecto::where('codigo', 'PRY-001')->first();

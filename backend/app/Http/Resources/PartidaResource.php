@@ -16,7 +16,9 @@ class PartidaResource extends JsonResource
             'item' => $this->item,
             'descripcion' => $this->descripcion,
             'elemento' => $this->elemento,
-            'resistencia_fc' => $this->resistencia_fc,
+            'resistencia_id' => $this->resistencia_id,
+            // El nombre, para mostrarlo: «f'c 280 kg/cm²».
+            'resistencia_fc' => $this->resistencia->nombre,
             // El cast decimal:2 da texto; el frontend opera con números.
             'metrado_m3' => (float) $this->metrado_m3,
             'factor_desperdicio' => (float) $this->factor_desperdicio,

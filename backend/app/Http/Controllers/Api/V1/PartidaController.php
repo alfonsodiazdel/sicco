@@ -26,7 +26,7 @@ class PartidaController extends Controller
     {
         $this->autorizarProyecto($request, $proyecto);
 
-        return PartidaResource::collection($proyecto->partidas()->orderBy('id')->get());
+        return PartidaResource::collection($proyecto->partidas()->with('resistencia')->orderBy('id')->get());
     }
 
     public function store(PartidaRequest $request, Proyecto $proyecto): JsonResponse
@@ -36,7 +36,7 @@ class PartidaController extends Controller
 
         $partida = $proyecto->partidas()->create($request->datos());
 
-        return PartidaResource::make($partida)->response()->setStatusCode(201);
+        return PartidaResource::make($partida->load('resistencia'))->response()->setStatusCode(201);
     }
 
     public function update(PartidaRequest $request, Partida $partida): PartidaResource
@@ -59,7 +59,7 @@ class PartidaController extends Controller
             $partida->update($request->datos());
         });
 
-        return PartidaResource::make($partida);
+        return PartidaResource::make($partida->load('resistencia'));
     }
 
     /** Confirmación «blanda» de CU04: el desperdicio mayor a 15 % se acepta solo si se confirma. */

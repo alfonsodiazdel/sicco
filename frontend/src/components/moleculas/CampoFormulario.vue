@@ -9,6 +9,8 @@ const {
   etiqueta: string
   para: string
   error?: string
+  /** Aviso sin bloquear el envío, p. ej. un dato leído por OCR con baja confianza. */
+  aviso?: string
   obligatorio?: boolean
   ancho?: 'medio' | 'completo'
 }>()
@@ -24,5 +26,8 @@ const idError = computed(() => (error ? `${para}-error` : undefined))
     >
     <slot :id-error="idError" />
     <small v-if="error" :id="idError" class="text-red-600" aria-live="polite">{{ error }}</small>
+    <small v-else-if="aviso" class="flex items-center gap-1 text-amber-700" data-aviso>
+      <i class="pi pi-exclamation-triangle text-xs" aria-hidden="true" />{{ aviso }}
+    </small>
   </div>
 </template>

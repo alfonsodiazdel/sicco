@@ -3,6 +3,7 @@
 use App\Enums\Rol;
 use App\Models\GrupoPartida;
 use App\Models\Proyecto;
+use App\Models\Resistencia;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -42,12 +43,18 @@ function datosPartida(array $cambios = []): array
         'item' => '03.01.02.01',
         'descripcion' => "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
         'elemento' => 'Zapata',
-        'resistencia_fc' => "f'c 210 kg/cm²",
+        'resistencia_id' => resistencia(210)->id,
         'metrado_m3' => 320,
         'factor_desperdicio' => 5,
         'precio_unitario' => 385,
         ...$cambios,
     ];
+}
+
+/** La resistencia del catálogo con ese f'c (en producción la carga ResistenciaSeeder). */
+function resistencia(int $fc): Resistencia
+{
+    return Resistencia::firstOrCreate(['fc_kg_cm2' => $fc], ['nombre' => "f'c {$fc} kg/cm²"]);
 }
 
 /** Usuario con el rol dado y asignado al proyecto (USUARIO_PROYECTO). */

@@ -14,7 +14,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->call([RolSeeder::class, GrupoPartidaSeeder::class]);
+        $this->call([RolSeeder::class, GrupoPartidaSeeder::class, ResistenciaSeeder::class, ConcreteraSeeder::class]);
 
         if (app()->environment('local')) {
             $this->call([UsuarioDemoSeeder::class, ProyectoDemoSeeder::class, PartidaDemoSeeder::class, NivelDemoSeeder::class]);

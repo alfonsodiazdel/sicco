@@ -28,6 +28,15 @@ return [
     'niveles' => [
         'duplicado' => 'El nivel ya existe en el proyecto',
     ],
+    'guias' => [
+        'registrada' => 'Guía registrada correctamente',
+        'duplicada' => 'La guía ya fue registrada',
+        'no_leida' => 'No se pudo leer la guía',
+        'foto_vencida' => 'La foto ya no está disponible; tómela de nuevo.',
+        'fecha_futura' => 'La fecha no puede ser posterior a hoy',
+        'foto_invalida' => 'Adjunte una foto JPG, PNG o WebP de hasta 10 MB',
+        'resistencia_producto' => 'El producto :codigo está registrado como :resistencia',
+    ],
     'sectores' => [
         'duplicado' => 'El sector ya existe en el nivel',
         'excede' => 'El volumen excede lo presupuestado para el elemento',

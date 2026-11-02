@@ -3,10 +3,12 @@
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
+use App\Http\Controllers\Api\V1\GuiaController;
 use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
+use App\Http\Controllers\Api\V1\ResistenciaController;
 use App\Http\Controllers\Api\V1\RolController;
 use App\Http\Controllers\Api\V1\SectorController;
 use App\Http\Controllers\Api\V1\UsuarioController;
@@ -38,6 +40,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('proyectos/ingenieros', [ProyectoController::class, 'ingenieros']);
             });
 
+            // Catálogo de resistencias f'c: lo usan el presupuesto (CU04) y el registro de guías (CU06).
+            Route::get('resistencias', [ResistenciaController::class, 'index']);
+
             // Catálogo global de grupos de partidas: lo mantiene Oficina técnica.
             Route::get('grupos-partida', [GrupoPartidaController::class, 'index'])->middleware('rol:oficina_tecnica,administrador');
             Route::middleware('rol:oficina_tecnica')->group(function () {
@@ -67,6 +72,13 @@ Route::prefix('v1')->group(function () {
                 Route::put('niveles/{nivel}', [NivelController::class, 'update'])->whereNumber('nivel');
                 Route::post('niveles/{nivel}/sectores', [SectorController::class, 'store'])->whereNumber('nivel');
                 Route::put('sectores/{sector}', [SectorController::class, 'update'])->whereNumber('sector');
+            });
+
+            // CU06–CU08 Registrar guía de remisión: el almacenero, desde el celular, en sus proyectos.
+            Route::middleware('rol:almacenero')->group(function () {
+                // CU07: cada lectura cuesta en la API de IA.
+                Route::post('guias/lecturas', [GuiaController::class, 'lectura'])->middleware('throttle:ocr');
+                Route::post('guias', [GuiaController::class, 'store']);
             });
 
             // CU02 Gestionar usuarios y roles

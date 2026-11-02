@@ -90,7 +90,7 @@ presupuestado al pie (Figura 14). Al guardar: «Partida registrada» y se actual
 | Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje | Backend hoy |
 |---|---|---|---|---|---|---|
 | Elemento estructural | `PRESUPUESTO.elemento` | lista | S | — | — | No existe. |
-| Resistencia f'c | `PRESUPUESTO.resistencia_fc` | lista | S | — | — | No existe. |
+| Resistencia f'c | `PRESUPUESTO.resistencia_id` | lista del catálogo `RESISTENCIA` (activas) | S | — | Este dato es requerido; La resistencia no existe | No existe. |
 | Metrado (m³) | `PRESUPUESTO.metrado_m3` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
 | Factor de desperdicio (%) | `PRESUPUESTO.factor_desperdicio` | número | S | ≥ 0, dos decimales; si pasa de 15 %, se pide confirmar el valor | Ingrese un valor mayor o igual a cero (no está en la tesis; el control no deja escribir negativos) | No existe. |
 | Precio unitario (S/ por m³) | `PRESUPUESTO.precio_unitario` | número | S | > 0, dos decimales | Ingrese un valor mayor a cero | No existe. |
@@ -111,8 +111,9 @@ El selector de proyecto ofrece solo los proyectos asignados al usuario de la ses
 (`USUARIO_PROYECTO`), no todos. Tampoco está escrito en CU04: se deduce de la descripción de
 `USUARIO_PROYECTO` en el DER («Proyectos a los que tiene acceso cada usuario») y de la maqueta.
 
-Las opciones de elemento estructural y de f'c son las de la maqueta y están solo en
-`frontend/src/catalogos/partidas.ts`, hasta que se confirmen.
+Las opciones de elemento estructural son las de la maqueta y están en
+`frontend/src/catalogos/partidas.ts` y `config/sicco.php`, hasta que se confirmen. Las de f'c salen
+del catálogo `RESISTENCIA` (`GET /api/v1/resistencias`), que comparten el presupuesto y las guías.
 
 ### Niveles y sectores (CU05)
 
@@ -152,6 +153,53 @@ asignados al usuario de la sesión (igual que en CU04).
 El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asignación de guías
 (`SECTOR.volumen_vaciado_m3` y `ASIGNACION`). Un sector nuevo empieza con 0 m³ vaciados.
 
+### Guías de remisión (CU06–CU08)
+
+Pantalla `/guias/registrar`, solo para el Almacenero y pensada para el celular; el proyecto es el
+del selector del encabezado. Paso 1: tomar la foto (se reduce a 1600 px en el navegador antes de
+subirla). Paso 2: «Leer guía» (`POST /guias/lecturas`, CU07) llena el formulario con lo leído, o
+«Registrar manualmente» (CU08) lo abre vacío con la fecha de hoy. Si el OCR no responde en 20 s,
+falla o la imagen no es una guía, se muestra «No se pudo leer la guía» y sigue el registro manual
+con la foto ya adjunta. Al guardar: «Guía registrada correctamente» y la pantalla vuelve al paso 1.
+
+La confianza de cada dato leído es la que informa el modelo, rebajada a 0.4 si el valor no pasa una
+verificación propia (dígito verificador del RUC, número con serie `XXXX-NNNNNNNN`, fecha válida de
+hasta un año atrás, volumen de hasta 12 m³, placa `ABC-123`). Bajo 0.8 (`OCR_UMBRAL_CONFIANZA`) el
+campo muestra en ámbar «Verifique este dato» hasta que se corrige; lo no identificado queda vacío
+con «No se pudo leer; ingrese este dato» (CU07 flujo alternativo 2).
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje |
+|---|---|---|---|---|---|
+| Foto | `GUIA_REMISION.foto_ruta` | JPG, PNG o WebP | S | ≤ 10 MB | Adjunte una foto JPG, PNG o WebP de hasta 10 MB |
+| Número de guía | `numero` | texto (1–20), en mayúsculas y sin espacios | S | único por proveedor | Este dato es requerido; La guía ya fue registrada |
+| Fecha | `fecha` | fecha | S | no posterior a hoy | Este dato es requerido; La fecha no puede ser posterior a hoy |
+| Proveedor | `proveedor_id` | lista de proveedores, o el RUC nuevo leído | S | RUC de 11 dígitos | Este dato es requerido |
+| Resistencia | `resistencia_id` | lista del catálogo `RESISTENCIA` (activas) | S | igual a la del producto, si su código ya está registrado | Este dato es requerido; El producto 70280NB5746 está registrado como f'c 280 kg/cm² |
+| Código del producto | `producto_id` → `PRODUCTO_PROVEEDOR.codigo` | texto (0–30), en mayúsculas y sin espacios | N | — | — |
+| Volumen (m³) | `volumen_m3` | número | S | > 0, dos decimales, ≤ 99.99 | Este dato es requerido; Ingrese un valor mayor a cero; El valor es demasiado grande |
+| Placa del mixer | `placa` | texto (0–10), en mayúsculas | N | — | — |
+
+No están en la tesis y se infirieron: que el número se repita solo dentro del mismo proveedor (cada
+concretera numera sus guías), que un RUC leído con seguridad y no registrado se ofrezca como
+proveedor nuevo y se registre con la guía (arquitectura §6.9), el tope de 99.99 m³ y que la foto
+leída y no registrada se borre al día siguiente (tarea programada).
+
+**Resistencia de la guía.** La tesis pide la resistencia como dato de la guía; se guarda como
+referencia al catálogo `RESISTENCIA` (el mismo del presupuesto) para poder compararla con la del
+sector al asignar (CU09) y agrupar en los reportes. La lectura la resuelve en este orden:
+
+1. El producto de la concretera (`PRODUCTO_PROVEEDOR`) con el código leído: confianza 1. Manda
+   sobre lo que haya leído el modelo.
+2. El patrón de código de la concretera (`PROVEEDOR.patron_codigo`, p. ej. `^70(?<fc>\d{3})` en
+   Holcim: 70280NB5746 es f'c 280): confianza 0.9.
+3. El f'c que leyó el modelo, si está en el catálogo. Si no está, queda vacía y por revisar.
+
+`PROVEEDOR.indicaciones_ocr` (dónde indica cada concretera la resistencia) se agrega al prompt del
+OCR. Al registrar una guía con un código de producto nuevo, el producto se registra con la
+resistencia que eligió el almacenero, y las guías siguientes con ese código se resuelven solas.
+`ConcreteraSeeder` carga Holcim y Arquitectura Construida con sus productos, tomados de las guías y
+facturas del proyecto Larco. Nada de esto está en la tesis.
+
 ## 4. Diferencias entre el front y el backend
 
 1. **Solo la autenticación tiene reglas en el servidor:** `LoginRequest` y `CambiarPasswordRequest`.
@@ -190,5 +238,8 @@ El sector no lleva fecha de vaciado ni estado: el vaciado se registra en la asig
 - Que la tesis confirme los valores del estado del proyecto (hoy Activo o Finalizado, lo cambia
   Oficina técnica al editar) y que el ingeniero responsable sea un usuario activo con rol
   «Ingeniero de producción», como hace hoy el front.
-- Las listas de elementos estructurales y de resistencias f'c.
+- La lista de elementos estructurales y los valores iniciales del catálogo de resistencias f'c
+  (`ResistenciaSeeder`: 175, 210, 280 y 350).
+- Quién mantiene los catálogos de resistencias y de productos de las concreteras: hoy solo se
+  cargan con seeders y los productos nuevos se registran con las guías; no hay pantalla.
 - Que la tesis confirme la fórmula del total de la partida, que hoy se infirió (ver CU04).

@@ -1,4 +1,5 @@
-// La tesis muestra ambos campos como lista sin dar los valores: son los de la maqueta, por confirmar.
+// La tesis muestra el campo como lista sin dar los valores: son los de la maqueta, por confirmar.
+// Las resistencias f'c vienen del catálogo del backend (services/resistencias).
 export const elementosEstructurales = [
   'Zapata',
   'Cimiento corrido',
@@ -8,13 +9,6 @@ export const elementosEstructurales = [
   'Losa aligerada',
   'Losa maciza',
   'Escalera',
-] as const
-
-export const resistenciasFc = [
-  "f'c 175 kg/cm²",
-  "f'c 210 kg/cm²",
-  "f'c 280 kg/cm²",
-  "f'c 350 kg/cm²",
 ] as const
 
 /** Solo el número de la resistencia, como lo muestra el presupuesto: «f'c 280 kg/cm²» es 280. */

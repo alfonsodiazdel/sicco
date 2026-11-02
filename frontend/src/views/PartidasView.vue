@@ -13,13 +13,15 @@ import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaPresupuesto from '@/components/organismos/TablaPresupuesto.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
-import { elementosEstructurales, resistenciasFc } from '@/catalogos/partidas'
+import { elementosEstructurales } from '@/catalogos/partidas'
 import { gruposServicio } from '@/services/grupos'
 import { partidasServicio } from '@/services/partidas'
 import { decimales } from '@/services/presupuesto'
+import { resistenciasServicio } from '@/services/resistencias'
 import { esquemaPartida, valoresDePartida } from '@/validaciones/partida'
 import type { GrupoFila } from '@/types/grupos'
 import type { PartidaFila } from '@/types/partidas'
+import type { Resistencia } from '@/types/resistencias'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
@@ -36,6 +38,7 @@ const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const grupos = ref<GrupoFila[]>([])
+const resistencias = ref<Resistencia[]>([])
 const cargando = ref(true)
 
 function avisarError(error: unknown) {
@@ -64,9 +67,14 @@ watch(() => proyectoActual.cargado && proyectoId.value, cargarPartidas, { immedi
 
 onMounted(async () => {
   try {
-    // El catálogo de grupos es el mismo para todos los proyectos: se pide una vez.
-    const [lista] = await Promise.all([gruposServicio.listar(), proyectoActual.cargar()])
+    // Los catálogos de grupos y resistencias son los mismos para todos los proyectos: se piden una vez.
+    const [lista, fc] = await Promise.all([
+      gruposServicio.listar(),
+      resistenciasServicio.listar(),
+      proyectoActual.cargar(),
+    ])
     grupos.value = lista
+    resistencias.value = fc
   } catch (error) {
     avisarError(error)
     cargando.value = false
@@ -84,7 +92,7 @@ const [grupoId, grupoIdAttrs] = defineField('grupo_id')
 const [item, itemAttrs] = defineField('item')
 const [descripcion, descripcionAttrs] = defineField('descripcion')
 const [elemento, elementoAttrs] = defineField('elemento')
-const [resistenciaFc, resistenciaFcAttrs] = defineField('resistencia_fc')
+const [resistenciaId, resistenciaIdAttrs] = defineField('resistencia_id')
 const [metrado, metradoAttrs] = defineField('metrado_m3')
 const [desperdicio, desperdicioAttrs] = defineField('factor_desperdicio')
 const [precio, precioAttrs] = defineField('precio_unitario')
@@ -257,18 +265,20 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
         <CampoFormulario
           v-slot="{ idError }"
           etiqueta="Resistencia f'c"
-          para="resistencia_fc"
-          :error="errors.resistencia_fc"
+          para="resistencia_id"
+          :error="errors.resistencia_id"
           obligatorio
           ancho="medio"
         >
           <Select
-            v-model="resistenciaFc"
-            v-bind="resistenciaFcAttrs"
-            label-id="resistencia_fc"
-            :options="[...resistenciasFc]"
+            v-model="resistenciaId"
+            v-bind="resistenciaIdAttrs"
+            label-id="resistencia_id"
+            :options="resistencias"
+            option-label="nombre"
+            option-value="id"
             placeholder="Seleccione"
-            :invalid="!!errors.resistencia_fc"
+            :invalid="!!errors.resistencia_id"
             :pt="{ label: { 'aria-describedby': idError } }"
             fluid
           />

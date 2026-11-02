@@ -49,6 +49,11 @@ vi.mock('@/services/grupos', async (importOriginal) => {
   }
 })
 
+vi.mock('@/services/resistencias', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/resistencias')>()
+  return { ...real, resistenciasServicio: real.crearResistenciasEnMemoria() }
+})
+
 vi.mock('@/services/partidas', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/services/partidas')>()
   return {
@@ -127,7 +132,7 @@ async function llenar(
   await select('grupo_id').setValue(3)
   await texto('descripcion').setValue("CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA")
   await select('elemento').setValue('Columna')
-  await select('resistencia_fc').setValue("f'c 280 kg/cm²")
+  await select('resistencia_id').setValue(3)
   await numero('metrado_m3').setValue(valores.metrado)
   await numero('factor_desperdicio').setValue(valores.desperdicio)
   await numero('precio_unitario').setValue(valores.precio)
@@ -339,6 +344,7 @@ describe('PartidasView', () => {
         item: null,
         descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA",
         elemento: 'Columna',
+        resistencia_id: 3,
         resistencia_fc: "f'c 280 kg/cm²",
         metrado_m3: 12.5,
         factor_desperdicio: 5,
@@ -361,7 +367,7 @@ describe('PartidasView', () => {
       'grupo_id-error': 'Este dato es requerido',
       'descripcion-error': 'Este dato es requerido',
       'elemento-error': 'Este dato es requerido',
-      'resistencia_fc-error': 'Este dato es requerido',
+      'resistencia_id-error': 'Este dato es requerido',
       'metrado_m3-error': 'Este dato es requerido',
       'factor_desperdicio-error': 'Este dato es requerido',
       'precio_unitario-error': 'Este dato es requerido',

@@ -2,6 +2,7 @@ import { http } from '@/api/http'
 import { errorDeValidacion } from '@/services/errores'
 import type { NivelesServicio } from '@/services/niveles'
 import { decimales, volumenDisponible } from '@/services/presupuesto'
+import { nombreResistencia } from '@/services/resistencias'
 import type { PartidaDatos, PartidaFila } from '@/types/partidas'
 
 export interface PartidasServicio {
@@ -22,6 +23,7 @@ const partidasEjemplo: PartidaFila[] = [
     item: '03.01.02.01',
     descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
     elemento: 'Zapata',
+    resistencia_id: 2,
     resistencia_fc: "f'c 210 kg/cm²",
     metrado_m3: 320,
     factor_desperdicio: 5,
@@ -34,6 +36,7 @@ const partidasEjemplo: PartidaFila[] = [
     item: '03.02.03.01',
     descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
     elemento: 'Columna',
+    resistencia_id: 3,
     resistencia_fc: "f'c 280 kg/cm²",
     metrado_m3: 180.5,
     factor_desperdicio: 3,
@@ -46,6 +49,7 @@ const partidasEjemplo: PartidaFila[] = [
     item: null,
     descripcion: "CONCRETO F'C=210 kg/cm2 - LOSA ALIGERADA H=20cm",
     elemento: 'Losa aligerada',
+    resistencia_id: 2,
     resistencia_fc: "f'c 210 kg/cm²",
     metrado_m3: 245,
     factor_desperdicio: 5,
@@ -58,6 +62,7 @@ const partidasEjemplo: PartidaFila[] = [
     item: '03.02.02.01',
     descripcion: "CONCRETO PREMEZ. F'C=350 kg/cm2 - PLACAS",
     elemento: 'Placa',
+    resistencia_id: 4,
     resistencia_fc: "f'c 350 kg/cm²",
     metrado_m3: 3850,
     factor_desperdicio: 3,
@@ -79,7 +84,12 @@ export function crearPartidasEnMemoria(
       return partidas.filter((p) => p.proyecto_id === proyectoId).map((p) => ({ ...p }))
     },
     async crear(proyectoId, datos) {
-      const partida: PartidaFila = { id: siguienteId++, proyecto_id: proyectoId, ...datos }
+      const partida: PartidaFila = {
+        id: siguienteId++,
+        proyecto_id: proyectoId,
+        ...datos,
+        resistencia_fc: nombreResistencia(datos.resistencia_id),
+      }
       partidas.push({ ...partida })
       return partida
     },
@@ -96,7 +106,11 @@ export function crearPartidasEnMemoria(
           ],
         })
       }
-      return { ...Object.assign(partida, datos) }
+      return {
+        ...Object.assign(partida, datos, {
+          resistencia_fc: nombreResistencia(datos.resistencia_id),
+        }),
+      }
     },
   }
 }

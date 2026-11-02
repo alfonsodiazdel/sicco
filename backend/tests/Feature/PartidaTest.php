@@ -5,7 +5,8 @@ use App\Models\Partida;
 use App\Models\User;
 
 const CAMPOS_PARTIDA = [
-    'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_fc',
+    'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_id',
+    'resistencia_fc',
     'metrado_m3', 'factor_desperdicio', 'precio_unitario',
 ];
 
@@ -21,6 +22,8 @@ describe('listar', function () {
         expect($respuesta->json())->toHaveCount(1);
         expect(array_keys($respuesta->json('0')))->toEqualCanonicalizing(CAMPOS_PARTIDA);
         $respuesta->assertJsonPath('0.id', $zapata->id)
+            ->assertJsonPath('0.resistencia_id', resistencia(210)->id)
+            ->assertJsonPath('0.resistencia_fc', "f'c 210 kg/cm²")
             ->assertJsonPath('0.metrado_m3', 180.5)
             ->assertJsonPath('0.factor_desperdicio', 5)
             ->assertJsonPath('0.precio_unitario', 385);
@@ -82,7 +85,7 @@ describe('registrar', function () {
                 'grupo_id' => 'Este dato es requerido',
                 'descripcion' => 'Este dato es requerido',
                 'elemento' => 'Este dato es requerido',
-                'resistencia_fc' => 'Este dato es requerido',
+                'resistencia_id' => 'Este dato es requerido',
                 'metrado_m3' => 'Este dato es requerido',
                 'factor_desperdicio' => 'Este dato es requerido',
                 'precio_unitario' => 'Este dato es requerido',
@@ -99,6 +102,7 @@ describe('registrar', function () {
             'grupo_id' => 999999,
             'item' => '03-01',
             'elemento' => 'Muro',
+            'resistencia_id' => 999999,
             'metrado_m3' => 0,
             'factor_desperdicio' => -1,
             'precio_unitario' => 12.345,
@@ -108,6 +112,7 @@ describe('registrar', function () {
                 'grupo_id' => 'El grupo no existe',
                 'item' => 'Use solo números separados por puntos',
                 'elemento' => 'Este dato es requerido',
+                'resistencia_id' => 'La resistencia no existe',
                 'metrado_m3' => 'Ingrese un valor mayor a cero',
                 'factor_desperdicio' => 'Ingrese un valor mayor o igual a cero',
                 'precio_unitario' => 'Ingrese como máximo dos decimales',

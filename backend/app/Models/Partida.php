@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Partida del presupuesto de concreto de un proyecto (PRESUPUESTO, CU04). */
 #[Fillable([
-    'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_fc',
+    'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_id',
     'metrado_m3', 'factor_desperdicio', 'precio_unitario',
 ])]
 class Partida extends Model
@@ -26,6 +26,11 @@ class Partida extends Model
     public function proyecto(): BelongsTo
     {
         return $this->belongsTo(Proyecto::class);
+    }
+
+    public function resistencia(): BelongsTo
+    {
+        return $this->belongsTo(Resistencia::class);
     }
 
     public function grupo(): BelongsTo

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { elementosEstructurales, resistenciasFc } from '@/catalogos/partidas'
+import { elementosEstructurales } from '@/catalogos/partidas'
 import type { PartidaFila } from '@/types/partidas'
 import { requerido, texto } from '@/validaciones/usuario'
 
@@ -25,7 +25,7 @@ export const esquemaPartida = z.object({
   item: codigo,
   descripcion: texto(200),
   elemento: lista(elementosEstructurales),
-  resistencia_fc: lista(resistenciasFc),
+  resistencia_id: z.number({ required_error: requerido, invalid_type_error: requerido }),
   metrado_m3: cantidad().positive(mayorACero),
   factor_desperdicio: cantidad().min(0, 'Ingrese un valor mayor o igual a cero'),
   precio_unitario: cantidad().positive(mayorACero),
@@ -37,7 +37,7 @@ export function valoresDePartida(partida: PartidaFila) {
     item: partida.item,
     descripcion: partida.descripcion,
     elemento: partida.elemento,
-    resistencia_fc: partida.resistencia_fc,
+    resistencia_id: partida.resistencia_id,
     metrado_m3: partida.metrado_m3,
     factor_desperdicio: partida.factor_desperdicio,
     precio_unitario: partida.precio_unitario,
