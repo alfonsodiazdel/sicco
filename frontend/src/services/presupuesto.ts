@@ -40,14 +40,19 @@ export const factorDesperdicio = (porcentaje: number) =>
   })
 
 export interface GrupoDePresupuesto {
-  grupo: Pick<GrupoFila, 'id' | 'nombre'>
+  grupo: Pick<GrupoFila, 'id' | 'nombre' | 'partida_control'>
   partidas: PartidaFila[]
   metrado_m3: number
   volumen_presup_m3: number
   total: number
 }
 
-const sinGrupo = { id: 0, nombre: 'Sin grupo', orden: Number.POSITIVE_INFINITY }
+const sinGrupo = {
+  id: 0,
+  nombre: 'Sin grupo',
+  partida_control: '',
+  orden: Number.POSITIVE_INFINITY,
+}
 
 /**
  * Partidas reunidas por grupo, en el orden del catálogo, con sus subtotales. Los grupos sin
@@ -68,7 +73,7 @@ export function agruparPartidas(
   return [...reunidos.values()]
     .sort((a, b) => a.grupo.orden - b.grupo.orden || a.grupo.id - b.grupo.id)
     .map(({ grupo, partidas }) => ({
-      grupo: { id: grupo.id, nombre: grupo.nombre },
+      grupo: { id: grupo.id, nombre: grupo.nombre, partida_control: grupo.partida_control },
       partidas,
       metrado_m3: partidas.reduce((suma, p) => suma + centesimos(p.metrado_m3), 0) / 100,
       volumen_presup_m3: partidas.reduce((suma, p) => suma + centesimosPresupuestados(p), 0) / 100,

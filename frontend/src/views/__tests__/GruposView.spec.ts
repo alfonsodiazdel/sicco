@@ -32,9 +32,7 @@ vi.mock('@/services/grupos', async (importOriginal) => {
 
 async function montar(rol: RolClave = 'oficina_tecnica') {
   const { crearGruposEnMemoria } = await import('@/services/grupos')
-  servicios.grupos = crearGruposEnMemoria(async () => ({
-    usanGrupo: async (id) => servicios.conPartidas.includes(id),
-  }))
+  servicios.grupos = crearGruposEnMemoria(async (id) => servicios.conPartidas.includes(id))
   const pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().usuario = { rol: { clave: rol } } as Usuario
@@ -104,6 +102,25 @@ describe('GruposView', () => {
 
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Grupo registrado' }))
     expect(filas(vista).slice(-1)[0]).toEqual(['8', 'Obras exteriores'])
+  })
+
+  it('propone la partida de control 2.02.02 y exige números separados por puntos', async () => {
+    const vista = await montar()
+    await pulsar(vista, 'Nuevo grupo')
+    const partidaControl = () => vista.get<HTMLInputElement>('#partida_control')
+
+    expect(partidaControl().element.value).toBe('2.02.02')
+    await partidaControl().setValue('2.02-A')
+    await llenar(vista, 'Obras exteriores')
+    await guardar(vista)
+    expect(vista.get('#partida_control-error').text()).toBe('Use solo números separados por puntos')
+
+    await partidaControl().setValue('2.03.01')
+    await guardar(vista)
+    expect((await servicios.grupos!.listar()).slice(-1)[0]).toMatchObject({
+      nombre: 'Obras exteriores',
+      partida_control: '2.03.01',
+    })
   })
 
   it('no repite el nombre de un grupo', async () => {

@@ -81,7 +81,6 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
 })
 
 const [grupoId, grupoIdAttrs] = defineField('grupo_id')
-const [partidaControl, partidaControlAttrs] = defineField('partida_control')
 const [item, itemAttrs] = defineField('item')
 const [descripcion, descripcionAttrs] = defineField('descripcion')
 const [elemento, elementoAttrs] = defineField('elemento')
@@ -110,11 +109,11 @@ const confirmarDesperdicio = (valor: number) =>
   )
 
 const guardar = handleSubmit(async (valores) => {
-  if (valores.factor_desperdicio > 15 && !(await confirmarDesperdicio(valores.factor_desperdicio)))
-    return
+  const confirmado = valores.factor_desperdicio > 15
+  if (confirmado && !(await confirmarDesperdicio(valores.factor_desperdicio))) return
   try {
-    if (editando.value) await partidasServicio.actualizar(editando.value.id, valores)
-    else await partidasServicio.crear(proyectoId.value!, valores)
+    if (editando.value) await partidasServicio.actualizar(editando.value.id, valores, confirmado)
+    else await partidasServicio.crear(proyectoId.value!, valores, confirmado)
     toast.add({
       severity: 'success',
       summary: editando.value ? 'Cambios guardados.' : 'Partida registrada',
@@ -193,25 +192,6 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             placeholder="Seleccione"
             :invalid="!!errors.grupo_id"
             :pt="{ label: { 'aria-describedby': idError } }"
-            fluid
-          />
-        </CampoFormulario>
-
-        <CampoFormulario
-          v-slot="{ idError }"
-          etiqueta="Partida de control"
-          para="partida_control"
-          :error="errors.partida_control"
-          ancho="medio"
-        >
-          <InputText
-            id="partida_control"
-            v-model="partidaControl"
-            v-bind="partidaControlAttrs"
-            maxlength="20"
-            placeholder="Ej.: 2.02.02"
-            :invalid="!!errors.partida_control"
-            :aria-describedby="idError"
             fluid
           />
         </CampoFormulario>

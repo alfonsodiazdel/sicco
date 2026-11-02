@@ -52,9 +52,10 @@ if [ -z "$(env_valor APP_KEY)" ]; then
     dc run --rm php php artisan key:generate --force
 fi
 
-paso "Migraciones y roles"
+paso "Migraciones, roles y grupos de partidas"
 dc run --rm php php artisan migrate --force
 dc run --rm php php artisan db:seed --class=RolSeeder --force
+dc run --rm php php artisan db:seed --class=GrupoPartidaSeeder --force
 
 # Sin "optimize": la API no tiene vistas Blade y resources/views no existe en el repositorio.
 paso "Cacheando configuración y rutas"

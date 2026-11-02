@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['codigo', 'nombre', 'direccion', 'fecha_inicio', 'fecha_fin', 'ingeniero_id', 'estado'])]
 class Proyecto extends Model
@@ -29,5 +30,11 @@ class Proyecto extends Model
     public function usuarios(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'usuario_proyecto', 'proyecto_id', 'usuario_id');
+    }
+
+    /** Partidas de su presupuesto de concreto (CU04). */
+    public function partidas(): HasMany
+    {
+        return $this->hasMany(Partida::class);
     }
 }

@@ -99,9 +99,9 @@ describe('presupuesto', () => {
 
   describe('agrupar partidas', () => {
     const grupos = [
-      { id: 1, nombre: 'Muros anclados', orden: 1 },
-      { id: 2, nombre: 'Cimentación', orden: 2 },
-      { id: 3, nombre: 'Cisterna', orden: 3 },
+      { id: 1, nombre: 'Muros anclados', partida_control: '2.02.02', orden: 1 },
+      { id: 2, nombre: 'Cimentación', partida_control: '2.02.02', orden: 2 },
+      { id: 3, nombre: 'Cisterna', partida_control: '2.02.02', orden: 3 },
     ]
     const fila = (id: number, grupo_id: number, metrado: number, desp: number, pu: number) =>
       ({ ...partida(metrado, desp, pu), id, grupo_id }) as PartidaFila

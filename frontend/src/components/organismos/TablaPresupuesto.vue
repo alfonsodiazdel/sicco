@@ -124,7 +124,7 @@ const resumen = (cantidad: number, metrado: number, importe: number) =>
             data-partida
           >
             <td :class="deIdentificacion" class="px-3 py-2 whitespace-nowrap">
-              {{ fila.partida_control ?? '' }}
+              {{ g.grupo.partida_control }}
             </td>
             <td :class="deIdentificacion" class="px-3 py-2 whitespace-nowrap">
               {{ fila.item ?? '' }}

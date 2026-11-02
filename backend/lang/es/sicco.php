@@ -14,4 +14,12 @@ return [
         'ruc_invalido' => 'El RUC debe tener 11 dígitos y empezar con 10, 15, 16, 17 o 20.',
         'ruc_duplicado' => 'Ya existe un proveedor con este RUC.',
     ],
+    'grupos' => [
+        'duplicado' => 'El grupo ya existe',
+        'en_uso' => 'El grupo tiene partidas registradas; reasígnelas antes de eliminarlo.',
+    ],
+    'partidas' => [
+        'sin_acceso' => 'No tiene acceso a este proyecto.',
+        'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
+    ],
 ];

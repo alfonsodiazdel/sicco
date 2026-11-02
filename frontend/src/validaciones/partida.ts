@@ -22,7 +22,6 @@ const codigo = z
 
 export const esquemaPartida = z.object({
   grupo_id: z.number({ required_error: requerido, invalid_type_error: requerido }),
-  partida_control: codigo,
   item: codigo,
   descripcion: texto(200),
   elemento: lista(elementosEstructurales),
@@ -35,7 +34,6 @@ export const esquemaPartida = z.object({
 export function valoresDePartida(partida: PartidaFila) {
   return {
     grupo_id: partida.grupo_id,
-    partida_control: partida.partida_control,
     item: partida.item,
     descripcion: partida.descripcion,
     elemento: partida.elemento,

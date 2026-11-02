@@ -1,3 +1,4 @@
+import { http } from '@/api/http'
 import { errorDeValidacion } from '@/services/errores'
 import type { NivelesServicio } from '@/services/niveles'
 import { decimales, volumenDisponible } from '@/services/presupuesto'
@@ -5,10 +6,12 @@ import type { PartidaDatos, PartidaFila } from '@/types/partidas'
 
 export interface PartidasServicio {
   listar(proyectoId: number): Promise<PartidaFila[]>
-  crear(proyectoId: number, datos: PartidaDatos): Promise<PartidaFila>
-  actualizar(id: number, datos: PartidaDatos): Promise<PartidaFila>
-  /** Si alguna partida, de cualquier proyecto, pertenece al grupo: entonces no se elimina. */
-  usanGrupo(grupoId: number): Promise<boolean>
+  /**
+   * `confirmado` acepta un desperdicio mayor a 15 %: sin él, la API responde 422 con
+   * `requiere_confirmacion` (CU04). La vista lo pide antes de enviar.
+   */
+  crear(proyectoId: number, datos: PartidaDatos, confirmado?: boolean): Promise<PartidaFila>
+  actualizar(id: number, datos: PartidaDatos, confirmado?: boolean): Promise<PartidaFila>
 }
 
 const partidasEjemplo: PartidaFila[] = [
@@ -16,7 +19,6 @@ const partidasEjemplo: PartidaFila[] = [
     id: 1,
     proyecto_id: 1,
     grupo_id: 2,
-    partida_control: '2.02.02',
     item: '03.01.02.01',
     descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
     elemento: 'Zapata',
@@ -29,7 +31,6 @@ const partidasEjemplo: PartidaFila[] = [
     id: 2,
     proyecto_id: 1,
     grupo_id: 6,
-    partida_control: '2.02.02',
     item: '03.02.03.01',
     descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
     elemento: 'Columna',
@@ -42,7 +43,6 @@ const partidasEjemplo: PartidaFila[] = [
     id: 3,
     proyecto_id: 1,
     grupo_id: 7,
-    partida_control: '2.02.02',
     item: null,
     descripcion: "CONCRETO F'C=210 kg/cm2 - LOSA ALIGERADA H=20cm",
     elemento: 'Losa aligerada',
@@ -55,7 +55,6 @@ const partidasEjemplo: PartidaFila[] = [
     id: 4,
     proyecto_id: 2,
     grupo_id: 4,
-    partida_control: '2.02.02',
     item: '03.02.02.01',
     descripcion: "CONCRETO PREMEZ. F'C=350 kg/cm2 - PLACAS",
     elemento: 'Placa',
@@ -99,11 +98,24 @@ export function crearPartidasEnMemoria(
       }
       return { ...Object.assign(partida, datos) }
     },
-    async usanGrupo(grupoId) {
-      return partidas.some((p) => p.grupo_id === grupoId)
+  }
+}
+
+// La regla del metrado frente a lo repartido en sectores (ver arriba) queda pendiente en la API:
+// los niveles y sectores aún no tienen tablas.
+export function crearPartidasApi(): PartidasServicio {
+  return {
+    async listar(proyectoId) {
+      return (await http.get<PartidaFila[]>(`/proyectos/${proyectoId}/partidas`)).data
+    },
+    async crear(proyectoId, datos, confirmado = false) {
+      const cuerpo = { ...datos, confirmado }
+      return (await http.post<PartidaFila>(`/proyectos/${proyectoId}/partidas`, cuerpo)).data
+    },
+    async actualizar(id, datos, confirmado = false) {
+      return (await http.put<PartidaFila>(`/partidas/${id}`, { ...datos, confirmado })).data
     },
   }
 }
 
-// Hasta que exista el endpoint; la implementación con la API solo reemplaza esta línea.
-export const partidasServicio: PartidasServicio = crearPartidasEnMemoria()
+export const partidasServicio: PartidasServicio = crearPartidasApi()

@@ -333,7 +333,6 @@ describe('NivelesView', () => {
     const vista = await montar(async ({ partidas }) => {
       await partidas.actualizar(2, {
         grupo_id: 6,
-        partida_control: '2.02.02',
         item: '03.02.03.01',
         descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
         elemento: 'Columna',
@@ -404,7 +403,6 @@ describe('NivelesView', () => {
     const vista = await montar(async ({ partidas }) => {
       await partidas.crear(3, {
         grupo_id: 2,
-        partida_control: null,
         item: null,
         descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
         elemento: 'Zapata',

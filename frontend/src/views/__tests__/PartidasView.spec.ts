@@ -7,6 +7,7 @@ import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
+import type { GruposServicio } from '@/services/grupos'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import PartidasView from '@/views/PartidasView.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -19,6 +20,7 @@ const { toast, confirm, servicios } = vi.hoisted(() => ({
   servicios: {
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
+    grupos: null as GruposServicio | null,
     asignados: [] as number[],
   },
 }))
@@ -33,6 +35,16 @@ vi.mock('@/services/proyectos', async (importOriginal) => {
     ...real,
     get proyectosServicio() {
       return servicios.proyectos
+    },
+  }
+})
+
+vi.mock('@/services/grupos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/grupos')>()
+  return {
+    ...real,
+    get gruposServicio() {
+      return servicios.grupos
     },
   }
 })
@@ -57,6 +69,7 @@ async function montar(
   const niveles = crearNivelesEnMemoria()
   servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria(async () => niveles)
+  servicios.grupos = (await import('@/services/grupos')).crearGruposEnMemoria()
   await preparar?.(servicios.proyectos)
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -112,7 +125,6 @@ async function llenar(
   const texto = (id: string) =>
     vista.findAllComponents(InputText).find((t) => t.attributes('id') === id)!
   await select('grupo_id').setValue(3)
-  await texto('partida_control').setValue('2.02.02')
   await texto('descripcion').setValue("CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA")
   await select('elemento').setValue('Columna')
   await select('resistencia_fc').setValue("f'c 280 kg/cm²")
@@ -323,7 +335,6 @@ describe('PartidasView', () => {
         id: 5,
         proyecto_id: 3,
         grupo_id: 3,
-        partida_control: '2.02.02',
         // El ítem quedó vacío: se guarda como null.
         item: null,
         descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA",
@@ -389,7 +400,12 @@ describe('PartidasView', () => {
 
     confirm.require.mockImplementationOnce((o: { accept: () => void }) => o.accept())
     await guardar(vista)
-    expect(crear).toHaveBeenCalledOnce()
+    // La confirmación viaja a la API, que sin ella rechaza el desperdicio.
+    expect(crear).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ factor_desperdicio: 15.5 }),
+      true,
+    )
     // Cisterna va entre Cimentación y Verticales superestructura.
     expect(filas(vista)[1]?.[6]).toBe('4,620.00')
   })

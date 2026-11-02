@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\GrupoPartidaController;
+use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
 use App\Http\Controllers\Api\V1\RolController;
@@ -32,6 +34,24 @@ Route::prefix('v1')->group(function () {
                 Route::post('proyectos', [ProyectoController::class, 'store']);
                 Route::put('proyectos/{proyecto}', [ProyectoController::class, 'update'])->whereNumber('proyecto');
                 Route::get('proyectos/ingenieros', [ProyectoController::class, 'ingenieros']);
+            });
+
+            // Catálogo global de grupos de partidas: lo mantiene Oficina técnica.
+            Route::get('grupos-partida', [GrupoPartidaController::class, 'index'])->middleware('rol:oficina_tecnica,administrador');
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::post('grupos-partida', [GrupoPartidaController::class, 'store']);
+                Route::put('grupos-partida/{grupo}', [GrupoPartidaController::class, 'update'])->whereNumber('grupo');
+                Route::delete('grupos-partida/{grupo}', [GrupoPartidaController::class, 'destroy'])->whereNumber('grupo');
+            });
+
+            // CU04 Presupuesto: lo consultan también Producción (para repartirlo en sectores, CU05) y
+            // Gerencia; solo de los proyectos asignados.
+            Route::get('proyectos/{proyecto}/partidas', [PartidaController::class, 'index'])
+                ->whereNumber('proyecto')
+                ->middleware('rol:oficina_tecnica,ingeniero_produccion,gerencia,administrador');
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::post('proyectos/{proyecto}/partidas', [PartidaController::class, 'store'])->whereNumber('proyecto');
+                Route::put('partidas/{partida}', [PartidaController::class, 'update'])->whereNumber('partida');
             });
 
             // CU02 Gestionar usuarios y roles

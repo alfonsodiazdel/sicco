@@ -12,7 +12,7 @@ import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import { gruposServicio } from '@/services/grupos'
-import { esquemaGrupo, valoresDeGrupo } from '@/validaciones/grupo'
+import { esquemaGrupo, partidaControlPorDefecto, valoresDeGrupo } from '@/validaciones/grupo'
 import type { GrupoFila } from '@/types/grupos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
@@ -30,6 +30,7 @@ const cargando = ref(true)
 const columnas = [
   { campo: 'orden', encabezado: 'Orden', numerica: true },
   { campo: 'nombre', encabezado: 'Grupo' },
+  { campo: 'partida_control', encabezado: 'Partida de control', secundaria: true },
 ]
 
 function avisarError(error: unknown) {
@@ -58,13 +59,18 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
 })
 
 const [nombre, nombreAttrs] = defineField('nombre')
+const [partidaControl, partidaControlAttrs] = defineField('partida_control')
 const [orden, ordenAttrs] = defineField('orden')
 
 function abrir(grupo: GrupoFila | null = null) {
   editando.value = grupo
   // Uno nuevo va al final; se puede cambiar al registrarlo.
   const siguiente = Math.max(0, ...grupos.value.map((g) => g.orden)) + 1
-  resetForm({ values: grupo ? valoresDeGrupo(grupo) : { orden: siguiente } })
+  resetForm({
+    values: grupo
+      ? valoresDeGrupo(grupo)
+      : { partida_control: partidaControlPorDefecto, orden: siguiente },
+  })
   dialogo.value = true
 }
 
@@ -164,6 +170,26 @@ function confirmarEliminacion(grupo: GrupoFila) {
             maxlength="60"
             placeholder="Ej.: Cimentación"
             :invalid="!!errors.nombre"
+            :aria-describedby="idError"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Partida de control"
+          para="partida_control"
+          :error="errors.partida_control"
+          obligatorio
+          ancho="medio"
+        >
+          <InputText
+            id="partida_control"
+            v-model="partidaControl"
+            v-bind="partidaControlAttrs"
+            maxlength="20"
+            placeholder="Ej.: 2.02.02"
+            :invalid="!!errors.partida_control"
             :aria-describedby="idError"
             fluid
           />
