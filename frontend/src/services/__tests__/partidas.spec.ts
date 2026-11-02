@@ -6,6 +6,10 @@ import { volumenDisponible } from '@/services/presupuesto'
 import type { PartidaDatos } from '@/types/partidas'
 
 const zapata = (metrado_m3: number): PartidaDatos => ({
+  grupo_id: 2,
+  partida_control: '2.02.02',
+  item: null,
+  descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
   elemento: 'Zapata',
   resistencia_fc: "f'c 210 kg/cm²",
   metrado_m3,
@@ -50,5 +54,14 @@ describe('partidas en memoria', () => {
     await expect(partidas.actualizar(nueva.id, zapata(0.01))).resolves.toMatchObject({
       metrado_m3: 0.01,
     })
+  })
+
+  it('indica si algún proyecto tiene partidas del grupo', async () => {
+    const { partidas } = crearServicios()
+
+    expect(await partidas.usanGrupo(4)).toBe(true)
+    expect(await partidas.usanGrupo(3)).toBe(false)
+    await partidas.crear(3, zapata(10))
+    expect(await partidas.usanGrupo(2)).toBe(true)
   })
 })

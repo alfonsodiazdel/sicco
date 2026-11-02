@@ -1,3 +1,4 @@
+import type { GrupoFila } from '@/types/grupos'
 import type { PartidaDatos, PartidaFila } from '@/types/partidas'
 import type { SectorFila } from '@/types/niveles'
 
@@ -21,6 +22,59 @@ export const totalPartida = (p: Importe) => centimosDePartida(p) / 100
 
 export const totalPresupuesto = (partidas: Importe[]) =>
   partidas.reduce((suma, p) => suma + centimosDePartida(p), 0) / 100
+
+type Volumen = Pick<PartidaDatos, 'metrado_m3' | 'factor_desperdicio'>
+
+// metrado × (100 % + desperdicio), en centésimos de m³.
+const centesimosPresupuestados = (p: Volumen) =>
+  Math.round((centesimos(p.metrado_m3) * (10000 + centesimos(p.factor_desperdicio))) / 10000)
+
+/** Metrado con el desperdicio incluido (m³ presupuestados), a dos decimales. */
+export const volumenPresupuestado = (p: Volumen) => centesimosPresupuestados(p) / 100
+
+/** El desperdicio se guarda en %; el presupuesto lo muestra como factor: 5 % es 1.050. */
+export const factorDesperdicio = (porcentaje: number) =>
+  (1 + porcentaje / 100).toLocaleString('es-PE', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 4,
+  })
+
+export interface GrupoDePresupuesto {
+  grupo: Pick<GrupoFila, 'id' | 'nombre'>
+  partidas: PartidaFila[]
+  metrado_m3: number
+  volumen_presup_m3: number
+  total: number
+}
+
+const sinGrupo = { id: 0, nombre: 'Sin grupo', orden: Number.POSITIVE_INFINITY }
+
+/**
+ * Partidas reunidas por grupo, en el orden del catálogo, con sus subtotales. Los grupos sin
+ * partidas no aparecen; una partida con un grupo que ya no existe va al final, en «Sin grupo».
+ */
+export function agruparPartidas(
+  partidas: PartidaFila[],
+  grupos: GrupoFila[],
+): GrupoDePresupuesto[] {
+  const porId = new Map(grupos.map((g) => [g.id, g]))
+  const reunidos = new Map<number, { grupo: GrupoFila; partidas: PartidaFila[] }>()
+  for (const partida of partidas) {
+    const grupo = porId.get(partida.grupo_id) ?? sinGrupo
+    const reunido = reunidos.get(grupo.id) ?? { grupo, partidas: [] }
+    reunido.partidas.push(partida)
+    reunidos.set(grupo.id, reunido)
+  }
+  return [...reunidos.values()]
+    .sort((a, b) => a.grupo.orden - b.grupo.orden || a.grupo.id - b.grupo.id)
+    .map(({ grupo, partidas }) => ({
+      grupo: { id: grupo.id, nombre: grupo.nombre },
+      partidas,
+      metrado_m3: partidas.reduce((suma, p) => suma + centesimos(p.metrado_m3), 0) / 100,
+      volumen_presup_m3: partidas.reduce((suma, p) => suma + centesimosPresupuestados(p), 0) / 100,
+      total: totalPresupuesto(partidas),
+    }))
+}
 
 type Asignado = Pick<SectorFila, 'id' | 'presupuesto_id' | 'volumen_presup_m3'>
 

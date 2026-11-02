@@ -7,12 +7,18 @@ export interface PartidasServicio {
   listar(proyectoId: number): Promise<PartidaFila[]>
   crear(proyectoId: number, datos: PartidaDatos): Promise<PartidaFila>
   actualizar(id: number, datos: PartidaDatos): Promise<PartidaFila>
+  /** Si alguna partida, de cualquier proyecto, pertenece al grupo: entonces no se elimina. */
+  usanGrupo(grupoId: number): Promise<boolean>
 }
 
 const partidasEjemplo: PartidaFila[] = [
   {
     id: 1,
     proyecto_id: 1,
+    grupo_id: 2,
+    partida_control: '2.02.02',
+    item: '03.01.02.01',
+    descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
     elemento: 'Zapata',
     resistencia_fc: "f'c 210 kg/cm²",
     metrado_m3: 320,
@@ -22,6 +28,10 @@ const partidasEjemplo: PartidaFila[] = [
   {
     id: 2,
     proyecto_id: 1,
+    grupo_id: 6,
+    partida_control: '2.02.02',
+    item: '03.02.03.01',
+    descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
     elemento: 'Columna',
     resistencia_fc: "f'c 280 kg/cm²",
     metrado_m3: 180.5,
@@ -31,6 +41,10 @@ const partidasEjemplo: PartidaFila[] = [
   {
     id: 3,
     proyecto_id: 1,
+    grupo_id: 7,
+    partida_control: '2.02.02',
+    item: null,
+    descripcion: "CONCRETO F'C=210 kg/cm2 - LOSA ALIGERADA H=20cm",
     elemento: 'Losa aligerada',
     resistencia_fc: "f'c 210 kg/cm²",
     metrado_m3: 245,
@@ -40,6 +54,10 @@ const partidasEjemplo: PartidaFila[] = [
   {
     id: 4,
     proyecto_id: 2,
+    grupo_id: 4,
+    partida_control: '2.02.02',
+    item: '03.02.02.01',
+    descripcion: "CONCRETO PREMEZ. F'C=350 kg/cm2 - PLACAS",
     elemento: 'Placa',
     resistencia_fc: "f'c 350 kg/cm²",
     metrado_m3: 3850,
@@ -80,6 +98,9 @@ export function crearPartidasEnMemoria(
         })
       }
       return { ...Object.assign(partida, datos) }
+    },
+    async usanGrupo(grupoId) {
+      return partidas.some((p) => p.grupo_id === grupoId)
     },
   }
 }

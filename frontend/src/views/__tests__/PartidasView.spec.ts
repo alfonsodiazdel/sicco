@@ -4,6 +4,7 @@ import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
@@ -67,16 +68,22 @@ async function montar(
   return vista
 }
 
-// Sin la segunda línea que solo se ve en celular.
+// Descripción, f'c, m³ neto, factor de desperdicio, m³ presupuestados, P.U. y parcial.
 function filas(vista: VueWrapper) {
-  return vista
-    .findAll('tbody tr')
-    .map((tr) =>
-      tr
-        .findAll('td')
-        .map((td) => (td.find('.sm\\:hidden').exists() ? td.get('span').text() : td.text())),
-    )
+  return vista.findAll('[data-partida]').map((tr) => {
+    const celdas = tr.findAll('td')
+    return [celdas[2]!.get('span').text(), ...celdas.slice(4, 10).map((td) => td.text())]
+  })
 }
+
+// El elemento estructural va bajo la descripción.
+const elementos = (vista: VueWrapper) =>
+  vista.findAll('[data-partida] td:nth-child(3) span:last-child').map((s) => s.text())
+
+const grupos = (vista: VueWrapper) => vista.findAll('[data-grupo-nombre]').map((g) => g.text())
+
+const zapata = "CONCRETO F'C=210 kg/cm2 - ZAPATAS"
+const editarZapata = `button[aria-label="Editar partida ${zapata}"]`
 
 // El proyecto se elige en el encabezado (SelectorProyecto); la vista lo toma del store.
 const proyectoActual = () => useProyectoActualStore()
@@ -102,6 +109,11 @@ async function llenar(
     vista.findAllComponents(Select).find((s) => s.props('labelId') === id)!
   const numero = (id: string) =>
     vista.findAllComponents(InputNumber).find((n) => n.props('inputId') === id)!
+  const texto = (id: string) =>
+    vista.findAllComponents(InputText).find((t) => t.attributes('id') === id)!
+  await select('grupo_id').setValue(3)
+  await texto('partida_control').setValue('2.02.02')
+  await texto('descripcion').setValue("CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA")
   await select('elemento').setValue('Columna')
   await select('resistencia_fc').setValue("f'c 280 kg/cm²")
   await numero('metrado_m3').setValue(valores.metrado)
@@ -130,36 +142,86 @@ describe('PartidasView', () => {
     )
   })
 
-  it('lista las partidas del primer proyecto con su total y el total presupuestado', async () => {
+  it('lista las partidas del primer proyecto agrupadas, con su parcial y el total', async () => {
     const vista = await montar()
 
     expect(vista.get('h2').text()).toBe('Presupuesto – Residencial Los Álamos')
     expect(proyectoActual().proyectoId).toBe(1)
-    expect(vista.findAll('th').map((th) => th.text())).toEqual([
-      'Elemento',
+    expect(vista.findAll('thead th').map((th) => th.text())).toEqual([
+      'P. control',
+      'Ítem',
+      'Descripción',
+      'Und',
       "f'c",
-      'Metrado m³',
-      '% Desp.',
-      'P.U. S/',
-      'Total S/',
+      'm³ neto',
+      'Desp.',
+      'm³ presup.',
+      'P.U.',
+      'Parcial',
       'Acciones',
     ])
-    expect(filas(vista).map((f) => f.slice(0, 6))).toEqual([
-      ['Zapata', "f'c 210 kg/cm²", '320.00', '5.00 %', '385.00', '129,360.00'],
-      ['Columna', "f'c 280 kg/cm²", '180.50', '3.00 %', '420.00', '78,084.30'],
-      ['Losa aligerada', "f'c 210 kg/cm²", '245.00', '5.00 %', '390.00', '100,327.50'],
+    expect(grupos(vista)).toEqual([
+      'Cimentación',
+      'Verticales superestructura',
+      'Horizontales superestructura',
     ])
+    expect(filas(vista)).toEqual([
+      [zapata, '210', '320.00', '1.050', '336.00', '385.00', '129,360.00'],
+      [
+        "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
+        '280',
+        '180.50',
+        '1.030',
+        '185.92',
+        '420.00',
+        '78,084.30',
+      ],
+      [
+        "CONCRETO F'C=210 kg/cm2 - LOSA ALIGERADA H=20cm",
+        '210',
+        '245.00',
+        '1.050',
+        '257.25',
+        '390.00',
+        '100,327.50',
+      ],
+    ])
+    expect(elementos(vista)).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
     expect(totalPresupuestado(vista)).toBe('S/ 307,771.80')
   })
 
-  it("en celular muestra el f'c bajo el elemento y oculta las columnas del cálculo", async () => {
+  it('resume cada grupo en su encabezado y lo subtotaliza debajo de sus partidas', async () => {
     const vista = await montar()
-    const ocultas = vista.findAll('th').filter((th) => th.classes().includes('hidden'))
+    const [cimentacion] = vista.findAll('[data-grupo]')
 
-    expect(ocultas.map((th) => th.text())).toEqual(["f'c", 'Metrado m³', '% Desp.', 'P.U. S/'])
-    expect(vista.get('tbody tr:first-child td:first-child .sm\\:hidden').text()).toBe(
-      "f'c 210 kg/cm²",
+    expect(cimentacion!.get('th').text()).toBe(
+      'Cimentación · 1 partida · 320.00 m³ neto · S/ 129,360',
     )
+    expect(
+      cimentacion!
+        .get('[data-subtotal]')
+        .findAll('td')
+        .map((td) => td.text())
+        .filter(Boolean),
+    ).toEqual(['Subtotal Cimentación:', '320.00', '336.00', 'S/ 129,360.00'])
+    // El total suma los volúmenes de todos los grupos.
+    expect(vista.get('tfoot').text()).toContain('745.50')
+    expect(vista.get('tfoot').text()).toContain('779.17')
+  })
+
+  it('en celular deja solo la descripción, el metrado neto y el parcial', async () => {
+    const vista = await montar()
+    const ocultas = vista.findAll('thead th').filter((th) => th.classes().includes('hidden'))
+
+    expect(ocultas.map((th) => th.text())).toEqual([
+      'P. control',
+      'Ítem',
+      'Und',
+      "f'c",
+      'Desp.',
+      'm³ presup.',
+      'P.U.',
+    ])
   })
 
   it('ofrece solo los proyectos activos', async () => {
@@ -172,7 +234,7 @@ describe('PartidasView', () => {
       'Torre Empresarial Javier Prado',
       'Condominio Las Palmeras',
     ])
-    expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
+    expect(elementos(vista)).toEqual(['Placa'])
   })
 
   it('muestra el proyecto ya elegido en otra vista sin volver a pedir los proyectos', async () => {
@@ -185,7 +247,7 @@ describe('PartidasView', () => {
     await asentar()
 
     expect(asignados).not.toHaveBeenCalled()
-    expect(filas(otra).map((f) => f[0])).toEqual(['Placa'])
+    expect(elementos(otra)).toEqual(['Placa'])
   })
 
   it('descarta la respuesta de un proyecto que se dejó de lado mientras cargaba', async () => {
@@ -235,8 +297,17 @@ describe('PartidasView', () => {
       expect.objectContaining({ summary: 'Partida registrada' }),
     )
     expect(vista.find('form').exists()).toBe(false)
-    expect(filas(vista).map((f) => f.slice(0, 6))).toEqual([
-      ['Columna', "f'c 280 kg/cm²", '12.50', '5.00 %', '33.33', '437.46'],
+    expect(grupos(vista)).toEqual(['Cisterna'])
+    expect(filas(vista)).toEqual([
+      [
+        "CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA",
+        '280',
+        '12.50',
+        '1.050',
+        '13.13',
+        '33.33',
+        '437.46',
+      ],
     ])
     expect(totalPresupuestado(vista)).toBe('S/ 437.46')
 
@@ -244,13 +315,18 @@ describe('PartidasView', () => {
     await llenar(vista, { metrado: 0.5, desperdicio: 0, precio: 2.01 })
     await guardar(vista)
 
-    expect(filas(vista)[1]?.slice(2, 6)).toEqual(['0.50', '0.00 %', '2.01', '1.01'])
+    expect(filas(vista)[1]?.slice(2)).toEqual(['0.50', '1.000', '0.50', '2.01', '1.01'])
     expect(totalPresupuestado(vista)).toBe('S/ 438.47')
     // La partida guarda solo el id del proyecto, sin copiar sus datos.
     expect(await servicios.partidas!.listar(3)).toEqual([
       {
         id: 5,
         proyecto_id: 3,
+        grupo_id: 3,
+        partida_control: '2.02.02',
+        // El ítem quedó vacío: se guarda como null.
+        item: null,
+        descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA",
         elemento: 'Columna',
         resistencia_fc: "f'c 280 kg/cm²",
         metrado_m3: 12.5,
@@ -261,7 +337,7 @@ describe('PartidasView', () => {
     ])
   })
 
-  it('exige los cinco campos obligatorios y no registra nada', async () => {
+  it('exige los siete campos obligatorios y no registra nada', async () => {
     const vista = await montar()
     const crear = vi.spyOn(servicios.partidas!, 'crear')
     await abrirNuevo(vista)
@@ -271,6 +347,8 @@ describe('PartidasView', () => {
       vista.findAll('small.text-red-600').map((e) => [e.attributes('id'), e.text()]),
     )
     expect(errores).toEqual({
+      'grupo_id-error': 'Este dato es requerido',
+      'descripcion-error': 'Este dato es requerido',
       'elemento-error': 'Este dato es requerido',
       'resistencia_fc-error': 'Este dato es requerido',
       'metrado_m3-error': 'Este dato es requerido',
@@ -312,12 +390,13 @@ describe('PartidasView', () => {
     confirm.require.mockImplementationOnce((o: { accept: () => void }) => o.accept())
     await guardar(vista)
     expect(crear).toHaveBeenCalledOnce()
-    expect(filas(vista)[3]?.[5]).toBe('4,620.00')
+    // Cisterna va entre Cimentación y Verticales superestructura.
+    expect(filas(vista)[1]?.[6]).toBe('4,620.00')
   })
 
   it('edita una partida y recalcula los totales', async () => {
     const vista = await montar()
-    await vista.get('button[aria-label="Editar partida Zapata"]').trigger('click')
+    await vista.get(editarZapata).trigger('click')
     await asentar()
 
     const metrado = vista
@@ -330,13 +409,13 @@ describe('PartidasView', () => {
     expect(toast.add).toHaveBeenCalledWith(
       expect.objectContaining({ summary: 'Cambios guardados.' }),
     )
-    expect(filas(vista)[0]?.slice(2, 6)).toEqual(['300.00', '5.00 %', '385.00', '121,275.00'])
+    expect(filas(vista)[0]?.slice(2)).toEqual(['300.00', '1.050', '315.00', '385.00', '121,275.00'])
     expect(totalPresupuestado(vista)).toBe('S/ 299,686.80')
   })
 
   it('no deja bajar el metrado por debajo de lo ya repartido en sectores', async () => {
     const vista = await montar()
-    await vista.get('button[aria-label="Editar partida Zapata"]').trigger('click')
+    await vista.get(editarZapata).trigger('click')
     await asentar()
 
     await vista
@@ -349,7 +428,7 @@ describe('PartidasView', () => {
       'El metrado es menor al volumen ya repartido en sectores (76.00 m³)',
     )
     expect(toast.add).not.toHaveBeenCalled()
-    expect(filas(vista)[0]?.slice(2, 6)).toEqual(['320.00', '5.00 %', '385.00', '129,360.00'])
+    expect(filas(vista)[0]?.slice(2)).toEqual(['320.00', '1.050', '336.00', '385.00', '129,360.00'])
   })
 
   it('ofrece solo los proyectos asignados al usuario', async () => {
@@ -357,7 +436,7 @@ describe('PartidasView', () => {
     const vista = await montar()
 
     expect(nombresOfrecidos()).toEqual(['Torre Empresarial Javier Prado'])
-    expect(filas(vista).map((f) => f[0])).toEqual(['Placa'])
+    expect(elementos(vista)).toEqual(['Placa'])
   })
 
   it('al administrador le muestra el presupuesto sin ninguna acción de escritura', async () => {

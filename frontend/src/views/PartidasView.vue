@@ -8,14 +8,17 @@ import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
-import TablaCrud from '@/components/organismos/TablaCrud.vue'
+import TablaPresupuesto from '@/components/organismos/TablaPresupuesto.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import { elementosEstructurales, resistenciasFc } from '@/catalogos/partidas'
+import { gruposServicio } from '@/services/grupos'
 import { partidasServicio } from '@/services/partidas'
-import { decimales, soles, totalPartida, totalPresupuesto } from '@/services/presupuesto'
+import { decimales } from '@/services/presupuesto'
 import { esquemaPartida, valoresDePartida } from '@/validaciones/partida'
+import type { GrupoFila } from '@/types/grupos'
 import type { PartidaFila } from '@/types/partidas'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
@@ -32,18 +35,8 @@ const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 // El proyecto se elige en el encabezado (SelectorProyecto).
 const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
+const grupos = ref<GrupoFila[]>([])
 const cargando = ref(true)
-
-const total = computed(() => totalPresupuesto(partidas.value))
-
-const columnas = [
-  { campo: 'elemento', encabezado: 'Elemento' },
-  { campo: 'resistencia_fc', encabezado: "f'c", secundaria: true },
-  { campo: 'metrado_m3', encabezado: 'Metrado m³', secundaria: true, numerica: true },
-  { campo: 'factor_desperdicio', encabezado: '% Desp.', secundaria: true, numerica: true },
-  { campo: 'precio_unitario', encabezado: 'P.U. S/', secundaria: true, numerica: true },
-  { campo: 'total', encabezado: 'Total S/', numerica: true },
-]
 
 function avisarError(error: unknown) {
   toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
@@ -71,7 +64,9 @@ watch(() => proyectoActual.cargado && proyectoId.value, cargarPartidas, { immedi
 
 onMounted(async () => {
   try {
-    await proyectoActual.cargar()
+    // El catálogo de grupos es el mismo para todos los proyectos: se pide una vez.
+    const [lista] = await Promise.all([gruposServicio.listar(), proyectoActual.cargar()])
+    grupos.value = lista
   } catch (error) {
     avisarError(error)
     cargando.value = false
@@ -85,6 +80,10 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
   validationSchema: toTypedSchema(esquemaPartida),
 })
 
+const [grupoId, grupoIdAttrs] = defineField('grupo_id')
+const [partidaControl, partidaControlAttrs] = defineField('partida_control')
+const [item, itemAttrs] = defineField('item')
+const [descripcion, descripcionAttrs] = defineField('descripcion')
 const [elemento, elementoAttrs] = defineField('elemento')
 const [resistenciaFc, resistenciaFcAttrs] = defineField('resistencia_fc')
 const [metrado, metradoAttrs] = defineField('metrado_m3')
@@ -148,45 +147,26 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
       />
     </template>
 
-    <TablaCrud
-      :filas="partidas"
-      :columnas="columnas"
-      clave="id"
+    <TablaPresupuesto
+      :partidas="partidas"
+      :grupos="grupos"
       :vacio="
         proyecto ? 'Este proyecto aún no tiene partidas.' : 'No tiene proyectos activos asignados.'
       "
       :cargando="cargando"
     >
-      <template #col-elemento="{ fila }">
-        <span>{{ fila.elemento }}</span>
-        <span class="block text-sm whitespace-nowrap text-surface-500 sm:hidden">{{
-          fila.resistencia_fc
-        }}</span>
-      </template>
-      <template #col-resistencia_fc="{ fila }">
-        <span class="whitespace-nowrap">{{ fila.resistencia_fc }}</span>
-      </template>
-      <template #col-metrado_m3="{ fila }">{{ decimales(fila.metrado_m3) }}</template>
-      <template #col-factor_desperdicio="{ fila }"
-        >{{ decimales(fila.factor_desperdicio) }} %</template
-      >
-      <template #col-precio_unitario="{ fila }">{{ decimales(fila.precio_unitario) }}</template>
-      <template #col-total="{ fila }">{{ decimales(totalPartida(fila)) }}</template>
       <template v-if="puedeGestionar" #acciones="{ fila }">
         <Button
           icon="pi pi-pencil"
           text
           rounded
-          :aria-label="`Editar partida ${fila.elemento}`"
-          :title="`Editar partida ${fila.elemento}`"
+          class="max-sm:w-8!"
+          :aria-label="`Editar partida ${fila.descripcion}`"
+          :title="`Editar partida ${fila.descripcion}`"
           @click="abrir(fila)"
         />
       </template>
-    </TablaCrud>
-
-    <p class="border-t border-surface-200 p-4 text-right font-semibold">
-      Total presupuestado: <span data-total-presupuesto>{{ soles(total) }}</span>
-    </p>
+    </TablaPresupuesto>
 
     <template #dialogos>
       <DialogoFormulario
@@ -197,13 +177,91 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
       >
         <CampoFormulario
           v-slot="{ idError }"
+          etiqueta="Grupo"
+          para="grupo_id"
+          :error="errors.grupo_id"
+          obligatorio
+        >
+          <!-- Select e InputNumber no pasan los atributos al elemento que recibe el foco. -->
+          <Select
+            v-model="grupoId"
+            v-bind="grupoIdAttrs"
+            label-id="grupo_id"
+            :options="grupos"
+            option-label="nombre"
+            option-value="id"
+            placeholder="Seleccione"
+            :invalid="!!errors.grupo_id"
+            :pt="{ label: { 'aria-describedby': idError } }"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Partida de control"
+          para="partida_control"
+          :error="errors.partida_control"
+          ancho="medio"
+        >
+          <InputText
+            id="partida_control"
+            v-model="partidaControl"
+            v-bind="partidaControlAttrs"
+            maxlength="20"
+            placeholder="Ej.: 2.02.02"
+            :invalid="!!errors.partida_control"
+            :aria-describedby="idError"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Ítem del expediente"
+          para="item"
+          :error="errors.item"
+          ancho="medio"
+        >
+          <InputText
+            id="item"
+            v-model="item"
+            v-bind="itemAttrs"
+            maxlength="20"
+            placeholder="Ej.: 03.01.01.01"
+            :invalid="!!errors.item"
+            :aria-describedby="idError"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Descripción"
+          para="descripcion"
+          :error="errors.descripcion"
+          obligatorio
+        >
+          <InputText
+            id="descripcion"
+            v-model="descripcion"
+            v-bind="descripcionAttrs"
+            maxlength="200"
+            placeholder="Ej.: CONCRETO F'C=210 kg/cm2 - ZAPATAS"
+            :invalid="!!errors.descripcion"
+            :aria-describedby="idError"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
           etiqueta="Elemento estructural"
           para="elemento"
           :error="errors.elemento"
           obligatorio
           ancho="medio"
         >
-          <!-- Select e InputNumber no pasan los atributos al elemento que recibe el foco. -->
           <Select
             v-model="elemento"
             v-bind="elementoAttrs"

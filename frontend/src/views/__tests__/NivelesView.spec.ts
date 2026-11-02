@@ -332,6 +332,10 @@ describe('NivelesView', () => {
   it('al editar un sector descuenta todo menos su propio volumen', async () => {
     const vista = await montar(async ({ partidas }) => {
       await partidas.actualizar(2, {
+        grupo_id: 6,
+        partida_control: '2.02.02',
+        item: '03.02.03.01',
+        descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
         elemento: 'Columna',
         resistencia_fc: "f'c 280 kg/cm²",
         metrado_m3: 160.25,
@@ -399,6 +403,10 @@ describe('NivelesView', () => {
   it('sin niveles pide registrar primero un nivel antes de un sector', async () => {
     const vista = await montar(async ({ partidas }) => {
       await partidas.crear(3, {
+        grupo_id: 2,
+        partida_control: null,
+        item: null,
+        descripcion: "CONCRETO F'C=210 kg/cm2 - ZAPATAS",
         elemento: 'Zapata',
         resistencia_fc: "f'c 210 kg/cm²",
         metrado_m3: 50,

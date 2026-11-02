@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { soles, totalPartida, totalPresupuesto, volumenDisponible } from '@/services/presupuesto'
+import {
+  agruparPartidas,
+  factorDesperdicio,
+  soles,
+  totalPartida,
+  totalPresupuesto,
+  volumenDisponible,
+  volumenPresupuestado,
+} from '@/services/presupuesto'
+import { fcEnKg } from '@/catalogos/partidas'
+import type { PartidaFila } from '@/types/partidas'
 
 const partida = (metrado_m3: number, factor_desperdicio: number, precio_unitario: number) => ({
   metrado_m3,
@@ -72,6 +82,57 @@ describe('presupuesto', () => {
   it('muestra los importes en soles con dos decimales', () => {
     expect(soles(307771.8)).toBe('S/ 307,771.80')
     expect(soles(0)).toBe('S/ 0.00')
+  })
+
+  it('el volumen presupuestado es el metrado con el desperdicio, a dos decimales', () => {
+    expect(volumenPresupuestado(partida(538.88, 40, 297))).toBe(754.43)
+    expect(volumenPresupuestado(partida(5.19, 6.5, 297))).toBe(5.53)
+    expect(volumenPresupuestado(partida(10, 0, 1))).toBe(10)
+  })
+
+  it("muestra el desperdicio como factor y el f'c como número", () => {
+    expect(factorDesperdicio(40)).toBe('1.400')
+    expect(factorDesperdicio(6.5)).toBe('1.065')
+    expect(factorDesperdicio(12.25)).toBe('1.1225')
+    expect(fcEnKg("f'c 280 kg/cm²")).toBe(280)
+  })
+
+  describe('agrupar partidas', () => {
+    const grupos = [
+      { id: 1, nombre: 'Muros anclados', orden: 1 },
+      { id: 2, nombre: 'Cimentación', orden: 2 },
+      { id: 3, nombre: 'Cisterna', orden: 3 },
+    ]
+    const fila = (id: number, grupo_id: number, metrado: number, desp: number, pu: number) =>
+      ({ ...partida(metrado, desp, pu), id, grupo_id }) as PartidaFila
+
+    it('reúne por grupo en el orden del catálogo, con subtotales, y omite los grupos vacíos', () => {
+      const agrupadas = agruparPartidas(
+        [fila(1, 2, 285.67, 10, 279), fila(2, 1, 538.88, 40, 297), fila(3, 2, 5.19, 6.5, 297)],
+        grupos,
+      )
+
+      expect(agrupadas.map((g) => [g.grupo.nombre, g.partidas.map((p) => p.id)])).toEqual([
+        ['Muros anclados', [2]],
+        ['Cimentación', [1, 3]],
+      ])
+      expect(agrupadas[0]).toMatchObject({
+        metrado_m3: 538.88,
+        volumen_presup_m3: 754.43,
+        total: 224066.3,
+      })
+      expect(agrupadas[1]).toMatchObject({
+        metrado_m3: 290.86,
+        volumen_presup_m3: 319.77,
+        total: 89313.74,
+      })
+    })
+
+    it('deja al final, en «Sin grupo», las partidas de un grupo que ya no existe', () => {
+      const agrupadas = agruparPartidas([fila(1, 99, 1, 0, 1), fila(2, 3, 1, 0, 1)], grupos)
+
+      expect(agrupadas.map((g) => g.grupo.nombre)).toEqual(['Cisterna', 'Sin grupo'])
+    })
   })
 
   describe('volumen disponible del elemento', () => {

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { elementosEstructurales, resistenciasFc } from '@/catalogos/partidas'
 import type { PartidaFila } from '@/types/partidas'
-import { requerido } from '@/validaciones/usuario'
+import { requerido, texto } from '@/validaciones/usuario'
 
 const mayorACero = 'Ingrese un valor mayor a cero'
 
@@ -11,7 +11,20 @@ const cantidad = () => z.number({ required_error: requerido, invalid_type_error:
 const lista = <T extends readonly [string, ...string[]]>(opciones: T) =>
   z.enum(opciones, { errorMap: () => ({ message: requerido }) })
 
+// PC e ítem son opcionales: vacíos se guardan como null.
+const codigo = z
+  .string()
+  .trim()
+  .max(20, 'Debe tener como máximo 20 caracteres')
+  .regex(/^[\d.]*$/, 'Use solo números separados por puntos')
+  .nullish()
+  .transform((valor) => valor || null)
+
 export const esquemaPartida = z.object({
+  grupo_id: z.number({ required_error: requerido, invalid_type_error: requerido }),
+  partida_control: codigo,
+  item: codigo,
+  descripcion: texto(200),
   elemento: lista(elementosEstructurales),
   resistencia_fc: lista(resistenciasFc),
   metrado_m3: cantidad().positive(mayorACero),
@@ -21,6 +34,10 @@ export const esquemaPartida = z.object({
 
 export function valoresDePartida(partida: PartidaFila) {
   return {
+    grupo_id: partida.grupo_id,
+    partida_control: partida.partida_control,
+    item: partida.item,
+    descripcion: partida.descripcion,
     elemento: partida.elemento,
     resistencia_fc: partida.resistencia_fc,
     metrado_m3: partida.metrado_m3,

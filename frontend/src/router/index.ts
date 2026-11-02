@@ -16,7 +16,7 @@ declare module 'vue-router' {
   }
 }
 
-const implementados = ['/', '/usuarios', '/proyectos', '/partidas', '/niveles']
+const implementados = ['/', '/usuarios', '/proyectos', '/partidas', '/grupos', '/niveles']
 
 // Vistas de los módulos ya implementados, por ruta del menú.
 const vistas: Record<string, RouteRecordRaw['component']> = {
@@ -72,6 +72,12 @@ const routes: RouteRecordRaw[] = [
         name: 'partidas',
         component: () => import('@/views/PartidasView.vue'),
         meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto', porProyecto: true },
+      },
+      {
+        path: 'grupos',
+        name: 'grupos',
+        component: () => import('@/views/GruposView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Grupos de partidas' },
       },
       {
         path: 'niveles',
