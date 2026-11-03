@@ -9,6 +9,7 @@ import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
+import VisorFotoGuia from '@/components/organismos/VisorFotoGuia.vue'
 import { asignacionesServicio } from '@/services/asignaciones'
 import { decimales } from '@/services/presupuesto'
 import { aIso } from '@/validaciones/proyecto'
@@ -199,8 +200,10 @@ const fecha = { dateFormat: 'dd/mm/yy', placeholder: 'dd/mm/aaaa', showClear: tr
           fila.dias_transcurridos
         }}</span>
       </template>
-      <template v-if="puedeAsignar" #acciones="{ fila }">
+      <template #acciones="{ fila }">
+        <VisorFotoGuia :guia-id="fila.id" :numero="fila.numero" />
         <Button
+          v-if="puedeAsignar"
           label="Asignar"
           size="small"
           :aria-label="`Asignar guía ${fila.numero}`"

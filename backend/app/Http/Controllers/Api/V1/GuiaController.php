@@ -19,12 +19,14 @@ use App\Services\Ocr\LecturaGuia;
 use App\Services\Ocr\LecturaNoDisponible;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** CU06 Registrar guía de remisión, con CU07 Leer guía con OCR y CU08 Registrar guía manualmente. */
 class GuiaController extends Controller
@@ -139,6 +141,22 @@ class GuiaController extends Controller
         return GuiaResource::make($guia->load(['proveedor', 'resistencia', 'producto']))
             ->response()
             ->setStatusCode(201);
+    }
+
+    /**
+     * La foto de la guía, para verla junto a sus datos. Pasa por la API y no por una URL firmada del
+     * bucket: el acceso se revisa con la sesión y en local la firma apuntaría al host interno de S3.
+     */
+    public function foto(Request $request, GuiaRemision $guia): StreamedResponse
+    {
+        $this->autorizarProyecto($request, $guia->proyecto);
+
+        abort_unless(Storage::exists($guia->foto_ruta), 404, __('sicco.guias.foto_no_disponible'));
+
+        // La foto de una guía no cambia: el navegador puede guardarla, pero no un proxy compartido.
+        return Storage::response($guia->foto_ruta, "guia-{$guia->numero}.".pathinfo($guia->foto_ruta, PATHINFO_EXTENSION), [
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
     }
 
     /**

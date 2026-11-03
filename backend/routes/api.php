@@ -83,6 +83,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('guias', [GuiaController::class, 'store']);
             });
 
+            // Foto de la guía: la ve todo rol que consulta guías, solo en sus proyectos.
+            Route::get('guias/{guia}/foto', [GuiaController::class, 'foto'])
+                ->whereNumber('guia')
+                ->middleware('rol:administrador,almacenero,ingeniero_produccion,oficina_tecnica,gerencia');
+
             // CU10 Guías sin sector: las consultan Producción y Oficina técnica en sus proyectos, y
             // CU09 la asignación que se abre desde ellas, que solo guarda Producción.
             Route::middleware('rol:ingeniero_produccion,oficina_tecnica,administrador')->group(function () {

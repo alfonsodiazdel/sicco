@@ -36,6 +36,7 @@ return [
         'fecha_futura' => 'La fecha no puede ser posterior a hoy',
         'foto_invalida' => 'Adjunte una foto JPG, PNG o WebP de hasta 10 MB',
         'resistencia_producto' => 'El producto :codigo está registrado como :resistencia',
+        'foto_no_disponible' => 'La foto de la guía no está disponible',
         'rango_invalido' => 'La fecha final debe ser igual o posterior a la inicial',
     ],
     'asignaciones' => [

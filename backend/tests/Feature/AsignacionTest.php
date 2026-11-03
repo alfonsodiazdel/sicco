@@ -326,3 +326,39 @@ describe('asignación a sectores (CU09)', function () {
         $this->getJson('/api/v1/guias/'.guiaDe($ajeno)->id.'/asignaciones')->assertForbidden();
     });
 });
+
+describe('foto de la guía', function () {
+    it('la muestra en línea a quien tiene acceso al proyecto', function (Rol $rol) {
+        Storage::fake();
+        [$p] = obraConSectores();
+        $guia = guiaDe($p);
+        Storage::put($guia->foto_ruta, 'jpeg');
+
+        $respuesta = $this->actingAs(asignadoA($p, $rol))
+            ->get("/api/v1/guias/{$guia->id}/foto")
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'max-age=86400, private');
+
+        expect($respuesta->streamedContent())->toBe('jpeg')
+            ->and($respuesta->headers->get('Content-Disposition'))->toStartWith('inline');
+    })->with([Rol::Almacenero, Rol::IngenieroProduccion, Rol::OficinaTecnica, Rol::Gerencia, Rol::Administrador]);
+
+    it('no la muestra a usuarios de otro proyecto', function () {
+        Storage::fake();
+        [, , , $ingeniero] = obraConSectores();
+        $guia = guiaDe(obra(['codigo' => 'PRY-002']));
+        Storage::put($guia->foto_ruta, 'jpeg');
+
+        $this->actingAs($ingeniero)->getJson("/api/v1/guias/{$guia->id}/foto")->assertForbidden();
+    });
+
+    it('responde 404 si la foto ya no está en el almacenamiento', function () {
+        Storage::fake();
+        [$p, , , $ingeniero] = obraConSectores();
+
+        $this->actingAs($ingeniero)
+            ->getJson('/api/v1/guias/'.guiaDe($p)->id.'/foto')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'La foto de la guía no está disponible');
+    });
+});

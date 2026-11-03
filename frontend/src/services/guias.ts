@@ -16,6 +16,9 @@ export interface GuiasServicio {
 
 const NOMBRE_FOTO = 'guia.jpg'
 
+/** La foto de una guía registrada; la API la entrega con la sesión, sin URL firmada del bucket. */
+export const urlFotoGuia = (guiaId: number) => `${http.defaults.baseURL}/guias/${guiaId}/foto`
+
 function formulario(datos: object) {
   const form = new FormData()
   for (const [campo, valor] of Object.entries(datos)) {

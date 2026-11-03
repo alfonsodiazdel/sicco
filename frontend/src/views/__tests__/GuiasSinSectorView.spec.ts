@@ -153,6 +153,15 @@ describe('GuiasSinSectorView (CU10)', () => {
     expect(vista.find('button[aria-label^="Asignar guía"]').exists()).toBe(false)
   })
 
+  it('cada guía muestra su foto', async () => {
+    const { vista } = await montar('oficina_tecnica')
+
+    expect(vista.findAll('button[aria-label^="Ver foto de la guía"]')).toHaveLength(3)
+    await vista.get('button[aria-label="Ver foto de la guía T001-00012340"]').trigger('click')
+    await asentar()
+    expect(vista.get('img').attributes('src')).toBe('/api/v1/guias/1/foto')
+  })
+
   it('exporta la lista a Excel', async () => {
     const { vista } = await montar()
     const exportar = vi.spyOn(servicios.asignaciones!, 'exportarSinSector')

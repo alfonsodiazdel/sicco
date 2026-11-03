@@ -207,6 +207,9 @@ proyecto es el del selector del encabezado. Al entrar lista todas las guías con
 (`sin_sector` y `parcial`), de la más antigua a la más reciente; «Buscar» las acota por fechas. Las
 de más de 2 días se resaltan en rojo. Sin resultados: «No hay guías sin sector asignado».
 «Exportar a Excel» descarga la misma lista (`GET …/guias/sin-sector/exportar`, con OpenSpout).
+Cada guía tiene un botón para ver su foto (`VisorFotoGuia`, reutilizable): la pide recién al abrir
+el diálogo a `GET /guias/{id}/foto`, que la entrega a quien tenga acceso al proyecto. Pasa por la
+API en lugar de una URL firmada del bucket porque en local la firma apuntaría al host interno de S3.
 
 | Campo | Tipo | Oblig. | Regla | Mensaje |
 |---|---|---|---|---|
