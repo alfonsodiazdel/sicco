@@ -50,8 +50,16 @@ const nivelesOrdenados = computed(() =>
 )
 
 const etiquetaPartida = (p: PartidaFila) => `${p.elemento} · ${p.resistencia_fc}`
+// La descripción distingue partidas con el mismo elemento y resistencia. Los elementos sin
+// volumen disponible se marcan, pero se pueden elegir para ver el aviso.
 const opcionesPartida = computed(() =>
-  partidas.value.map((p) => ({ id: p.id, etiqueta: etiquetaPartida(p) })),
+  partidas.value.map((p) => ({
+    id: p.id,
+    etiqueta: etiquetaPartida(p),
+    descripcion: p.descripcion,
+    texto: `${etiquetaPartida(p)} · ${p.descripcion}`,
+    sinDisponible: disponible(p.id) <= 0,
+  })),
 )
 
 const columnas = [
@@ -132,7 +140,7 @@ const [orden, ordenAttrs] = formNivel.defineField('orden')
 
 function abrirNivel(n: NivelFila | null = null) {
   editandoNivel.value = n
-  formNivel.resetForm({ values: n ? valoresDeNivel(n) : {} })
+  formNivel.resetForm({ values: n ? valoresDeNivel(n) : {} }, { force: true })
   dialogoNivel.value = true
 }
 
@@ -166,19 +174,52 @@ function disponible(presupuestoId: number) {
   return partida ? volumenDisponible(partida, sectores.value, editandoSector.value?.id) : 0
 }
 
-const notaDisponible = computed(
-  () =>
-    'Disponible por elemento: ' +
-    partidas.value
-      .map((p) => `${etiquetaPartida(p)}, ${decimales(disponible(p.id))} m³`)
-      .join('; ') +
-    '.',
+// Solo el disponible del elemento elegido; sin elemento no se muestra nada.
+const partidaElegida = computed(() => partidas.value.find((p) => p.id === presupuestoId.value))
+const elementoCopado = computed(
+  () => !!partidaElegida.value && disponible(partidaElegida.value.id) <= 0,
 )
+const notaDisponible = computed(() => {
+  const partida = partidaElegida.value
+  if (!partida) return ''
+  if (elementoCopado.value)
+    return (
+      `${etiquetaPartida(partida)} ya no tiene volumen disponible: sus ` +
+      `${decimales(partida.metrado_m3)} m³ están asignados a otros sectores. ` +
+      'Reduzca el volumen de alguno de ellos o elija otro elemento.'
+    )
+  return `Disponible para ${etiquetaPartida(partida)}: ${decimales(disponible(partida.id))} m³.`
+})
+// Lo que queda del elemento con el volumen escrito; en centésimos, como volumenDisponible.
+const restante = computed(() => {
+  const escrito = volumenEscrito.value
+  if (!partidaElegida.value || elementoCopado.value || !escrito) return null
+  return (Math.round(disponible(partidaElegida.value.id) * 100) - Math.round(escrito * 100)) / 100
+})
+const notaRestante = computed(() => {
+  if (restante.value === null) return ''
+  return restante.value < 0
+    ? `Excede en ${decimales(-restante.value)} m³.`
+    : `Quedarán ${decimales(restante.value)} m³ después de este sector.`
+})
 
 const formSector = useForm({ validationSchema: toTypedSchema(esquemaSector(disponible)) })
 const [nombreSector, nombreSectorAttrs] = formSector.defineField('nombre')
 const [presupuestoId, presupuestoIdAttrs] = formSector.defineField('presupuesto_id')
 const [volumen, volumenAttrs] = formSector.defineField('volumen_presup_m3')
+
+// InputNumber actualiza el v-model al salir del campo; su evento input da el valor tecla a tecla.
+const volumenEscrito = ref<number | null>(null)
+watch(volumen, (valor) => (volumenEscrito.value = valor ?? null))
+// Un pt nuevo en cada render repinta InputNumber con su v-model (aún vacío) y borra lo escrito
+// mientras la nota se actualiza tecla a tecla; por eso es un computed y no un objeto en la plantilla.
+// El booleano evita recalcularlo cuando cambia el error de otro campo.
+const volumenConError = computed(() => !!formSector.errors.value.volumen_presup_m3)
+const ptVolumen = computed(() => ({
+  pcInputText: {
+    root: { 'aria-describedby': volumenConError.value ? 'volumen_presup_m3-error' : undefined },
+  },
+}))
 
 function abrirSector(s: SectorFila | null = null) {
   // Flujo alternativo 1 de CU05: sin niveles, primero se registra uno.
@@ -191,7 +232,8 @@ function abrirSector(s: SectorFila | null = null) {
     return
   }
   editandoSector.value = s
-  formSector.resetForm({ values: s ? valoresDeSector(s) : {} })
+  // force: sin él, vee-validate mezcla {} con los valores del último sector editado.
+  formSector.resetForm({ values: s ? valoresDeSector(s) : {} }, { force: true })
   dialogoSector.value = true
 }
 
@@ -396,6 +438,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             : `Nuevo sector – ${nivel?.nombre ?? ''}`
         "
         :guardando="formSector.isSubmitting.value"
+        ancho="40rem"
         @guardar="guardarSector"
       >
         <CampoFormulario
@@ -423,7 +466,6 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           para="presupuesto_id"
           :error="formSector.errors.value.presupuesto_id"
           obligatorio
-          ancho="medio"
         >
           <!-- Select e InputNumber no pasan los atributos al elemento que recibe el foco. -->
           <Select
@@ -431,17 +473,42 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             v-bind="presupuestoIdAttrs"
             label-id="presupuesto_id"
             :options="opcionesPartida"
-            option-label="etiqueta"
+            option-label="texto"
             option-value="id"
             placeholder="Seleccione"
             :invalid="!!formSector.errors.value.presupuesto_id"
-            :pt="{ label: { 'aria-describedby': idError } }"
+            :pt="{
+              label: { 'aria-describedby': idError },
+              overlay: { style: { maxWidth: 'calc(100vw - 2rem)' } },
+            }"
             fluid
-          />
+          >
+            <template #value="{ value, placeholder }">
+              <template v-if="partidaElegida && value">
+                {{ etiquetaPartida(partidaElegida) }}
+                <span class="text-surface-500">· {{ partidaElegida.descripcion }}</span>
+              </template>
+              <template v-else>{{ placeholder }}</template>
+            </template>
+            <template #option="{ option }">
+              <!-- Las descripciones largas se ajustan para que la lista no salga de la pantalla. -->
+              <div
+                data-opcion
+                class="flex w-full items-start justify-between gap-3 whitespace-normal"
+              >
+                <div class="min-w-0">
+                  <div>{{ option.etiqueta }}</div>
+                  <div class="text-sm text-surface-500">{{ option.descripcion }}</div>
+                </div>
+                <span v-if="option.sinDisponible" class="shrink-0 text-sm text-amber-700">
+                  Sin disponible
+                </span>
+              </div>
+            </template>
+          </Select>
         </CampoFormulario>
 
         <CampoFormulario
-          v-slot="{ idError }"
           etiqueta="Volumen presupuestado (m³)"
           para="volumen_presup_m3"
           :error="formSector.errors.value.volumen_presup_m3"
@@ -454,11 +521,35 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             input-id="volumen_presup_m3"
             placeholder="Ej.: 60.50"
             :invalid="!!formSector.errors.value.volumen_presup_m3"
-            :pt="{ pcInputText: { root: { 'aria-describedby': idError } } }"
+            :pt="ptVolumen"
+            @input="(e) => (volumenEscrito = typeof e.value === 'number' ? e.value : null)"
           />
         </CampoFormulario>
 
-        <p data-disponible class="text-sm text-surface-500 sm:col-span-2">{{ notaDisponible }}</p>
+        <Message
+          v-if="elementoCopado"
+          data-disponible
+          severity="warn"
+          icon="pi pi-exclamation-triangle"
+          class="sm:col-span-2"
+        >
+          {{ notaDisponible }}
+        </Message>
+        <p
+          v-else-if="notaDisponible"
+          data-disponible
+          class="text-sm text-surface-500 sm:col-span-2"
+          aria-live="polite"
+        >
+          {{ notaDisponible }}
+          <span
+            v-if="notaRestante"
+            data-restante
+            :class="{ 'font-medium text-red-700': restante !== null && restante < 0 }"
+          >
+            {{ notaRestante }}
+          </span>
+        </p>
       </DialogoFormulario>
     </template>
   </PaginaListado>

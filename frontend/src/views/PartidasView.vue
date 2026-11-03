@@ -99,7 +99,7 @@ const [precio, precioAttrs] = defineField('precio_unitario')
 
 function abrir(partida: PartidaFila | null = null) {
   editando.value = partida
-  resetForm({ values: partida ? valoresDePartida(partida) : {} })
+  resetForm({ values: partida ? valoresDePartida(partida) : {} }, { force: true })
   dialogo.value = true
 }
 

@@ -5,7 +5,7 @@ import Button from 'primevue/button'
 
 const visible = defineModel<boolean>('visible', { required: true })
 
-defineProps<{ titulo: string; guardando?: boolean }>()
+const { ancho = '32rem' } = defineProps<{ titulo: string; guardando?: boolean; ancho?: string }>()
 
 const emit = defineEmits<{ guardar: []; cancelar: [] }>()
 
@@ -22,7 +22,7 @@ function cancelar() {
     v-model:visible="visible"
     :header="titulo"
     modal
-    :style="{ width: '32rem', maxWidth: 'calc(100vw - 2rem)' }"
+    :style="{ width: ancho, maxWidth: 'calc(100vw - 2rem)' }"
   >
     <form :id="idFormulario" novalidate @submit.prevent="emit('guardar')">
       <p class="mb-4 text-sm text-surface-500">Los campos con * son requeridos.</p>

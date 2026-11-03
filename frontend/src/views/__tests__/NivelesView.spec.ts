@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
@@ -311,12 +311,12 @@ describe('NivelesView', () => {
     const crearSector = vi.spyOn(servicios.niveles!, 'crearSector')
     await pulsar(vista, 'Nuevo sector')
 
+    expect(vista.find('[data-disponible]').exists()).toBe(false)
+    await llenarSector(vista, { nombre: 'Columnas eje 1', partida: 2, volumen: 62.01 })
     // Columna: 180.50 − 60.00 − 58.50 de los sectores del Piso 1.
     expect(vista.get('[data-disponible]').text()).toBe(
-      "Disponible por elemento: Zapata · f'c 210 kg/cm², 244.00 m³; " +
-        "Columna · f'c 280 kg/cm², 62.00 m³; Losa aligerada · f'c 210 kg/cm², 122.50 m³.",
+      "Disponible para Columna · f'c 280 kg/cm²: 62.00 m³. Excede en 0.01 m³.",
     )
-    await llenarSector(vista, { nombre: 'Columnas eje 1', partida: 2, volumen: 62.01 })
     await guardar(vista)
 
     expect(vista.get('#volumen_presup_m3-error').text()).toBe(
@@ -328,6 +328,17 @@ describe('NivelesView', () => {
     await guardar(vista)
     expect(crearSector).toHaveBeenCalledOnce()
     expect(filas(vista)[2]).toEqual(['Columnas eje 1', "Columna · f'c 280 kg/cm²", '62.00', '0.00'])
+
+    // Con los 62.00 asignados, la Columna queda sin disponible.
+    await pulsar(vista, 'Nuevo sector')
+    expect(select(vista, 'presupuesto_id').props('options')).toContainEqual(
+      expect.objectContaining({ etiqueta: "Columna · f'c 280 kg/cm²", sinDisponible: true }),
+    )
+    await llenarSector(vista, { nombre: 'Columnas eje 2', partida: 2, volumen: 1 })
+    expect(vista.get('[data-disponible]').text()).toBe(
+      "Columna · f'c 280 kg/cm² ya no tiene volumen disponible: sus 180.50 m³ están asignados " +
+        'a otros sectores. Reduzca el volumen de alguno de ellos o elija otro elemento.',
+    )
   })
 
   it('al editar un sector descuenta todo menos su propio volumen', async () => {
@@ -348,7 +359,10 @@ describe('NivelesView', () => {
 
     expect(vista.text()).toContain('Editar sector · Sector A')
     // 160.25 − 58.50 de Sector B; los 60.00 de Sector A vuelven a estar disponibles.
-    expect(vista.get('[data-disponible]').text()).toContain("Columna · f'c 280 kg/cm², 101.75 m³")
+    expect(vista.get('[data-disponible]').text()).toBe(
+      "Disponible para Columna · f'c 280 kg/cm²: 101.75 m³. " +
+        'Quedarán 41.75 m³ después de este sector.',
+    )
     await numero(vista, 'volumen_presup_m3').setValue(101.76)
     await guardar(vista)
     expect(vista.get('#volumen_presup_m3-error').text()).toBe(
@@ -361,6 +375,69 @@ describe('NivelesView', () => {
       expect.objectContaining({ summary: 'Cambios guardados.' }),
     )
     expect(filas(vista)[0]).toEqual(['Sector A', "Columna · f'c 280 kg/cm²", '101.75', '12.00'])
+  })
+
+  it('el nuevo sector abre vacío después de editar otro', async () => {
+    const vista = await montar()
+    await elegirNivel(vista, 'Piso 1')
+    await pulsar(vista, 'Editar sector Sector A')
+    await pulsar(vista, 'Cancelar')
+    await pulsar(vista, 'Nuevo sector')
+
+    expect(vista.text()).toContain('Nuevo sector – Piso 1')
+    expect((vista.get('#nombre_sector').element as HTMLInputElement).value).toBe('')
+    expect(select(vista, 'presupuesto_id').props('modelValue')).toBeUndefined()
+    expect(numero(vista, 'volumen_presup_m3').props('modelValue')).toBeUndefined()
+  })
+
+  it('muestra lo que queda del elemento mientras se escribe el volumen', async () => {
+    const vista = await montar()
+    await pulsar(vista, 'Nuevo sector')
+    await select(vista, 'presupuesto_id').setValue(2)
+    expect(vista.find('[data-restante]').exists()).toBe(false)
+
+    // InputNumber emite input en cada tecla y solo actualiza el v-model al salir del campo.
+    numero(vista, 'volumen_presup_m3').vm.$emit('input', { value: 10 })
+    await flushPromises()
+    expect(vista.get('[data-restante]').text()).toBe('Quedarán 52.00 m³ después de este sector.')
+
+    numero(vista, 'volumen_presup_m3').vm.$emit('input', { value: 70.5 })
+    await flushPromises()
+    expect(vista.get('[data-restante]').text()).toBe('Excede en 8.50 m³.')
+
+    numero(vista, 'volumen_presup_m3').vm.$emit('input', { value: null })
+    await flushPromises()
+    expect(vista.find('[data-restante]').exists()).toBe(false)
+  })
+
+  it('actualizar la nota al escribir no borra lo escrito en el volumen', async () => {
+    const vista = await montar()
+    await pulsar(vista, 'Nuevo sector')
+    await select(vista, 'presupuesto_id').setValue(2)
+
+    const campo = vista.get('#volumen_presup_m3')
+    for (const key of ['6', '0', '.', '5']) {
+      const code = key === '.' ? 'Period' : `Digit${key}`
+      await campo.trigger('keydown', { key, code })
+      await campo.trigger('keypress', { key, code })
+      await flushPromises()
+    }
+
+    expect((campo.element as HTMLInputElement).value).toBe('60.5')
+    expect(vista.get('[data-restante]').text()).toBe('Quedarán 1.50 m³ después de este sector.')
+  })
+
+  it('cada elemento de la lista muestra la descripción de su partida', async () => {
+    const vista = await montar()
+    await pulsar(vista, 'Nuevo sector')
+
+    expect(select(vista, 'presupuesto_id').props('options')).toContainEqual(
+      expect.objectContaining({
+        etiqueta: "Columna · f'c 280 kg/cm²",
+        descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
+        sinDisponible: false,
+      }),
+    )
   })
 
   it('ofrece solo los proyectos activos y al cambiar de proyecto elige su primer nivel', async () => {

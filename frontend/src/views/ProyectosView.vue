@@ -132,7 +132,7 @@ async function abrir(proyecto: ProyectoFila | null = null) {
     }
   }
   editando.value = proyecto
-  resetForm({ values: proyecto ? valoresDeProyecto(proyecto) : {} })
+  resetForm({ values: proyecto ? valoresDeProyecto(proyecto) : {} }, { force: true })
   dialogo.value = true
 }
 

@@ -141,8 +141,12 @@ enlazados a esa partida, en todos los niveles del proyecto; al editar un sector 
 suyo. Se redondea a dos decimales y no aplica el desperdicio, que CU14 aplica después sobre el
 volumen del sector. La tesis solo dice «presupuesto disponible del elemento»: la fórmula es la de
 la maqueta y está solo en `frontend/src/services/presupuesto.ts` (`volumenDisponible`). El
-formulario muestra el disponible de cada partida: «Disponible por elemento: Zapata · f'c 210
-kg/cm², 244.00 m³; …».
+formulario muestra solo el disponible del elemento elegido («Disponible para Columna · f'c 280
+kg/cm²: 62.00 m³.»); sin elemento elegido no muestra nada. Mientras se escribe el volumen agrega
+lo que quedará («Quedarán 2.00 m³ después de este sector.») o, si se pasa, «Excede en 0.01 m³.». Si el elemento ya no tiene disponible,
+la lista lo marca «Sin disponible» (se puede elegir igual) y el formulario muestra un aviso: «…
+ya no tiene volumen disponible: sus 180.50 m³ están asignados a otros sectores. Reduzca el volumen
+de alguno de ellos o elija otro elemento.».
 
 No están en la tesis y se infirieron: el largo máximo de 40 de los dos nombres (de la maqueta), que
 no se pueda eliminar niveles ni sectores (el flujo solo describe el registro, igual que en CU04),
