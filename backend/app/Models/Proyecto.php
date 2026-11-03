@@ -43,4 +43,10 @@ class Proyecto extends Model
     {
         return $this->hasMany(Nivel::class);
     }
+
+    /** Guías de remisión del concreto recibido en la obra (CU06). */
+    public function guias(): HasMany
+    {
+        return $this->hasMany(GuiaRemision::class);
+    }
 }

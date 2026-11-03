@@ -200,6 +200,46 @@ resistencia que eligió el almacenero, y las guías siguientes con ese código s
 `ConcreteraSeeder` carga Holcim y Arquitectura Construida con sus productos, tomados de las guías y
 facturas del proyecto Larco. Nada de esto está en la tesis.
 
+### Guías sin sector (CU10)
+
+Pantalla `/guias/sin-sector`, para Producción y Oficina técnica (el administrador consulta); el
+proyecto es el del selector del encabezado. Al entrar lista todas las guías con volumen por asignar
+(`sin_sector` y `parcial`), de la más antigua a la más reciente; «Buscar» las acota por fechas. Las
+de más de 2 días se resaltan en rojo. Sin resultados: «No hay guías sin sector asignado».
+«Exportar a Excel» descarga la misma lista (`GET …/guias/sin-sector/exportar`, con OpenSpout).
+
+| Campo | Tipo | Oblig. | Regla | Mensaje |
+|---|---|---|---|---|
+| Desde | fecha | N | — | Ingrese una fecha válida |
+| Hasta | fecha | N | igual o posterior a «Desde» | La fecha final debe ser igual o posterior a la inicial |
+
+No están en la tesis y se infirieron: que los días se cuenten desde la fecha de la guía (el día
+que llegó el concreto) y no desde su registro, que se listen también las guías asignadas en parte
+(con su volumen pendiente) y que la lista se cargue al entrar, sin esperar a «Buscar». Los días se
+calculan con la zona horaria de la aplicación (UTC), igual que la regla «fecha no posterior a hoy».
+
+### Asignación de guías (CU09)
+
+Pantalla `/guias/:id/asignar`, abierta con «Asignar» desde «Guías sin sector»; solo la guarda el
+Ingeniero de producción. Muestra los datos de la guía y el volumen disponible, y una fila por sector
+con los sectores del proyecto agrupados por nivel. «Agregar sector» propone lo que falta para
+completar la guía. Al guardar: «Guía asignada correctamente» y vuelve a la lista. Sin sectores en el
+proyecto, avisa que primero se registren en «Niveles y sectores» (flujo alternativo 3).
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje |
+|---|---|---|---|---|---|
+| Sector | `ASIGNACION.sector_id` | lista de sectores del proyecto de la guía | S | sin repetir; del mismo proyecto | Este dato es requerido; El sector ya está en la asignación; El sector no pertenece al proyecto de la guía |
+| Volumen vaciado (m³) | `ASIGNACION.volumen_m3` | número | S | > 0, dos decimales, ≤ 99.99 | Este dato es requerido; Ingrese un valor mayor a cero; Ingrese como máximo dos decimales |
+| (todas las filas) | — | — | S | al menos una; la suma no supera el volumen de la guía | Este dato es requerido; El volumen asignado supera el de la guía |
+
+Guardar reemplaza el reparto completo de la guía, así el mismo formulario corrige una asignación:
+el volumen vaciado de cada sector se ajusta por la diferencia, la guía queda `asignada` si la suma
+iguala su volumen y `parcial` si no, y cada guardado deja el reparto anterior y el nuevo en
+`historial_asignaciones` (requerimiento especial de CU09; tabla propia en lugar de
+`spatie/laravel-activitylog`). Si el f'c de la partida del sector no es el de la guía, la pantalla
+lo avisa sin impedirlo. Si un sector pasa lo presupuestado × (1 + desperdicio), la respuesta lo
+indica y la pantalla lo avisa; registrar y enviar la alerta queda para CU14.
+
 ## 4. Diferencias entre el front y el backend
 
 1. **Solo la autenticación tiene reglas en el servidor:** `LoginRequest` y `CambiarPasswordRequest`.

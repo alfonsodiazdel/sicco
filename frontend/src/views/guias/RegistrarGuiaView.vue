@@ -267,7 +267,7 @@ const decimal = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, m
       severity="warn"
       icon="pi pi-exclamation-triangle"
     >
-      No tiene proyectos activos asignados. Pida a oficina técnica que lo asigne a uno.
+      No tiene proyectos activos asignados. Pida al administrador que lo asigne a uno.
     </Message>
 
     <!-- CU06 pasos 1–2: tomar la foto de la guía. -->

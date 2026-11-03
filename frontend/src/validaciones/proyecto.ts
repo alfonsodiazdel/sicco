@@ -25,7 +25,7 @@ type ValoresProyecto = z.output<typeof esquemaProyecto>
 const dosDigitos = (n: number) => String(n).padStart(2, '0')
 
 // Con la fecha local, no con toISOString, para que la zona horaria no mueva el día.
-const aIso = (f: Date) =>
+export const aIso = (f: Date) =>
   `${f.getFullYear()}-${dosDigitos(f.getMonth() + 1)}-${dosDigitos(f.getDate())}`
 
 function deIso(iso: string) {

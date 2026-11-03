@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
 use App\Http\Controllers\Api\V1\GuiaController;
+use App\Http\Controllers\Api\V1\GuiaSinSectorController;
 use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
@@ -80,6 +82,17 @@ Route::prefix('v1')->group(function () {
                 Route::post('guias/lecturas', [GuiaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('guias', [GuiaController::class, 'store']);
             });
+
+            // CU10 Guías sin sector: las consultan Producción y Oficina técnica en sus proyectos, y
+            // CU09 la asignación que se abre desde ellas, que solo guarda Producción.
+            Route::middleware('rol:ingeniero_produccion,oficina_tecnica,administrador')->group(function () {
+                Route::get('proyectos/{proyecto}/guias/sin-sector', [GuiaSinSectorController::class, 'index'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/guias/sin-sector/exportar', [GuiaSinSectorController::class, 'exportar'])->whereNumber('proyecto');
+                Route::get('guias/{guia}/asignaciones', [AsignacionController::class, 'show'])->whereNumber('guia');
+            });
+            Route::put('guias/{guia}/asignaciones', [AsignacionController::class, 'update'])
+                ->whereNumber('guia')
+                ->middleware('rol:ingeniero_produccion');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

@@ -36,6 +36,14 @@ return [
         'fecha_futura' => 'La fecha no puede ser posterior a hoy',
         'foto_invalida' => 'Adjunte una foto JPG, PNG o WebP de hasta 10 MB',
         'resistencia_producto' => 'El producto :codigo está registrado como :resistencia',
+        'rango_invalido' => 'La fecha final debe ser igual o posterior a la inicial',
+    ],
+    'asignaciones' => [
+        'guardada' => 'Guía asignada correctamente',
+        'excede_guia' => 'El volumen asignado supera el de la guía',
+        'sin_sectores' => 'Agregue al menos un sector',
+        'sector_repetido' => 'El sector ya está en la asignación',
+        'sector_ajeno' => 'El sector no pertenece al proyecto de la guía',
     ],
     'sectores' => [
         'duplicado' => 'El sector ya existe en el nivel',

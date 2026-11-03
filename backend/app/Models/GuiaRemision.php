@@ -7,6 +7,7 @@ use App\Enums\OrigenGuia;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Guía de remisión del concreto recibido en obra (CU06–CU08). */
 #[Fillable([
@@ -52,5 +53,16 @@ class GuiaRemision extends Model
     public function registradoPor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'registrado_por');
+    }
+
+    /** Sectores en los que se vació su volumen (CU09). */
+    public function asignaciones(): HasMany
+    {
+        return $this->hasMany(Asignacion::class, 'guia_id');
+    }
+
+    public function historialAsignaciones(): HasMany
+    {
+        return $this->hasMany(HistorialAsignacion::class, 'guia_id');
     }
 }

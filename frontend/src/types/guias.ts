@@ -69,3 +69,37 @@ export interface GuiaFila extends Omit<GuiaDatos, 'resistencia_id' | 'descripcio
   estado_asignacion: 'sin_sector' | 'parcial' | 'asignada'
   origen: 'ocr' | 'manual'
 }
+
+/** Guía con volumen por asignar (CU10). */
+export interface GuiaPendiente extends GuiaFila {
+  volumen_asignado_m3: number
+  volumen_pendiente_m3: number
+  /** Desde la fecha de la guía hasta hoy. */
+  dias_transcurridos: number
+  /** Más de 2 días sin asignar: se resalta en rojo (CU10 paso 4). */
+  atrasada: boolean
+}
+
+/** CU10 paso 1: rango de fechas, AAAA-MM-DD; sin fechas trae todas las pendientes. */
+export interface FiltroSinSector {
+  desde?: string | null
+  hasta?: string | null
+}
+
+/** Volumen de la guía vaciado en un sector (CU09). */
+export interface AsignacionDatos {
+  sector_id: number
+  volumen_m3: number
+}
+
+export interface AsignacionFila extends AsignacionDatos {
+  id: number
+}
+
+export interface AsignacionGuia {
+  guia: GuiaPendiente
+  asignaciones: AsignacionFila[]
+  /** Sectores que ya pasan lo presupuestado más el desperdicio (CU09 flujo alternativo 2). */
+  sectores_excedidos?: { id: number; nombre: string }[]
+  message?: string
+}

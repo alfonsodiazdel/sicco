@@ -12,6 +12,8 @@ defineProps<{
   clave: string
   vacio: string
   cargando?: boolean
+  /** Clase de cada fila, p. ej. para resaltar las que requieren atención. */
+  claseFila?: (fila: T) => string | undefined
 }>()
 
 defineSlots<{
@@ -31,6 +33,7 @@ const clases = (columna: { secundaria?: boolean; numerica?: boolean }, deNumeric
     :value="filas"
     :data-key="clave"
     :loading="cargando"
+    :row-class="claseFila"
     scrollable
     table-class="sm:min-w-[40rem]"
   >

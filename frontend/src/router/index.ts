@@ -24,6 +24,7 @@ const implementados = [
   '/grupos',
   '/niveles',
   '/guias/registrar',
+  '/guias/sin-sector',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -98,6 +99,23 @@ const routes: RouteRecordRaw[] = [
         name: 'registrar-guia',
         component: () => import('@/views/guias/RegistrarGuiaView.vue'),
         meta: { roles: ['almacenero'], titulo: 'Registrar guía', porProyecto: true },
+      },
+      {
+        path: 'guias/sin-sector',
+        name: 'guias-sin-sector',
+        component: () => import('@/views/guias/GuiasSinSectorView.vue'),
+        meta: {
+          roles: ['ingeniero_produccion', 'oficina_tecnica'],
+          titulo: 'Guías sin sector',
+          porProyecto: true,
+        },
+      },
+      {
+        // El proyecto es el de la guía, no el del selector del encabezado.
+        path: 'guias/:id(\\d+)/asignar',
+        name: 'asignar-guia',
+        component: () => import('@/views/guias/AsignarGuiaView.vue'),
+        meta: { roles: ['ingeniero_produccion'], titulo: 'Asignar guía' },
       },
       ...modulos,
       {
