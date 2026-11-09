@@ -7,7 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { ReportesServicio } from '@/services/reportes'
 import { errorDeValidacion } from '@/services/errores'
-import type { MontosEat, ReporteEat } from '@/types/reportes'
+import type { MontosEat, ReporteEat, ResultadoEat } from '@/types/reportes'
 import ReporteEatView from '@/views/reportes/ReporteEatView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
@@ -413,6 +413,114 @@ describe('ReporteEatView (CU15)', () => {
     )
     expect(boton(vista, 'Generar').attributes('disabled')).toBeDefined()
     expect(vista.text()).not.toContain('pulse «Generar»')
+  })
+
+  describe('una respuesta atrasada no pisa la del proyecto elegido después', () => {
+    const delOtro: ReporteEat = {
+      ...e2,
+      proyecto: { id: 2, codigo: 'PRY-002', nombre: 'Torre Central' },
+      grupos: [],
+      filas_aparte: [],
+      total: m([1, 100, 1, 90, 0, 10, 1, 90], false),
+    }
+
+    // Primera consulta en espera; se cambia de proyecto y se vuelve a generar.
+    async function dosConsultas() {
+      let primera!: { resolver: (r: ResultadoEat) => void; rechazar: (e: unknown) => void }
+      const vista = await montar()
+      vi.mocked(servicios.reportes.eat).mockReturnValueOnce(
+        new Promise((resolver, rechazar) => (primera = { resolver, rechazar })),
+      )
+      await generar(vista, new Date(2026, 9, 31))
+      useProyectoActualStore().elegir(2)
+      await asentar()
+      vi.mocked(servicios.reportes.eat).mockResolvedValueOnce({ reporte: delOtro, mensaje: null })
+      await generar(vista)
+      return { vista, primera }
+    }
+
+    it('si la primera llega con datos al final, se sigue viendo el reporte del proyecto nuevo', async () => {
+      const { vista, primera } = await dosConsultas()
+
+      primera.resolver({ reporte: e2, mensaje: null })
+      await asentar()
+
+      expect(vi.mocked(servicios.reportes.eat).mock.calls).toEqual([
+        [1, '2026-10-31'],
+        [2, '2026-10-31'],
+      ])
+      expect(celdas(vista, 'tfoot tr')[0]!.slice(1, 3)).toEqual(['1.00', 'S/ 100.00'])
+      expect(vista.findAll('[data-grupo-nombre]')).toHaveLength(0)
+    })
+
+    it('si la primera falla al final, no avisa el error', async () => {
+      const { vista, primera } = await dosConsultas()
+
+      primera.rechazar(errorApi(403, 'No tiene acceso a este proyecto.'))
+      await asentar()
+
+      expect(toast.add).not.toHaveBeenCalled()
+      expect(vista.find('[data-error-fecha]').exists()).toBe(false)
+      expect(celdas(vista, 'tfoot tr')[0]!.slice(1, 3)).toEqual(['1.00', 'S/ 100.00'])
+    })
+  })
+
+  describe('fecha de corte escrita a mano', () => {
+    const escribir = async (vista: VueWrapper, texto: string) => {
+      await vista.get('#fecha-corte').setValue(texto)
+      await asentar()
+    }
+
+    it('una fecha futura se borra y se explica por qué', async () => {
+      const vista = await montar()
+
+      await escribir(vista, '')
+      await escribir(vista, '31/12/2030')
+
+      expect(vista.get('[data-error-fecha]').text()).toBe(
+        'La fecha de corte no puede ser posterior a hoy.',
+      )
+      expect(vista.findComponent({ name: 'DatePicker' }).props('modelValue')).toBeNull()
+      expect(boton(vista, 'Generar').attributes('disabled')).toBeDefined()
+      expect(servicios.reportes.eat).not.toHaveBeenCalled()
+    })
+
+    it('escrita sobre una fecha anterior, también la borra y lo explica', async () => {
+      const vista = await montar()
+
+      await escribir(vista, '31/12/2030')
+
+      expect(vista.get('[data-error-fecha]').text()).toBe(
+        'La fecha de corte no puede ser posterior a hoy.',
+      )
+      expect(vista.findComponent({ name: 'DatePicker' }).props('modelValue')).toBeNull()
+      expect(boton(vista, 'Generar').attributes('disabled')).toBeDefined()
+    })
+
+    it('al corregirla por una fecha válida, el mensaje desaparece', async () => {
+      const vista = await montar()
+      await escribir(vista, '31/12/2030')
+
+      await escribir(vista, '31/10/2026')
+
+      expect(vista.find('[data-error-fecha]').exists()).toBe(false)
+      expect(vista.findComponent({ name: 'DatePicker' }).props('modelValue')).toEqual(
+        new Date(2026, 9, 31),
+      )
+      await generar(vista)
+      expect(servicios.reportes.eat).toHaveBeenLastCalledWith(1, '2026-10-31')
+    })
+
+    it('hoy y las fechas pasadas no muestran el mensaje', async () => {
+      const vista = await montar()
+
+      await escribir(vista, '09/11/2026')
+
+      expect(vista.find('[data-error-fecha]').exists()).toBe(false)
+      expect(vista.findComponent({ name: 'DatePicker' }).props('modelValue')).toEqual(
+        new Date(2026, 10, 9),
+      )
+    })
   })
 
   it('un 422 muestra el mensaje de la fecha de corte', async () => {

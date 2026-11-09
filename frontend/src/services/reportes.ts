@@ -1,4 +1,4 @@
-import { esErrorApi, http } from '@/api/http'
+import { http } from '@/api/http'
 import type { FormatoEat, ReporteEat, ResultadoEat } from '@/types/reportes'
 
 export interface ReportesServicio {
@@ -12,20 +12,6 @@ interface RespuestaEat {
   mensaje?: string
 }
 
-// Con responseType blob, axios también entrega como Blob el cuerpo JSON de un error;
-// se vuelve a leer para que mensajeDeError y erroresDeValidacion lo entiendan.
-async function conCuerpoLegible(error: unknown): Promise<never> {
-  const cuerpo: unknown = esErrorApi(error) ? error.response?.data : undefined
-  if (esErrorApi(error) && error.response && cuerpo instanceof Blob) {
-    try {
-      error.response.data = JSON.parse(await cuerpo.text())
-    } catch {
-      // No era JSON: el error sigue como llegó.
-    }
-  }
-  throw error
-}
-
 export function crearReportesApi(): ReportesServicio {
   return {
     async eat(proyectoId, fechaCorte) {
@@ -36,11 +22,7 @@ export function crearReportesApi(): ReportesServicio {
     async descargarEat(proyectoId, fechaCorte, formato) {
       const url = `/proyectos/${proyectoId}/reportes/eat/${formato}`
       const params = { fecha_corte: fechaCorte }
-      try {
-        return (await http.get<Blob>(url, { params, responseType: 'blob' })).data
-      } catch (error) {
-        return conCuerpoLegible(error)
-      }
+      return (await http.get<Blob>(url, { params, responseType: 'blob' })).data
     },
   }
 }

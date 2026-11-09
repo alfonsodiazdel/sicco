@@ -13,7 +13,7 @@ const reportes = [
 
 <template>
   <section class="space-y-4">
-    <EncabezadoPagina titulo="Reportes" subtitulo="Reportes del concreto de tus proyectos" />
+    <EncabezadoPagina titulo="Reportes" subtitulo="Reportes del concreto de sus proyectos" />
 
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <RouterLink

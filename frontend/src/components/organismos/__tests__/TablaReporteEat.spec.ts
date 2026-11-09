@@ -215,6 +215,19 @@ describe('TablaReporteEat', () => {
     ])
   })
 
+  it('un saldo en cero negativo se muestra sin signo', () => {
+    const enCero = montos([10, 3100, 10, 3100], [-0, -0, 10, 3100], false)
+    const tabla = montar({
+      ...reporte,
+      grupos: [{ ...reporte.grupos[0]!, filas: [{ ...p1, ...enCero }], subtotal: enCero }],
+      filas_aparte: [],
+      total: enCero,
+    })
+
+    expect(montosDe(tabla.get('[data-fila]')).slice(4, 6)).toStrictEqual(['0.00', 'S/ 0.00'])
+    expect(montosDe(tabla.get('tfoot tr')).slice(4, 6)).toStrictEqual(['0.00', 'S/ 0.00'])
+  })
+
   it('resalta en rojo los elementos, subtotales y total con sobrecosto, nunca las filas aparte', () => {
     const tabla = montar()
     const enRojo = (tr: Fila) => tr.classes().includes('fila-sobrecosto')

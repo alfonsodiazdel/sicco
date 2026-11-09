@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AxiosError, type AxiosResponse } from 'axios'
+import { AxiosError, type AxiosAdapter, type AxiosResponse } from 'axios'
 import { erroresDeValidacion, http, mensajeDeError } from '@/api/http'
 import { crearReportesApi } from '@/services/reportes'
 import type { ReporteEat } from '@/types/reportes'
@@ -33,7 +33,12 @@ const reporte: ReporteEat = {
 
 const respuesta = <T>(data: T) => Promise.resolve({ data })
 
-afterEach(() => vi.restoreAllMocks())
+const adapterOriginal = http.defaults.adapter
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  http.defaults.adapter = adapterOriginal
+})
 
 describe('reportes por la API (CU15)', () => {
   it('eat pide el reporte con la fecha de corte y lo devuelve sin mensaje', async () => {
@@ -77,16 +82,23 @@ describe('reportes por la API (CU15)', () => {
     ])
   })
 
-  // Con responseType blob, axios entrega también el cuerpo del error como Blob.
-  const errorEnBlob = (cuerpo: object) =>
-    new AxiosError('422', AxiosError.ERR_BAD_REQUEST, undefined, undefined, {
-      status: 422,
-      data: new Blob([JSON.stringify(cuerpo)], { type: 'application/json' }),
-    } as AxiosResponse)
+  // Con responseType blob, axios entrega también el cuerpo del error como Blob; el adapter falso
+  // hace que el error pase por los interceptores de http.
+  const rechazarEnBlob = (cuerpo: object) => {
+    const adapter: AxiosAdapter = (config) =>
+      Promise.reject(
+        new AxiosError('422', AxiosError.ERR_BAD_REQUEST, config, undefined, {
+          status: 422,
+          config,
+          data: new Blob([JSON.stringify(cuerpo)], { type: 'application/json' }),
+        } as AxiosResponse),
+      )
+    http.defaults.adapter = adapter
+  }
 
   it('un 422 al descargar llega con su mensaje legible', async () => {
     const mensaje = 'No hay información para la fecha seleccionada'
-    vi.spyOn(http, 'get').mockRejectedValue(errorEnBlob({ message: mensaje }))
+    rechazarEnBlob({ message: mensaje })
 
     const error = await crearReportesApi()
       .descargarEat(1, '2026-10-03', 'pdf')
@@ -98,9 +110,7 @@ describe('reportes por la API (CU15)', () => {
 
   it('un 422 de validación al descargar conserva el error de la fecha de corte', async () => {
     const fecha = 'La fecha de corte no puede ser posterior a hoy.'
-    vi.spyOn(http, 'get').mockRejectedValue(
-      errorEnBlob({ message: fecha, errors: { fecha_corte: [fecha] } }),
-    )
+    rechazarEnBlob({ message: fecha, errors: { fecha_corte: [fecha] } })
 
     const error = await crearReportesApi()
       .descargarEat(1, '2026-11-10', 'excel')

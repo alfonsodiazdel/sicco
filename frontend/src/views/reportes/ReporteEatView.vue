@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
@@ -104,6 +104,24 @@ async function descargar(formato: FormatoEat) {
 
 watch([proyectoId, fechaCorte], limpiar)
 
+const FECHA_FUTURA = 'La fecha de corte no puede ser posterior a hoy.'
+
+// Con max-date, el DatePicker descarta en silencio una fecha futura escrita a mano y puede
+// quedarse con la de una tecla anterior («31/12/203»): se borra y se explica.
+async function revisarFechaEscrita(evento: Event) {
+  const texto = (evento.target as HTMLInputElement).value.trim()
+  const partes = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(texto)
+  const futura = !!partes && new Date(+partes[3]!, +partes[2]! - 1, +partes[1]!) > hoy
+  if (!futura) {
+    if (errorFecha.value === FECHA_FUTURA) errorFecha.value = null
+    return
+  }
+  fechaCorte.value = null
+  // El watch de arriba limpia errorFecha al cambiar la fecha; el mensaje va después.
+  await nextTick()
+  errorFecha.value = FECHA_FUTURA
+}
+
 onMounted(async () => {
   try {
     await proyectoActual.cargar()
@@ -149,6 +167,7 @@ onMounted(async () => {
             :max-date="hoy"
             :invalid="!!errorFecha"
             fluid
+            @input="revisarFechaEscrita"
           />
         </div>
         <Button
