@@ -3,6 +3,7 @@
 namespace App\Exports;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Str;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Color;
@@ -66,23 +67,36 @@ final class ReporteEatExport
     public static function nombreArchivo(array $reporte, string $extension): string
     {
         $corte = CarbonImmutable::parse($reporte['fecha_corte'])->format('Ymd');
+        // El código es texto libre: una «/» o «\» hace fallar la cabecera Content-Disposition.
+        $codigo = preg_replace('/[^A-Za-z0-9._-]+/', '-', Str::ascii($reporte['proyecto']['codigo']));
 
-        return "reporte-eat-{$reporte['proyecto']['codigo']}-{$corte}.{$extension}";
+        return "reporte-eat-{$codigo}-{$corte}.{$extension}";
     }
 
+    /** Genera el archivo completo antes de responder, para que un error no deje una descarga a medias. */
     public static function excel(array $reporte): StreamedResponse
     {
-        return response()->streamDownload(function () use ($reporte) {
+        $contenido = self::xlsx($reporte);
+
+        return response()->streamDownload(function () use ($contenido) {
+            echo $contenido;
+        }, self::nombreArchivo($reporte, 'xlsx'), ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
+
+    private static function xlsx(array $reporte): string
+    {
+        $archivo = tempnam(sys_get_temp_dir(), 'eat');
+        try {
             $encabezado = self::encabezado($reporte);
             $negrita = new Style(fontBold: true);
             $monto = new Style(format: '#,##0.00');
             $montoNegrita = new Style(fontBold: true, format: '#,##0.00');
             $sobrecosto = new Style(fontBold: true, fontColor: Color::RED, format: '#,##0.00');
 
-            $writer = new Writer;
-            $writer->openToFile('php://output');
+            $writer = app(Writer::class);
+            $writer->openToFile($archivo);
             $writer->addRow(Row::fromValuesWithStyle(['Reporte EAT'], $negrita));
-            $writer->addRow(Row::fromValues(['Proyecto', $encabezado['proyecto']]));
+            $writer->addRow(Row::fromValues(['Proyecto', self::texto($encabezado['proyecto'])]));
             $writer->addRow(Row::fromValues(['Fecha de corte', $encabezado['fecha_corte']]));
             $writer->addRow(Row::fromValues([$encabezado['igv']]));
             $writer->addRow(Row::fromValues([]));
@@ -90,7 +104,7 @@ final class ReporteEatExport
 
             foreach (self::filas($reporte) as $fila) {
                 $resaltada = in_array($fila['tipo'], ['grupo', 'subtotal', 'total'], true);
-                $celdas = [Cell::fromValue($fila['elemento'], $resaltada ? $negrita : null)];
+                $celdas = [Cell::fromValue(self::texto($fila['elemento']), $resaltada ? $negrita : null)];
                 foreach ($fila['montos'] as $i => $valor) {
                     $esEatSoles = $i === count(self::MONTOS) - 1;
                     $estilo = $esEatSoles && $fila['sobrecosto'] ? $sobrecosto : ($resaltada ? $montoNegrita : $monto);
@@ -100,6 +114,16 @@ final class ReporteEatExport
             }
 
             $writer->close();
-        }, self::nombreArchivo($reporte, 'xlsx'), ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+
+            return file_get_contents($archivo);
+        } finally {
+            unlink($archivo);
+        }
+    }
+
+    /** Los nombres los escriben los usuarios o vienen del OCR: Excel evaluaría como fórmula un «=1+1». */
+    private static function texto(string $valor): string
+    {
+        return in_array(substr($valor, 0, 1), ['=', '+', '-', '@'], true) ? "'{$valor}" : $valor;
     }
 }

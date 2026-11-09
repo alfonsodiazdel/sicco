@@ -159,8 +159,10 @@ final readonly class ReporteEatQuery
     private function precioDeSuFactura(string $guia): array
     {
         return self::sub(DB::table('factura_lineas as pf')
+            ->join('facturas as ff', 'ff.id', '=', 'pf.factura_id')
             ->whereColumn('pf.factura_id', "{$guia}.factura_id")
             ->whereColumn('pf.resistencia_id', "{$guia}.resistencia_id")
+            ->where('ff.proyecto_id', $this->proyecto->id)
             ->orderBy('pf.id')
             ->limit(1)
             ->select('pf.precio_unitario'));

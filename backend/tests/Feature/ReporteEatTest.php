@@ -15,6 +15,7 @@ use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Reader\XLSX\Reader;
+use OpenSpout\Writer\XLSX\Writer;
 
 beforeEach(function () {
     $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));
@@ -606,4 +607,168 @@ describe('exportación', function () {
         $this->getJson("/api/v1/proyectos/{$e['proyecto']->id}/reportes/eat/{$formato}?fecha_corte=2026-10-31")->assertUnauthorized();
         expect(DB::table('reportes_generados')->count())->toBe(0);
     })->with(['excel', 'pdf']);
+});
+
+describe('permiso antes de validar', function () {
+    it('a un usuario no asignado le responde 403 sin decirle si la fecha cabe en el proyecto', function (string $ruta) {
+        $e = escenarioEat();
+        $ajeno = conRol(Rol::Gerencia);
+
+        // Antes del inicio, el día de inicio, otro formato y sin fecha: la misma respuesta.
+        foreach (['?fecha_corte=2026-09-30', '?fecha_corte=2026-10-01', '?fecha_corte=31/10/2026', ''] as $consulta) {
+            $this->actingAs($ajeno)->getJson("/api/v1/proyectos/{$e['proyecto']->id}/reportes/{$ruta}{$consulta}")
+                ->assertForbidden()
+                ->assertExactJson(['message' => 'No tiene acceso a este proyecto.', 'code' => 'sin_permiso']);
+        }
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with(['eat', 'eat/excel', 'eat/pdf']);
+
+    it('al usuario asignado y al administrador les sigue validando la fecha', function (string $ruta) {
+        $e = escenarioEat();
+
+        foreach ([$e['usuario'], conRol(Rol::Administrador)] as $usuario) {
+            $url = "/api/v1/proyectos/{$e['proyecto']->id}/reportes/{$ruta}";
+            $this->actingAs($usuario)->getJson("{$url}?fecha_corte=2026-09-30")
+                ->assertUnprocessable()
+                ->assertJsonPath('errors', ['fecha_corte' => ['La fecha de corte no puede ser anterior al inicio del proyecto']]);
+            $this->actingAs($usuario)->getJson("{$url}?fecha_corte=2026-10-31")->assertOk();
+        }
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+    })->with(['eat', 'eat/excel', 'eat/pdf']);
+});
+
+describe('precio de la propia factura', function () {
+    it('una guía vinculada a una factura de otro proyecto no toma su precio', function () {
+        $e = escenarioEat();
+        $ajena = facturaEat(obra(['codigo' => 'OBR-03']), '2026-10-12', [[$e['r210'], 999]]);
+        guiaEat($e['proyecto'], '2026-10-29', $e['r210'], 1, $ajena);
+        guiaEat($e['proyecto'], '2026-10-29', $e['r210'], 1, $ajena, [$e['s3']->id => 1]);
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        // Toman el último precio facturado del proyecto (310 de F1), no el 999 de la otra obra.
+        // Losa: 930 + 1 × 310 = 1240. Sin sector: (1 + 1) × 310 = 620.
+        expect($r->json('data.grupos.1.filas.0.consumido_soles'))->toBe(1240.0);
+        expect($r->json('data.filas_aparte.0'))->toBe(
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 620.0, 0.0, -620.0, 2.0, 620.0), 'sobrecosto' => false],
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+});
+
+describe('límite de consultas', function () {
+    it('limita las consultas por minuto de cada usuario con el límite de las rutas con OCR', function (string $ruta) {
+        config(['services.ocr.por_minuto' => 2]);
+        $e = escenarioEat();
+        $url = "/api/v1/proyectos/{$e['proyecto']->id}/reportes/{$ruta}?fecha_corte=2026-10-31";
+
+        $this->actingAs($e['usuario'])->getJson($url)->assertOk();
+        $this->actingAs($e['usuario'])->getJson($url)->assertOk();
+        $this->actingAs($e['usuario'])->getJson($url)->assertStatus(429)->assertHeader('Retry-After');
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+
+        // El límite es por usuario.
+        $this->actingAs(asignadoA($e['proyecto'], Rol::Gerencia))->getJson($url)->assertOk();
+        expect(DB::table('reportes_generados')->count())->toBe(3);
+    })->with(['eat', 'eat/excel', 'eat/pdf']);
+});
+
+/** El XML de la primera hoja del Excel, para ver qué celdas quedaron como fórmula. */
+function hojaExcelEat(string $contenido): string
+{
+    $archivo = tempnam(sys_get_temp_dir(), 'eat');
+    file_put_contents($archivo, $contenido);
+    $zip = new ZipArchive;
+    $zip->open($archivo);
+    $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
+    $zip->close();
+    unlink($archivo);
+
+    return $xml;
+}
+
+describe('textos del Excel', function () {
+    it('escribe como texto los nombres que empiezan con =, +, - o @ y deja los montos como números', function () {
+        $e = escenarioEat();
+        $e['proyecto']->update(['codigo' => '=HOY()']);
+        $e['estructuras']->update(['nombre' => '=1+1']);
+        $e['losas']->update(['nombre' => '@SUMA(A1)']);
+        $e['f1']->cargos()->update(['descripcion' => '+HIPERVINCULO("http://x")']);
+        $e['f1']->cargos()->create(['descripcion' => '-2+3', 'importe' => 10]);
+
+        $contenido = exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-10-31')->assertOk()->streamedContent();
+
+        expect(hojaExcelEat($contenido))->not->toContain('<f>');
+        $filas = collect(filasExcelEat($contenido))->keyBy(0);
+        expect($filas['Proyecto'])->toBe(['Proyecto', "'=HOY() Edificio Mirador"]);
+        expect($filas["'=1+1"])->toBe(["'=1+1"]);
+        expect($filas["'@SUMA(A1)"])->toBe(["'@SUMA(A1)"]);
+        expect($filas['Subtotal =1+1'])->toBe(['Subtotal =1+1', 18.0, 6000.0, 16.0, 5410.0, 3.0, 590.0, 19.0, 6340.0]);
+        expect($filas["01.02 Vigas · f'c 280 kg/cm²"])->toBe(["01.02 Vigas · f'c 280 kg/cm²", 8.0, 2800.0, 9.0, 3240.0, 0.0, -440.0, 9.0, 3240.0]);
+        expect($filas["'+HIPERVINCULO(\"http://x\")"])->toBe(["'+HIPERVINCULO(\"http://x\")", 0.0, 0.0, '—', 150.0, '—', -150.0, '—', 150.0]);
+        expect($filas["'-2+3"])->toBe(["'-2+3", 0.0, 0.0, '—', 10.0, '—', -10.0, '—', 10.0]);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+});
+
+describe('nombre del archivo y registro de la descarga', function () {
+    it('descarga con un nombre de archivo seguro aunque el código tenga barras, y la registra una vez', function (string $formato, string $codigo, string $archivo) {
+        $e = escenarioEat();
+        $e['proyecto']->update(['codigo' => $codigo]);
+
+        $r = exportarEat($e['usuario'], $e['proyecto'], $formato, '2026-10-31')->assertOk()->assertDownload($archivo);
+
+        $contenido = $formato === 'excel' ? $r->streamedContent() : $r->getContent();
+        expect(substr($contenido, 0, $formato === 'excel' ? 2 : 5))->toBe($formato === 'excel' ? 'PK' : '%PDF-');
+        expect(registrosEat())->toBe([
+            ['usuario_id' => $e['usuario']->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-31'], 'formato' => $formato, 'created_at' => now()->format('Y-m-d H:i:s')],
+        ]);
+    })->with([
+        'Excel con /' => ['excel', 'OB-2026/02', 'reporte-eat-OB-2026-02-20261031.xlsx'],
+        'PDF con /' => ['pdf', 'OB-2026/02', 'reporte-eat-OB-2026-02-20261031.pdf'],
+        'Excel con \\' => ['excel', 'OB\\01', 'reporte-eat-OB-01-20261031.xlsx'],
+        'PDF con \\' => ['pdf', 'OB\\01', 'reporte-eat-OB-01-20261031.pdf'],
+        'Excel con tildes y signos' => ['excel', 'PEÑA "Sur";01', 'reporte-eat-PENA-Sur-01-20261031.xlsx'],
+    ]);
+
+    it('si el archivo no se pudo generar responde con error y no registra la descarga', function (string $formato, string $generador) {
+        $e = escenarioEat();
+        $this->app->bind($generador, fn () => throw new RuntimeException('Falla al generar el archivo'));
+
+        exportarEat($e['usuario'], $e['proyecto'], $formato, '2026-10-31')->assertStatus(500);
+
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with([
+        'Excel' => ['excel', Writer::class],
+        'PDF' => ['pdf', 'dompdf.wrapper'],
+    ]);
+});
+
+describe('opciones del PDF', function () {
+    it('genera el PDF sin JavaScript y sin leer archivos fuera de las vistas', function () {
+        $e = escenarioEat();
+        $usado = null;
+        $this->app->afterResolving('dompdf.wrapper', function ($pdf) use (&$usado) {
+            $usado = $pdf;
+        });
+
+        $r = exportarEat($e['usuario'], $e['proyecto'], 'pdf', '2026-10-31')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertDownload('reporte-eat-OBR-01-20261031.pdf');
+
+        expect(substr($r->getContent(), 0, 5))->toBe('%PDF-');
+        // Con el subconjunto de fuentes el PDF de una página pesa unos 25 KB; sin él, ~880 KB.
+        expect(strlen($r->getContent()))->toBeLessThan(200_000);
+        $opciones = $usado->getDomPDF()->getOptions();
+        expect($opciones->getIsJavascriptEnabled())->toBeFalse();
+        expect($opciones->getChroot())->toBe([resource_path('views')]);
+        expect($opciones->validateLocalUri('file://'.base_path('composer.json'))[0])->toBeFalse();
+        expect($opciones->validateLocalUri('file://'.resource_path('views/reportes/eat.blade.php'))[0])->toBeTrue();
+        // El resto de la configuración del paquete se conserva.
+        expect($opciones->getIsFontSubsettingEnabled())->toBeTrue();
+        expect($opciones->getFontDir())->toBe(storage_path('fonts'));
+        expect($opciones->getIsRemoteEnabled())->toBeFalse();
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
 });

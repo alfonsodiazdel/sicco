@@ -2,14 +2,25 @@
 
 namespace App\Http\Requests\Reportes;
 
+use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Models\Proyecto;
 use Illuminate\Foundation\Http\FormRequest;
 
 /** CU15: fecha de corte del Reporte EAT, entre el inicio del proyecto y hoy. */
 class ReporteEatRequest extends FormRequest
 {
+    use AutorizaProyecto;
+
     // El hoy de la obra, no el del servidor (UTC): a las 19:00 en Lima ya es mañana en UTC.
     public const ZONA_HORARIA = 'America/Lima';
+
+    /** Antes de validar: la regla de la fecha delataría el inicio de un proyecto ajeno. */
+    public function authorize(): bool
+    {
+        $this->autorizarProyecto($this, $this->route('proyecto'));
+
+        return true;
+    }
 
     public function rules(): array
     {

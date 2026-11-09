@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Exports\ReporteEatExport;
-use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reportes\ReporteEatRequest;
 use App\Models\Proyecto;
@@ -13,16 +12,13 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
-/** CU15 Generar reporte EAT de un proyecto asignado, a una fecha de corte. */
+/** CU15 Generar reporte EAT de un proyecto asignado (lo comprueba ReporteEatRequest), a una fecha de corte. */
 class ReporteEatController extends Controller
 {
-    use AutorizaProyecto;
-
     public const SIN_INFORMACION = 'No hay información para la fecha seleccionada';
 
     public function show(ReporteEatRequest $request, Proyecto $proyecto): JsonResponse
     {
-        $this->autorizarProyecto($request, $proyecto);
         $fechaCorte = $request->validated('fecha_corte');
 
         $reporte = (new ReporteEatQuery($proyecto, $fechaCorte))->calcular();
@@ -56,15 +52,19 @@ class ReporteEatController extends Controller
                 'columnas' => ReporteEatExport::COLUMNAS,
                 'filas' => ReporteEatExport::filas($reporte),
             ])->setPaper('a4', 'landscape')
-                // Sin subconjunto, dompdf incrusta DejaVu entera: ~880 KB por una página.
-                ->setOption('isFontSubsettingEnabled', true)
+                ->setOption([
+                    // Sin subconjunto, dompdf incrusta DejaVu entera: ~880 KB por una página.
+                    'isFontSubsettingEnabled' => true,
+                    // Por defecto el chroot es todo el backend, .env incluido.
+                    'chroot' => resource_path('views'),
+                    'isJavascriptEnabled' => false,
+                ])
                 ->download(ReporteEatExport::nombreArchivo($reporte, 'pdf')));
     }
 
-    /** @param  \Closure(array): Response  $descargar */
+    /** @param  \Closure(array): Response  $descargar arma la respuesta con el archivo ya generado */
     private function exportar(ReporteEatRequest $request, Proyecto $proyecto, string $formato, \Closure $descargar): Response
     {
-        $this->autorizarProyecto($request, $proyecto);
         $fechaCorte = $request->validated('fecha_corte');
 
         $reporte = (new ReporteEatQuery($proyecto, $fechaCorte))->calcular();
@@ -72,6 +72,8 @@ class ReporteEatController extends Controller
             return response()->json(['message' => self::SIN_INFORMACION], 422);
         }
 
+        // Se registra solo la descarga que sí sale.
+        $respuesta = $descargar($reporte);
         ReporteGenerado::create([
             'usuario_id' => $request->user()->id,
             'proyecto_id' => $proyecto->id,
@@ -80,6 +82,6 @@ class ReporteEatController extends Controller
             'formato' => $formato,
         ]);
 
-        return $descargar($reporte);
+        return $respuesta;
     }
 }
