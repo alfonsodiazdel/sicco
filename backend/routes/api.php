@@ -134,9 +134,11 @@ Route::prefix('v1')->group(function () {
 
             // CU15 Reporte EAT: lo generan Oficina técnica y Gerencia en sus proyectos; el administrador
             // lo consulta.
-            Route::get('proyectos/{proyecto}/reportes/eat', [ReporteEatController::class, 'show'])
-                ->whereNumber('proyecto')
-                ->middleware('rol:oficina_tecnica,gerencia,administrador');
+            Route::middleware('rol:oficina_tecnica,gerencia,administrador')->group(function () {
+                Route::get('proyectos/{proyecto}/reportes/eat', [ReporteEatController::class, 'show'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/eat/excel', [ReporteEatController::class, 'excel'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/eat/pdf', [ReporteEatController::class, 'pdf'])->whereNumber('proyecto');
+            });
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

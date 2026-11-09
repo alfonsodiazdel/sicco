@@ -14,6 +14,7 @@ use App\Models\Sector;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use OpenSpout\Reader\XLSX\Reader;
 
 beforeEach(function () {
     $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));
@@ -482,4 +483,127 @@ describe('registro de reportes generados', function () {
             ['usuario_id' => $gerencia->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-08'], 'formato' => 'pantalla', 'created_at' => $ahora],
         ]);
     });
+});
+
+function exportarEat(User $usuario, Proyecto $proyecto, string $formato, ?string $corte)
+{
+    $consulta = $corte === null ? '' : "?fecha_corte={$corte}";
+
+    return test()->actingAs($usuario)->getJson("/api/v1/proyectos/{$proyecto->id}/reportes/eat/{$formato}{$consulta}");
+}
+
+/** Las filas no vacías del Excel, con los números a 2 decimales para compararlos sin importar int o float. */
+function filasExcelEat(string $contenido): array
+{
+    $archivo = tempnam(sys_get_temp_dir(), 'eat').'.xlsx';
+    file_put_contents($archivo, $contenido);
+    $reader = new Reader;
+    $reader->open($archivo);
+    $filas = [];
+    foreach ($reader->getSheetIterator() as $hoja) {
+        foreach ($hoja->getRowIterator() as $fila) {
+            $valores = array_map(fn ($v) => is_int($v) || is_float($v) ? round((float) $v, 2) : $v, $fila->toArray());
+            // El lector rellena cada fila hasta el ancho de la hoja con celdas vacías.
+            while ($valores !== [] && in_array(end($valores), ['', null], true)) {
+                array_pop($valores);
+            }
+            if ($valores !== []) {
+                $filas[] = $valores;
+            }
+        }
+    }
+    $reader->close();
+    unlink($archivo);
+
+    return $filas;
+}
+
+describe('exportación', function () {
+    it('descarga el Excel con el encabezado, las columnas de la pantalla y las filas y totales del corte', function () {
+        $e = escenarioEat();
+
+        $r = exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-10-31')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertDownload('reporte-eat-OBR-01-20261031.xlsx');
+
+        // Los mismos montos que la respuesta JSON del corte 2026-10-31 (cuentas en la prueba de cálculo).
+        expect(filasExcelEat($r->streamedContent()))->toBe([
+            ['Reporte EAT'],
+            ['Proyecto', 'OBR-01 Edificio Mirador'],
+            ['Fecha de corte', '31/10/2026'],
+            ['Montos sin IGV'],
+            ['Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo m³', 'Saldo S/', 'EAT m³', 'EAT S/'],
+            ['Estructuras'],
+            ["01.01 Columnas · f'c 210 kg/cm²", 10.0, 3200.0, 7.0, 2170.0, 3.0, 1030.0, 10.0, 3100.0],
+            ["01.02 Vigas · f'c 280 kg/cm²", 8.0, 2800.0, 9.0, 3240.0, 0.0, -440.0, 9.0, 3240.0],
+            ['Subtotal Estructuras', 18.0, 6000.0, 16.0, 5410.0, 3.0, 590.0, 19.0, 6340.0],
+            ['Losas'],
+            ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0],
+            ['Subtotal Losas', 5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0],
+            ['Guías sin sector', 0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0],
+            ['Bombeo', 0.0, 0.0, '—', 150.0, '—', -150.0, '—', 150.0],
+            ['Total', 23.0, 7300.0, 20.0, 6800.0, 5.0, 500.0, 25.0, 8350.0],
+        ]);
+    });
+
+    it('descarga el PDF con su tipo y nombre de archivo', function () {
+        $e = escenarioEat();
+
+        $r = exportarEat($e['usuario'], $e['proyecto'], 'pdf', '2026-10-31')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertDownload('reporte-eat-OBR-01-20261031.pdf');
+
+        expect(substr($r->getContent(), 0, 5))->toBe('%PDF-');
+    });
+
+    it('registra cada descarga con su formato', function () {
+        $e = escenarioEat();
+
+        exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-10-31')->assertOk()->streamedContent();
+        exportarEat($e['usuario'], $e['proyecto'], 'pdf', '2026-10-08')->assertOk();
+
+        $ahora = now()->format('Y-m-d H:i:s');
+        expect(registrosEat())->toBe([
+            ['usuario_id' => $e['usuario']->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-31'], 'formato' => 'excel', 'created_at' => $ahora],
+            ['usuario_id' => $e['usuario']->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-08'], 'formato' => 'pdf', 'created_at' => $ahora],
+        ]);
+    });
+
+    it('sin guías ni cargos hasta el corte responde 422 y no registra nada', function (string $formato) {
+        $e = escenarioEat();
+
+        exportarEat($e['usuario'], $e['proyecto'], $formato, '2026-10-03')
+            ->assertStatus(422)
+            ->assertExactJson(['message' => 'No hay información para la fecha seleccionada']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with(['excel', 'pdf']);
+
+    it('valida la fecha de corte igual que la pantalla', function (string $formato) {
+        $e = escenarioEat();
+
+        exportarEat($e['usuario'], $e['proyecto'], $formato, '2026-11-10')->assertStatus(422)->assertJsonValidationErrors('fecha_corte');
+        exportarEat($e['usuario'], $e['proyecto'], $formato, null)->assertStatus(422)->assertJsonValidationErrors('fecha_corte');
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with(['excel', 'pdf']);
+
+    it('rechaza un rol fuera del reporte y un proyecto no asignado', function (string $formato) {
+        $e = escenarioEat();
+
+        exportarEat(asignadoA($e['proyecto'], Rol::Almacenero), $e['proyecto'], $formato, '2026-10-31')
+            ->assertForbidden()
+            ->assertExactJson(['message' => 'No tiene permiso para realizar esta acción.', 'code' => 'sin_permiso']);
+        exportarEat(conRol(Rol::OficinaTecnica), $e['proyecto'], $formato, '2026-10-31')
+            ->assertForbidden()
+            ->assertExactJson(['message' => 'No tiene acceso a este proyecto.', 'code' => 'sin_permiso']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with(['excel', 'pdf']);
+
+    it('pide iniciar sesión para exportar', function (string $formato) {
+        $e = escenarioEat();
+
+        $this->getJson("/api/v1/proyectos/{$e['proyecto']->id}/reportes/eat/{$formato}?fecha_corte=2026-10-31")->assertUnauthorized();
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with(['excel', 'pdf']);
 });

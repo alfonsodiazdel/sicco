@@ -16,6 +16,10 @@ class ReporteGenerado extends Model
 
     public const FORMATO_PANTALLA = 'pantalla';
 
+    public const FORMATO_EXCEL = 'excel';
+
+    public const FORMATO_PDF = 'pdf';
+
     protected $table = 'reportes_generados';
 
     protected function casts(): array
