@@ -68,21 +68,39 @@ dc up -d --remove-orphans
 dc exec -T php php artisan queue:restart
 
 # 2. Certificado HTTPS (solo si hay dominio configurado).
-dominio="$(env_valor DEMO_DOMAIN)"
+dominio="$(env_valor DEMO_DOMAIN || true)"
 if [ -n "$dominio" ]; then
+    nombres=("$dominio")
+    if [ "$(env_valor DEMO_WWW || true)" = "true" ]; then
+        nombres+=("www.$dominio")
+    fi
+    dominios=()
+    for nombre in "${nombres[@]}"; do dominios+=(-d "$nombre"); done
+
+    habia_certificado=false
     if dc run --rm --entrypoint test certbot -f "/etc/letsencrypt/live/$dominio/fullchain.pem"; then
-        paso "Renovando certificado si está por vencer"
-        dc run --rm certbot renew --quiet
+        habia_certificado=true
+    fi
+
+    # Un solo comando para todo: emite el certificado la primera vez, lo renueva si
+    # está por vencer (--keep-until-expiring) y lo amplía si se agregó www (--expand).
+    paso "Certificado de Let's Encrypt para ${nombres[*]}"
+    if ! dc run --rm certbot certonly --webroot -w /var/www/certbot \
+        --cert-name "$dominio" "${dominios[@]}" \
+        --email "$(env_valor LETSENCRYPT_EMAIL)" \
+        --agree-tos --no-eff-email --non-interactive \
+        --keep-until-expiring --expand; then
+        echo "No se pudo emitir el certificado. Revisa que los registros DNS de ${nombres[*]}"
+        echo "apunten a este Droplet y que el puerto 80 esté abierto."
+        if [ "$habia_certificado" = false ]; then
+            echo "La app sigue disponible por HTTP."
+        fi
+        exit 1
+    fi
+
+    if [ "$habia_certificado" = true ]; then
         dc exec -T nginx nginx -s reload
     else
-        paso "Emitiendo certificado de Let's Encrypt para $dominio"
-        if ! dc run --rm certbot certonly --webroot -w /var/www/certbot \
-            -d "$dominio" --email "$(env_valor LETSENCRYPT_EMAIL)" \
-            --agree-tos --no-eff-email --non-interactive; then
-            echo "No se pudo emitir el certificado. Revisa que el registro A de $dominio apunte a este Droplet"
-            echo "y que el puerto 80 esté abierto. La app sigue disponible por HTTP."
-            exit 1
-        fi
         dc restart nginx
     fi
 fi
