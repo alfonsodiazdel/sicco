@@ -1,0 +1,485 @@
+<?php
+
+use App\Enums\EstadoAsignacion;
+use App\Enums\OrigenGuia;
+use App\Enums\Rol;
+use App\Models\Asignacion;
+use App\Models\Factura;
+use App\Models\GrupoPartida;
+use App\Models\GuiaRemision;
+use App\Models\Proveedor;
+use App\Models\Proyecto;
+use App\Models\Resistencia;
+use App\Models\Sector;
+use App\Models\User;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+
+beforeEach(function () {
+    $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));
+});
+
+/**
+ * Proyecto con inicio el 2026-10-01: partidas P1 Columnas (210, 10 m³ a S/ 320), P2 Vigas (280, 8 m³ a
+ * S/ 350) y P3 Losa aligerada (210, 5 m³ a S/ 260); facturas F1 (10-10: 210 a 310, 280 a 360, Bombeo 150)
+ * y F2 (11-05: 210 a 320, Espera 80); otra obra con una factura de 210 a 999 que no debe contar.
+ */
+function escenarioEat(): array
+{
+    $proyecto = obra(['codigo' => 'OBR-01', 'nombre' => 'Edificio Mirador', 'fecha_inicio' => '2026-10-01']);
+    $r210 = resistencia(210);
+    $r280 = resistencia(280);
+    // Losas se crea antes para que el orden salga de grupos_partida.orden y no del id.
+    $losas = GrupoPartida::create(['nombre' => 'Losas', 'orden' => 2]);
+    $estructuras = GrupoPartida::create(['nombre' => 'Estructuras', 'orden' => 1]);
+    // P2 antes que P1: las filas se ordenan por ítem.
+    $p2 = partidaEat($proyecto, $estructuras, '01.02', 'Vigas', $r280, 8, 350);
+    $p1 = partidaEat($proyecto, $estructuras, '01.01', 'Columnas', $r210, 10, 320);
+    $p3 = partidaEat($proyecto, $losas, '02.01', 'Losa aligerada', $r210, 5, 260);
+    $nivel = $proyecto->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1]);
+    $s1 = sectorEat($nivel->id, $p1->id, 'S1', 10);
+    $s2 = sectorEat($nivel->id, $p2->id, 'S2', 8);
+    $s3 = sectorEat($nivel->id, $p3->id, 'S3', 5);
+
+    $f1 = facturaEat($proyecto, '2026-10-10', [[$r210, 310], [$r280, 360]], ['Bombeo' => 150]);
+    $f2 = facturaEat($proyecto, '2026-11-05', [[$r210, 320]], ['Espera' => 80]);
+    facturaEat(obra(['codigo' => 'OBR-02']), '2026-10-15', [[$r210, 999]]);
+
+    guiaEat($proyecto, '2026-10-05', $r210, 4, $f1, [$s1->id => 4]);
+    guiaEat($proyecto, '2026-10-20', $r210, 3, null, [$s1->id => 3]);
+    guiaEat($proyecto, '2026-10-25', $r280, 9, $f1, [$s2->id => 9]);
+    guiaEat($proyecto, '2026-10-28', $r210, 2, null, [$s3->id => 2]);
+    guiaEat($proyecto, '2026-11-03', $r210, 1.5, $f2, [$s3->id => 1.5]);
+    guiaEat($proyecto, '2026-10-30', $r210, 1, null);
+    guiaEat($proyecto, '2026-10-06', $r210, 1, null, [$s3->id => 1]);
+
+    return [
+        'proyecto' => $proyecto, 'usuario' => asignadoA($proyecto, Rol::OficinaTecnica),
+        'p1' => $p1, 'p2' => $p2, 'p3' => $p3, 's1' => $s1, 's2' => $s2, 's3' => $s3,
+        'estructuras' => $estructuras, 'losas' => $losas, 'f1' => $f1, 'f2' => $f2, 'r210' => $r210, 'r280' => $r280,
+    ];
+}
+
+function partidaEat(Proyecto $proyecto, GrupoPartida $grupo, string $item, string $elemento, Resistencia $r, float $metrado, float $precio)
+{
+    return $proyecto->partidas()->create(datosPartida([
+        'grupo_id' => $grupo->id, 'item' => $item, 'elemento' => $elemento, 'descripcion' => "CONCRETO - {$elemento}",
+        'resistencia_id' => $r->id, 'metrado_m3' => $metrado, 'precio_unitario' => $precio,
+    ]));
+}
+
+function sectorEat(int $nivelId, int $partidaId, string $nombre, float $volumen): Sector
+{
+    return Sector::create(['nivel_id' => $nivelId, 'presupuesto_id' => $partidaId, 'nombre' => $nombre, 'volumen_presup_m3' => $volumen]);
+}
+
+/** @param list<array{0: Resistencia, 1: float}> $lineas */
+function facturaEat(Proyecto $proyecto, string $fecha, array $lineas, array $cargos = []): Factura
+{
+    static $numero = 0;
+    $numero++;
+    $factura = Factura::create([
+        'proyecto_id' => $proyecto->id, 'proveedor_id' => Proveedor::factory()->create()->id,
+        'numero' => sprintf('F001-%08d', $numero), 'fecha' => $fecha,
+        'volumen_m3' => 10 * count($lineas), 'subtotal' => 0, 'igv' => 0, 'total' => 0,
+        'archivo_ruta' => "facturas/{$proyecto->id}/f.pdf",
+        'registrado_por' => conRol(Rol::OficinaTecnica)->id,
+    ]);
+    foreach ($lineas as [$resistencia, $precio]) {
+        $factura->lineas()->create(['resistencia_id' => $resistencia->id, 'volumen_m3' => 10, 'precio_unitario' => $precio, 'importe' => 10 * $precio]);
+    }
+    foreach ($cargos as $descripcion => $importe) {
+        $factura->cargos()->create(['descripcion' => $descripcion, 'importe' => $importe]);
+    }
+
+    return $factura;
+}
+
+/** @param array<int, float> $reparto volumen por id de sector */
+function guiaEat(Proyecto $proyecto, string $fecha, Resistencia $r, float $volumen, ?Factura $factura, array $reparto = []): GuiaRemision
+{
+    static $numero = 0;
+    $numero++;
+    $usuario = conRol(Rol::Almacenero);
+    $asignado = array_sum($reparto);
+    $guia = GuiaRemision::create([
+        'proyecto_id' => $proyecto->id, 'proveedor_id' => Proveedor::factory()->create()->id,
+        'numero' => sprintf('T001-%08d', $numero), 'fecha' => $fecha, 'resistencia_id' => $r->id,
+        'volumen_m3' => $volumen, 'foto_ruta' => "guias/{$proyecto->id}/foto.jpg",
+        'estado_asignacion' => match (true) {
+            $asignado <= 0 => EstadoAsignacion::SinSector,
+            $asignado < $volumen => EstadoAsignacion::Parcial,
+            default => EstadoAsignacion::Asignada,
+        },
+        'factura_id' => $factura?->id, 'origen' => OrigenGuia::Manual, 'registrado_por' => $usuario->id,
+    ]);
+    foreach ($reparto as $sectorId => $m3) {
+        Asignacion::create(['guia_id' => $guia->id, 'sector_id' => $sectorId, 'volumen_m3' => $m3, 'registrado_por' => $usuario->id]);
+    }
+
+    return $guia;
+}
+
+function reporteEat(User $usuario, Proyecto $proyecto, ?string $corte)
+{
+    $consulta = $corte === null ? '' : "?fecha_corte={$corte}";
+
+    return test()->actingAs($usuario)->getJson("/api/v1/proyectos/{$proyecto->id}/reportes/eat{$consulta}");
+}
+
+/** Los 8 montos en el orden de la tabla: presup., consumido, saldo y EAT, cada uno en m³ y S/. */
+function montosEat(?float ...$m): array
+{
+    return array_combine(
+        ['presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles', 'saldo_m3', 'saldo_soles', 'eat_m3', 'eat_soles'],
+        $m,
+    );
+}
+
+function filaEat(int $partidaId, string $item, string $etiqueta, array $montos, bool $sobrecosto): array
+{
+    return ['partida_id' => $partidaId, 'item' => $item, 'etiqueta' => $etiqueta, ...$montos, 'sobrecosto' => $sobrecosto];
+}
+
+function registrosEat(): array
+{
+    return DB::table('reportes_generados')
+        ->orderBy('id')
+        ->get(['usuario_id', 'proyecto_id', 'tipo', 'parametros', 'formato', 'created_at'])
+        ->map(fn ($r) => [...(array) $r, 'parametros' => json_decode($r->parametros, true)])
+        ->all();
+}
+
+describe('cálculo', function () {
+    it('arma el reporte al corte con grupos, subtotales, filas aparte y total', function () {
+        $e = escenarioEat();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        // Último precio facturado al corte: 210 = 310 y 280 = 360, ambos de F1.
+        expect($r->json())->toBe(['data' => [
+            'proyecto' => ['id' => $e['proyecto']->id, 'codigo' => 'OBR-01', 'nombre' => 'Edificio Mirador'],
+            'fecha_corte' => '2026-10-31',
+            'grupos' => [
+                [
+                    'grupo_id' => $e['estructuras']->id, 'nombre' => 'Estructuras',
+                    'filas' => [
+                        // 10 × 320 = 3200; 4 × 310 + 3 × 310 = 2170; 3200 − 2170 = 1030; 2170 + 3 × 310 = 3100
+                        filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(10.0, 3200.0, 7.0, 2170.0, 3.0, 1030.0, 10.0, 3100.0), false),
+                        // 8 × 350 = 2800; 9 × 360 = 3240; saldo máx(0, 8 − 9) = 0 y 2800 − 3240 = −440; EAT = consumido
+                        filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.0, 2800.0, 9.0, 3240.0, 0.0, -440.0, 9.0, 3240.0), true),
+                    ],
+                    // 3200 + 2800 = 6000; 2170 + 3240 = 5410; 1030 − 440 = 590; 3100 + 3240 = 6340 > 6000
+                    'subtotal' => [...montosEat(18.0, 6000.0, 16.0, 5410.0, 3.0, 590.0, 19.0, 6340.0), 'sobrecosto' => true],
+                ],
+                [
+                    'grupo_id' => $e['losas']->id, 'nombre' => 'Losas',
+                    'filas' => [
+                        // 5 × 260 = 1300; 2 × 310 + 1 × 310 = 930 (la guía del 11-03 queda fuera); 1300 − 930 = 370; 930 + 2 × 310 = 1550
+                        filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0), true),
+                    ],
+                    'subtotal' => [...montosEat(5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0), 'sobrecosto' => true],
+                ],
+            ],
+            'filas_aparte' => [
+                // 1 × 310 = 310
+                ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false],
+                // Espera es de F2 (11-05): queda fuera.
+                ['tipo' => 'cargo', 'concepto' => 'Bombeo', ...montosEat(0.0, 0.0, null, 150.0, null, -150.0, null, 150.0), 'sobrecosto' => false],
+            ],
+            // 6000 + 1300 = 7300; 5410 + 930 + 310 + 150 = 6800; 590 + 370 − 310 − 150 = 500; 6340 + 1550 + 310 + 150 = 8350
+            // m³: 16 + 3 + 1 = 20; 3 + 2 + 0 = 5; 19 + 5 + 1 = 25
+            'total' => [...montosEat(23.0, 7300.0, 20.0, 6800.0, 5.0, 500.0, 25.0, 8350.0), 'sobrecosto' => true],
+        ]]);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('valoriza el presupuesto con el metrado por el precio unitario de la partida', function () {
+        $e = escenarioEat();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        expect($r->json('data.grupos.0.filas.0.presupuesto_soles'))->toBe(3200.0); // 10 × 320
+        expect($r->json('data.grupos.0.filas.1.presupuesto_soles'))->toBe(2800.0); // 8 × 350
+        expect($r->json('data.grupos.1.filas.0.presupuesto_soles'))->toBe(1300.0); // 5 × 260
+        expect($r->json('data.total.presupuesto_soles'))->toBe(7300.0); // 3200 + 2800 + 1300
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('una guía facturada toma el precio de su factura aunque la factura sea posterior al corte', function () {
+        $e = escenarioEat();
+
+        // Al 10-08 aún no hay facturas; la guía del 10-05 está en F1 (10-10): 4 × 310 = 1240.
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
+        expect($r->json('data.grupos.0.filas.0'))->toBe(
+            // 10 × 320 = 3200; 3200 − 1240 = 1960; 1240 + 6 × 320 = 3160 (precio de la partida)
+            filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(10.0, 3200.0, 4.0, 1240.0, 6.0, 1960.0, 10.0, 3160.0), false),
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('una guía cuya factura no tiene su resistencia toma el último precio facturado', function () {
+        $e = escenarioEat();
+        // F2 solo factura 210: esta guía de 280 toma el último precio facturado de 280 al corte, 360 de F1.
+        guiaEat($e['proyecto'], '2026-10-29', $e['r280'], 1, $e['f2'], [$e['s2']->id => 1]);
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        // 9 × 360 + 1 × 360 = 3600; 2800 − 3600 = −800
+        expect($r->json('data.grupos.0.filas.1'))->toBe(
+            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.0, 2800.0, 10.0, 3600.0, 0.0, -800.0, 10.0, 3600.0), true),
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('una guía sin factura toma el último precio facturado del proyecto al corte o, sin él, el de la partida', function () {
+        $e = escenarioEat();
+
+        // Al 10-31: la guía del 10-20 toma 310 de F1 (10-10), no el 999 de la otra obra (10-15).
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+        expect($r->json('data.grupos.0.filas.0.consumido_soles'))->toBe(2170.0); // 4 × 310 + 3 × 310
+        expect($r->json('data.grupos.0.filas.0.eat_soles'))->toBe(3100.0); // 2170 + 3 × 310
+        expect($r->json('data.grupos.1.filas.0.consumido_soles'))->toBe(930.0); // 2 × 310 + 1 × 310
+
+        // Al 10-08 no hay facturas: la guía del 10-06 y el saldo se valorizan con el precio de la partida.
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
+        expect($r->json('data.grupos'))->toBe([
+            [
+                'grupo_id' => $e['estructuras']->id, 'nombre' => 'Estructuras',
+                'filas' => [
+                    filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(10.0, 3200.0, 4.0, 1240.0, 6.0, 1960.0, 10.0, 3160.0), false),
+                    // 0 + 8 × 350 = 2800
+                    filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.0, 2800.0, 0.0, 0.0, 8.0, 2800.0, 8.0, 2800.0), false),
+                ],
+                // 1240 + 0 = 1240; 1960 + 2800 = 4760; 3160 + 2800 = 5960
+                'subtotal' => [...montosEat(18.0, 6000.0, 4.0, 1240.0, 14.0, 4760.0, 18.0, 5960.0), 'sobrecosto' => false],
+            ],
+            [
+                'grupo_id' => $e['losas']->id, 'nombre' => 'Losas',
+                // 1 × 260 = 260; 1300 − 260 = 1040; 260 + 4 × 260 = 1300
+                'filas' => [filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.0, 1300.0, 1.0, 260.0, 4.0, 1040.0, 5.0, 1300.0), false)],
+                'subtotal' => [...montosEat(5.0, 1300.0, 1.0, 260.0, 4.0, 1040.0, 5.0, 1300.0), 'sobrecosto' => false],
+            ],
+        ]);
+        expect($r->json('data.filas_aparte'))->toBe([]);
+        // 1240 + 260 = 1500; 4760 + 1040 = 5800; 5960 + 1300 = 7260
+        expect($r->json('data.total'))->toBe([...montosEat(23.0, 7300.0, 5.0, 1500.0, 18.0, 5800.0, 23.0, 7260.0), 'sobrecosto' => false]);
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+    });
+
+    it('con dos facturas de la misma fecha toma el precio de la registrada después', function () {
+        $e = escenarioEat();
+        facturaEat($e['proyecto'], '2026-10-10', [[$e['r210'], 315]]);
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        // 4 × 310 (su factura F1) + 3 × 315 = 1240 + 945 = 2185; EAT 2185 + 3 × 315 = 3130
+        expect($r->json('data.grupos.0.filas.0'))->toBe(
+            filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(10.0, 3200.0, 7.0, 2185.0, 3.0, 1015.0, 10.0, 3130.0), false),
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('valoriza las guías sin sector sin precio facturado con el promedio del presupuesto ponderado por metrado', function () {
+        $e = escenarioEat();
+        guiaEat($e['proyecto'], '2026-10-07', $e['r210'], 2, null);
+
+        // Al 10-08 no hay facturas: promedio de 210 = (10 × 320 + 5 × 260) / 15 = 4500 / 15 = 300; 2 × 300 = 600
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
+        expect($r->json('data.filas_aparte'))->toBe([
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 600.0, 0.0, -600.0, 2.0, 600.0), 'sobrecosto' => false],
+        ]);
+
+        // Al 10-31: (1 + 2) × 310 = 930
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+        expect($r->json('data.filas_aparte.0'))->toBe(
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 3.0, 930.0, 0.0, -930.0, 3.0, 930.0), 'sobrecosto' => false],
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+    });
+
+    it('una guía sin sector de una resistencia que no está en el presupuesto ni facturada vale 0', function () {
+        $e = escenarioEat();
+        guiaEat($e['proyecto'], '2026-10-07', resistencia(350), 1.5, null);
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
+
+        // 1.5 × 0 = 0
+        expect($r->json('data.filas_aparte'))->toBe([
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.5, 0.0), 'sobrecosto' => false],
+        ]);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('redondea cada fila al céntimo con la mitad hacia arriba y suma las filas ya redondeadas', function () {
+        $proyecto = obra(['fecha_inicio' => '2026-10-01']);
+        $r210 = resistencia(210);
+        $grupo = GrupoPartida::create(['nombre' => 'Estructuras', 'orden' => 1]);
+        $a = partidaEat($proyecto, $grupo, '01.01', 'Columnas', $r210, 2, 100);
+        $b = partidaEat($proyecto, $grupo, '01.02', 'Placas', $r210, 2, 100);
+        $nivel = $proyecto->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1]);
+        $sa = sectorEat($nivel->id, $a->id, 'SA', 2);
+        $sb = sectorEat($nivel->id, $b->id, 'SB', 2);
+        $factura = facturaEat($proyecto, '2026-10-10', [[$r210, 310.5]]);
+        guiaEat($proyecto, '2026-10-11', $r210, 1.05, $factura, [$sa->id => 1.05]);
+        guiaEat($proyecto, '2026-10-12', $r210, 1.05, $factura, [$sb->id => 1.05]);
+
+        $r = reporteEat(asignadoA($proyecto), $proyecto, '2026-10-31')->assertOk();
+
+        // Consumido: 1.05 × 310.50 = 326.025 → 326.03. Saldo: 2 × 100 − 326.03 = −126.03.
+        // EAT: 0.95 × 310.50 = 294.975 → 294.98; 326.03 + 294.98 = 621.01.
+        $fila = montosEat(2.0, 200.0, 1.05, 326.03, 0.95, -126.03, 2.0, 621.01);
+        expect($r->json('data.grupos.0.filas.0'))->toBe(filaEat($a->id, '01.01', "Columnas · f'c 210 kg/cm²", $fila, true));
+        expect($r->json('data.grupos.0.filas.1'))->toBe(filaEat($b->id, '01.02', "Placas · f'c 210 kg/cm²", $fila, true));
+        // Suma de filas redondeadas: 326.03 × 2 = 652.06 (no 652.05); 621.01 × 2 = 1242.02 (no 1242.00); −126.03 × 2 = −252.06
+        $suma = montosEat(4.0, 400.0, 2.1, 652.06, 1.9, -252.06, 4.0, 1242.02);
+        expect($r->json('data.grupos.0.subtotal'))->toBe([...$suma, 'sobrecosto' => true]);
+        expect($r->json('data.total'))->toBe([...$suma, 'sobrecosto' => true]);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('la fecha de corte deja fuera las guías y los cargos posteriores', function () {
+        $e = escenarioEat();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+        // La guía del 11-03 y el cargo Espera de F2 (11-05) no entran: 2 × 310 + 1 × 310 = 930.
+        expect($r->json('data.grupos.1.filas.0.consumido_m3'))->toBe(3.0);
+        expect($r->json('data.grupos.1.filas.0.consumido_soles'))->toBe(930.0);
+        expect(array_column($r->json('data.filas_aparte'), 'concepto'))->toBe(['Guías sin sector', 'Bombeo']);
+
+        // Al 11-09 entran, y el último precio de 210 pasa a 320 (F2): 2 × 320 + 1 × 320 + 1.5 × 320 = 1440.
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-11-09')->assertOk();
+        expect($r->json('data.grupos.1.filas.0.consumido_m3'))->toBe(4.5);
+        expect($r->json('data.grupos.1.filas.0.consumido_soles'))->toBe(1440.0);
+        expect(array_column($r->json('data.filas_aparte'), 'concepto'))->toBe(['Guías sin sector', 'Bombeo', 'Espera']);
+        expect(array_column($r->json('data.filas_aparte'), 'consumido_soles'))->toBe([320.0, 150.0, 80.0]);
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+    });
+
+    it('si el elemento superó lo presupuestado el EAT es el consumido', function () {
+        $e = escenarioEat();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        // Consumido 9 m³ > metrado 8: saldo 0 m³ y EAT = consumido 9 × 360 = 3240 > 2800
+        expect($r->json('data.grupos.0.filas.1'))->toBe(
+            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.0, 2800.0, 9.0, 3240.0, 0.0, -440.0, 9.0, 3240.0), true),
+        );
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('muestra las guías sin sector y los cargos de factura en filas aparte que suman al total', function () {
+        $e = escenarioEat();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+
+        expect($r->json('data.filas_aparte'))->toBe([
+            // Guía del 10-30 sin sector: 1 × 310 = 310
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false],
+            ['tipo' => 'cargo', 'concepto' => 'Bombeo', ...montosEat(0.0, 0.0, null, 150.0, null, -150.0, null, 150.0), 'sobrecosto' => false],
+        ]);
+        // 5410 + 930 + 310 + 150 = 6800
+        expect($r->json('data.total.consumido_soles'))->toBe(6800.0);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('sin guías ni cargos hasta el corte responde que no hay información y no lo registra', function () {
+        $e = escenarioEat();
+
+        reporteEat($e['usuario'], $e['proyecto'], '2026-10-03')
+            ->assertOk()
+            ->assertExactJson(['data' => null, 'mensaje' => 'No hay información para la fecha seleccionada']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    });
+});
+
+describe('validación de la fecha de corte', function () {
+    it('rechaza la fecha con el motivo en español y no registra nada', function (?string $corte, string $mensaje) {
+        $e = escenarioEat();
+
+        reporteEat($e['usuario'], $e['proyecto'], $corte)
+            ->assertUnprocessable()
+            ->assertJsonPath('errors', ['fecha_corte' => [$mensaje]]);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with([
+        'sin fecha' => [null, 'Ingrese la fecha de corte'],
+        'vacía' => ['', 'Ingrese la fecha de corte'],
+        'otro formato' => ['31/10/2026', 'Ingrese una fecha válida'],
+        'fecha inexistente' => ['2026-02-30', 'Ingrese una fecha válida'],
+        'futura' => ['2026-11-10', 'La fecha de corte no puede ser posterior a hoy'],
+        'anterior al inicio del proyecto' => ['2026-09-30', 'La fecha de corte no puede ser anterior al inicio del proyecto'],
+    ]);
+
+    it('toma el hoy de Lima y no el de UTC', function () {
+        $e = escenarioEat();
+        // 03:00 UTC del 10 = 22:00 del 9 en Lima.
+        $this->travelTo(Carbon::parse('2026-11-10 03:00:00', 'UTC'));
+
+        reporteEat($e['usuario'], $e['proyecto'], '2026-11-10')
+            ->assertUnprocessable()
+            ->assertJsonPath('errors', ['fecha_corte' => ['La fecha de corte no puede ser posterior a hoy']]);
+        reporteEat($e['usuario'], $e['proyecto'], '2026-11-09')->assertOk()->assertJsonPath('data.fecha_corte', '2026-11-09');
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('acepta como corte el día de inicio del proyecto', function () {
+        $e = escenarioEat();
+
+        reporteEat($e['usuario'], $e['proyecto'], '2026-10-01')
+            ->assertOk()
+            ->assertExactJson(['data' => null, 'mensaje' => 'No hay información para la fecha seleccionada']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    });
+});
+
+describe('permisos', function () {
+    it('lo generan Oficina técnica y Gerencia asignadas y el administrador sin asignación', function () {
+        $e = escenarioEat();
+
+        reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
+        reporteEat(asignadoA($e['proyecto'], Rol::Gerencia), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
+        reporteEat(conRol(Rol::Administrador), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
+        expect(DB::table('reportes_generados')->count())->toBe(3);
+    });
+
+    it('rechaza los roles fuera del reporte aunque estén asignados al proyecto', function (Rol $rol) {
+        $e = escenarioEat();
+
+        reporteEat(asignadoA($e['proyecto'], $rol), $e['proyecto'], '2026-10-31')
+            ->assertForbidden()
+            ->assertExactJson(['message' => 'No tiene permiso para realizar esta acción.', 'code' => 'sin_permiso']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with([Rol::IngenieroProduccion, Rol::Almacenero]);
+
+    it('rechaza un proyecto no asignado a Oficina técnica o Gerencia', function (Rol $rol) {
+        $e = escenarioEat();
+
+        reporteEat(conRol($rol), $e['proyecto'], '2026-10-31')
+            ->assertForbidden()
+            ->assertExactJson(['message' => 'No tiene acceso a este proyecto.', 'code' => 'sin_permiso']);
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    })->with([Rol::OficinaTecnica, Rol::Gerencia]);
+
+    it('pide iniciar sesión', function () {
+        $e = escenarioEat();
+
+        $this->getJson("/api/v1/proyectos/{$e['proyecto']->id}/reportes/eat?fecha_corte=2026-10-31")->assertUnauthorized();
+        expect(DB::table('reportes_generados')->count())->toBe(0);
+    });
+});
+
+describe('registro de reportes generados', function () {
+    it('registra cada generación con usuario, proyecto, tipo, fecha de corte y formato', function () {
+        $e = escenarioEat();
+        $gerencia = asignadoA($e['proyecto'], Rol::Gerencia);
+
+        reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
+        reporteEat($gerencia, $e['proyecto'], '2026-10-08')->assertOk();
+
+        $ahora = now()->format('Y-m-d H:i:s');
+        expect(registrosEat())->toBe([
+            ['usuario_id' => $e['usuario']->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-31'], 'formato' => 'pantalla', 'created_at' => $ahora],
+            ['usuario_id' => $gerencia->id, 'proyecto_id' => $e['proyecto']->id, 'tipo' => 'eat', 'parametros' => ['fecha_corte' => '2026-10-08'], 'formato' => 'pantalla', 'created_at' => $ahora],
+        ]);
+    });
+});

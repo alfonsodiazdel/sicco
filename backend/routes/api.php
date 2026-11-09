@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
+use App\Http\Controllers\Api\V1\ReporteEatController;
 use App\Http\Controllers\Api\V1\ResistenciaController;
 use App\Http\Controllers\Api\V1\RolController;
 use App\Http\Controllers\Api\V1\SectorController;
@@ -130,6 +131,12 @@ Route::prefix('v1')->group(function () {
             Route::patch('alertas/{alerta}/revisar', [AlertaController::class, 'revisar'])
                 ->whereNumber('alerta')
                 ->middleware('rol:ingeniero_produccion,gerencia');
+
+            // CU15 Reporte EAT: lo generan Oficina técnica y Gerencia en sus proyectos; el administrador
+            // lo consulta.
+            Route::get('proyectos/{proyecto}/reportes/eat', [ReporteEatController::class, 'show'])
+                ->whereNumber('proyecto')
+                ->middleware('rol:oficina_tecnica,gerencia,administrador');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {
