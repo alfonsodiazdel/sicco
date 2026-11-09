@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\DesperdicioController;
+use App\Http\Controllers\Api\V1\DocumentoController;
 use App\Http\Controllers\Api\V1\FacturaController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
 use App\Http\Controllers\Api\V1\GuiaController;
@@ -114,6 +115,16 @@ Route::prefix('v1')->group(function () {
                 // Lectura de la factura con OCR: cada una cuesta en la API de IA.
                 Route::post('facturas/lecturas', [FacturaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('facturas', [FacturaController::class, 'store']);
+            });
+
+            // CU18 Exportar documentos: Oficina técnica y el administrador descargan en ZIP las fotos
+            // de las guías o los archivos de las facturas de sus proyectos.
+            Route::middleware('rol:oficina_tecnica,administrador')->group(function () {
+                Route::get('proyectos/{proyecto}/documentos/guias', [DocumentoController::class, 'guias'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/documentos/facturas', [DocumentoController::class, 'facturas'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/documentos/{tipo}/zip', [DocumentoController::class, 'zip'])
+                    ->whereNumber('proyecto')
+                    ->whereIn('tipo', ['guias', 'facturas']);
             });
 
             // CU13 Control de desperdicio: lo consultan Producción y Gerencia en sus proyectos.
