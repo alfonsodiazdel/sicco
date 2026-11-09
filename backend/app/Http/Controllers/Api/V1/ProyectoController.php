@@ -50,10 +50,13 @@ class ProyectoController extends Controller
 
     public function update(GuardarProyectoRequest $request, Proyecto $proyecto): ProyectoResource
     {
-        // El responsable anterior conserva su acceso: quitarlo lo decide el administrador en Usuarios.
+        // Solo se asigna al responsable nuevo: si no cambió, se respeta el acceso que el administrador
+        // le haya quitado. El anterior conserva el suyo; quitarlo lo decide el administrador en Usuarios.
         DB::transaction(function () use ($request, $proyecto) {
             $proyecto->update($request->validated());
-            $proyecto->usuarios()->syncWithoutDetaching([$proyecto->ingeniero_id]);
+            if ($proyecto->wasChanged('ingeniero_id')) {
+                $proyecto->usuarios()->syncWithoutDetaching([$proyecto->ingeniero_id]);
+            }
         });
 
         return ProyectoResource::make($proyecto);

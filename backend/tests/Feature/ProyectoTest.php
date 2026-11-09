@@ -359,6 +359,36 @@ describe('asignación automática', function () {
             ->toBe(collect([$creador->id, $ing->id])->sort()->values()->all());
     });
 
+    it('editar sin cambiar el ingeniero no le devuelve el acceso que el administrador le quitó', function () {
+        $creador = oficina();
+        $ing = ingeniero();
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $ing->id]))
+            ->assertCreated()
+            ->json('id');
+        // Lo mismo que hace el administrador al quitarle el proyecto desde Usuarios.
+        DB::table('usuario_proyecto')->where(['usuario_id' => $ing->id, 'proyecto_id' => $id])->delete();
+
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $ing->id, 'nombre' => 'Solo cambia el nombre']))
+            ->assertOk();
+
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', $id)->pluck('usuario_id')->all())->toBe([$creador->id]);
+        $this->actingAs($ing)->getJson('/api/v1/proyectos/asignados')->assertOk()->assertExactJson([]);
+    });
+
+    it('editar a un responsable que quedó inactivo no le devuelve el acceso quitado', function () {
+        $creador = oficina();
+        $ing = ingeniero();
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $ing->id]))
+            ->assertCreated()
+            ->json('id');
+        $ing->update(['activo' => false]);
+        DB::table('usuario_proyecto')->where(['usuario_id' => $ing->id, 'proyecto_id' => $id])->delete();
+
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $ing->id, 'nombre' => 'Otro']))->assertOk();
+
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', $id)->pluck('usuario_id')->all())->toBe([$creador->id]);
+    });
+
     it('si quien edita es también el responsable, queda una sola fila suya', function () {
         // Solo al editar se puede: se conserva al responsable actual aunque ya no sea ingeniero.
         $editor = oficina();
