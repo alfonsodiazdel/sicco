@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import router, { destinoTrasLogin } from '@/router'
+import { menu } from '@/router/menu'
 import { useAuthStore } from '@/stores/auth'
 import type { RolClave, Usuario } from '@/types/auth'
 
@@ -44,6 +45,44 @@ describe('acceso por URL', () => {
       iniciarSesion('administrador')
 
       expect(await abrir(ruta)).toBe(ruta.slice(1))
+    },
+  )
+})
+
+describe('reportes (CU15): los roles de la API', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  async function abrir(ruta: string) {
+    await router.push('/')
+    await router.push(ruta)
+    return router.currentRoute.value.name
+  }
+
+  // El menú se filtra igual que en AppLayout.
+  const veReportes = () =>
+    menu
+      .filter((item) => !item.roles || useAuthStore().puedeVer(...item.roles))
+      .some((item) => item.ruta === '/reportes')
+
+  it.each<RolClave>(['almacenero', 'ingeniero_produccion'])(
+    '%s no ve «Reportes» en el menú ni entra por la URL',
+    async (rol) => {
+      iniciarSesion(rol)
+
+      expect(veReportes()).toBe(false)
+      expect(await abrir('/reportes')).toBe('no-autorizado')
+      expect(await abrir('/reportes/eat')).toBe('no-autorizado')
+    },
+  )
+
+  it.each<RolClave>(['oficina_tecnica', 'gerencia', 'administrador'])(
+    '%s ve «Reportes» en el menú y entra al reporte EAT',
+    async (rol) => {
+      iniciarSesion(rol)
+
+      expect(veReportes()).toBe(true)
+      expect(await abrir('/reportes')).toBe('reportes')
+      expect(await abrir('/reportes/eat')).toBe('reporte-eat')
     },
   )
 })

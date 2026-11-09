@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   agruparPartidas,
+  decimales,
   factorDesperdicio,
   soles,
   totalPartida,
@@ -82,6 +83,21 @@ describe('presupuesto', () => {
   it('muestra los importes en soles con dos decimales', () => {
     expect(soles(307771.8)).toBe('S/ 307,771.80')
     expect(soles(0)).toBe('S/ 0.00')
+  })
+
+  it('el cero negativo y lo que redondea a cero se muestran sin signo', () => {
+    expect(soles(-0)).toBe('S/ 0.00')
+    expect(soles(-0.004)).toBe('S/ 0.00')
+    expect(decimales(-0)).toBe('0.00')
+    expect(decimales(-0.004)).toBe('0.00')
+  })
+
+  it('los negativos que no son cero conservan el signo', () => {
+    expect(soles(-0.01)).toBe('S/ -0.01')
+    expect(soles(-0.006)).toBe('S/ -0.01')
+    expect(soles(-440)).toBe('S/ -440.00')
+    expect(soles(-1234567.89)).toBe('S/ -1,234,567.89')
+    expect(decimales(-1.5)).toBe('-1.50')
   })
 
   it('el volumen presupuestado es el metrado con el desperdicio, a dos decimales', () => {

@@ -95,7 +95,10 @@ export const volumenDisponible = (
     .reduce((resto, s) => resto - centesimos(s.volumen_presup_m3), centesimos(partida.metrado_m3)) /
   100
 
+// Intl conserva el signo de -0 y de lo que redondea a cero («-0.00»).
 export const decimales = (valor: number) =>
-  valor.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  valor
+    .toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .replace(/^-(?=[0.,]+$)/, '')
 
 export const soles = (valor: number) => `S/ ${decimales(valor)}`

@@ -322,7 +322,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
 
         <CampoFormulario
           v-slot="{ idError }"
-          etiqueta="Precio unitario (S/ por m³)"
+          etiqueta="Precio unitario sin IGV (S/ por m³)"
           para="precio_unitario"
           :error="errors.precio_unitario"
           obligatorio
