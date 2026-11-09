@@ -6,6 +6,7 @@ use App\Models\User;
 use Database\Seeders\ProyectoDemoSeeder;
 use Database\Seeders\RolSeeder;
 use Database\Seeders\UsuarioDemoSeeder;
+use Illuminate\Support\Facades\DB;
 
 function oficina(): User
 {
@@ -280,6 +281,115 @@ describe('asignados', function () {
         proyecto();
 
         $this->actingAs(ingeniero())->getJson('/api/v1/proyectos/asignados')->assertOk()->assertExactJson([]);
+    });
+});
+
+describe('asignación automática', function () {
+    it('al registrar, quien lo crea y su ingeniero lo ven en sus proyectos asignados y entran a él', function () {
+        $creador = oficina();
+        $ing = ingeniero();
+
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $ing->id]))
+            ->assertCreated()
+            ->json('id');
+
+        foreach ([$creador, $ing] as $usuario) {
+            expect($this->actingAs($usuario)->getJson('/api/v1/proyectos/asignados')->assertOk()->json('*.id'))
+                ->toBe([$id]);
+        }
+        $this->actingAs($creador)->getJson("/api/v1/proyectos/{$id}/partidas")->assertOk();
+        $this->actingAs($ing)->getJson("/api/v1/proyectos/{$id}/niveles")->assertOk();
+    });
+
+    it('cada rol que puede registrar queda asignado al proyecto que crea', function (Rol $rol) {
+        $creador = User::factory()->rol($rol)->create();
+
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto())->assertCreated()->json('id');
+
+        expect($this->getJson('/api/v1/proyectos/asignados')->assertOk()->json('*.id'))->toBe([$id]);
+    })->with([Rol::OficinaTecnica]);
+
+    it('a quien no puede registrar le responde 403 y no crea proyecto ni asignaciones', function (Rol $rol) {
+        $this->actingAs(User::factory()->rol($rol)->create())
+            ->postJson('/api/v1/proyectos', datosProyecto())
+            ->assertForbidden();
+
+        expect(Proyecto::count())->toBe(0);
+        expect(DB::table('usuario_proyecto')->count())->toBe(0);
+    })->with([Rol::Administrador, Rol::Almacenero, Rol::IngenieroProduccion, Rol::Gerencia]);
+
+    it('un tercero no asignado no lo ve ni entra a sus partidas ni a sus niveles', function (Rol $rol) {
+        $id = $this->actingAs(oficina())->postJson('/api/v1/proyectos', datosProyecto())->assertCreated()->json('id');
+        $tercero = User::factory()->rol($rol)->create();
+
+        $this->actingAs($tercero)->getJson('/api/v1/proyectos/asignados')->assertOk()->assertExactJson([]);
+        $this->getJson("/api/v1/proyectos/{$id}/partidas")->assertForbidden()->assertJsonPath('code', 'sin_permiso');
+        $this->getJson("/api/v1/proyectos/{$id}/niveles")->assertForbidden()->assertJsonPath('code', 'sin_permiso');
+    })->with([Rol::OficinaTecnica, Rol::IngenieroProduccion, Rol::Gerencia]);
+
+    it('al cambiar el ingeniero, el nuevo lo ve y el anterior conserva su acceso', function () {
+        $creador = oficina();
+        $anterior = ingeniero();
+        $nuevo = ingeniero();
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $anterior->id]))
+            ->assertCreated()
+            ->json('id');
+
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $nuevo->id]))
+            ->assertOk()
+            ->assertJsonPath('ingeniero_id', $nuevo->id);
+
+        foreach ([$creador, $anterior, $nuevo] as $usuario) {
+            expect($this->actingAs($usuario)->getJson('/api/v1/proyectos/asignados')->assertOk()->json('*.id'))
+                ->toBe([$id]);
+        }
+    });
+
+    it('no duplica filas al editar dos veces con el mismo ingeniero ni si ya estaba asignado', function () {
+        $creador = oficina();
+        $ing = ingeniero();
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $ing->id]))
+            ->assertCreated()
+            ->json('id');
+
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $ing->id]))->assertOk();
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $ing->id, 'nombre' => 'Otro']))->assertOk();
+
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', $id)->orderBy('usuario_id')->pluck('usuario_id')->all())
+            ->toBe(collect([$creador->id, $ing->id])->sort()->values()->all());
+    });
+
+    it('si quien edita es también el responsable, queda una sola fila suya', function () {
+        // Solo al editar se puede: se conserva al responsable actual aunque ya no sea ingeniero.
+        $editor = oficina();
+        $p = proyecto(['ingeniero_id' => $editor->id]);
+        $p->usuarios()->attach($editor->id);
+
+        $this->actingAs($editor)->putJson("/api/v1/proyectos/{$p->id}", datosProyecto(['ingeniero_id' => $editor->id]))
+            ->assertOk();
+
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', $p->id)->pluck('usuario_id')->all())->toBe([$editor->id]);
+    });
+
+    it('no cambia las asignaciones de los demás usuarios ni de otros proyectos', function () {
+        $ajeno = User::factory()->rol(Rol::Almacenero)->create();
+        $ingOtro = ingeniero();
+        $otro = proyecto(['codigo' => 'PRY-001', 'ingeniero_id' => $ingOtro->id]);
+        $otro->usuarios()->attach([$ajeno->id, $ingOtro->id]);
+        $antes = DB::table('usuario_proyecto')->orderBy('usuario_id')->get(['usuario_id', 'proyecto_id'])->all();
+
+        $creador = oficina();
+        $ing = ingeniero();
+        $id = $this->actingAs($creador)->postJson('/api/v1/proyectos', datosProyecto(['ingeniero_id' => $ing->id]))
+            ->assertCreated()
+            ->json('id');
+        $this->putJson("/api/v1/proyectos/{$id}", datosProyecto(['ingeniero_id' => $ingOtro->id]))->assertOk();
+
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', '!=', $id)->orderBy('usuario_id')->get(['usuario_id', 'proyecto_id'])->all())
+            ->toEqual($antes);
+        expect(DB::table('usuario_proyecto')->where('proyecto_id', $id)->orderBy('usuario_id')->pluck('usuario_id')->all())
+            ->toBe(collect([$creador->id, $ing->id, $ingOtro->id])->sort()->values()->all());
+        expect($this->actingAs($ajeno)->getJson('/api/v1/proyectos/asignados')->json('*.codigo'))->toBe(['PRY-001']);
     });
 });
 

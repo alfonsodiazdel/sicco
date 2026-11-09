@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 /** CU03 Gestionar proyectos. */
 class ProyectoController extends Controller
@@ -33,17 +34,27 @@ class ProyectoController extends Controller
 
     public function store(GuardarProyectoRequest $request): JsonResponse
     {
-        $proyecto = Proyecto::create([
-            ...$request->safe()->except('estado'),
-            'estado' => EstadoProyecto::Activo,
-        ]);
+        // Quien lo crea y su responsable quedan asignados: sin eso no lo ven en el encabezado.
+        $proyecto = DB::transaction(function () use ($request) {
+            $proyecto = Proyecto::create([
+                ...$request->safe()->except('estado'),
+                'estado' => EstadoProyecto::Activo,
+            ]);
+            $proyecto->usuarios()->syncWithoutDetaching([$request->user()->id, $proyecto->ingeniero_id]);
+
+            return $proyecto;
+        });
 
         return ProyectoResource::make($proyecto)->response()->setStatusCode(201);
     }
 
     public function update(GuardarProyectoRequest $request, Proyecto $proyecto): ProyectoResource
     {
-        $proyecto->update($request->validated());
+        // El responsable anterior conserva su acceso: quitarlo lo decide el administrador en Usuarios.
+        DB::transaction(function () use ($request, $proyecto) {
+            $proyecto->update($request->validated());
+            $proyecto->usuarios()->syncWithoutDetaching([$proyecto->ingeniero_id]);
+        });
 
         return ProyectoResource::make($proyecto);
     }
