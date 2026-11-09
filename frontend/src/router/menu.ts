@@ -60,6 +60,12 @@ export const menu: ItemMenu[] = [
   },
   { etiqueta: 'Facturas', icono: 'pi pi-file', ruta: '/facturas', roles: ['oficina_tecnica'] },
   {
+    etiqueta: 'Exportar documentos',
+    icono: 'pi pi-download',
+    ruta: '/documentos',
+    roles: ['oficina_tecnica'],
+  },
+  {
     etiqueta: 'Control de desperdicio',
     icono: 'pi pi-percentage',
     ruta: '/desperdicio',

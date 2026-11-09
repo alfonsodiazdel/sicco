@@ -14,7 +14,11 @@ defineProps<{
   cargando?: boolean
   /** Clase de cada fila, p. ej. para resaltar las que requieren atención. */
   claseFila?: (fila: T) => string | undefined
+  /** Agrega una casilla por fila; las marcadas se leen con `v-model:seleccion`. */
+  seleccionable?: boolean
 }>()
+
+const seleccion = defineModel<T[]>('seleccion', { default: () => [] })
 
 defineSlots<{
   [columna: `col-${string}`]: (props: { fila: T }) => unknown
@@ -34,12 +38,15 @@ const clases = (columna: { secundaria?: boolean; numerica?: boolean }, deNumeric
     :data-key="clave"
     :loading="cargando"
     :row-class="claseFila"
+    :selection="seleccionable ? seleccion : undefined"
     scrollable
     table-class="sm:min-w-[40rem]"
+    @update:selection="seleccion = $event"
   >
     <template #empty>
       <p class="py-6 text-center text-surface-500">{{ vacio }}</p>
     </template>
+    <Column v-if="seleccionable" selection-mode="multiple" class="w-px" />
     <Column
       v-for="columna in columnas"
       :key="columna.campo"

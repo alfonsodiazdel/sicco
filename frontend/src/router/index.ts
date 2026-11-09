@@ -26,6 +26,7 @@ const implementados = [
   '/guias/registrar',
   '/guias/sin-sector',
   '/facturas',
+  '/documentos',
   '/desperdicio',
   '/alertas',
 ]
@@ -141,6 +142,12 @@ const routes: RouteRecordRaw[] = [
           titulo: 'Control de desperdicio',
           porProyecto: true,
         },
+      },
+      {
+        path: 'documentos',
+        name: 'exportar-documentos',
+        component: () => import('@/views/documentos/ExportarDocumentosView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Exportar documentos', porProyecto: true },
       },
       ...modulos,
       {

@@ -30,8 +30,12 @@ describe('TablaCrud', () => {
     const tabla = montar([ana])
 
     expect(avisos.mock.calls.filter(([m]) => String(m).includes('Invalid prop'))).toEqual([])
-    expect(tabla.get('th:nth-child(2)').classes()).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
-    expect(tabla.get('td:nth-child(2)').classes()).toEqual(expect.arrayContaining(['hidden', 'sm:table-cell']))
+    expect(tabla.get('th:nth-child(2)').classes()).toEqual(
+      expect.arrayContaining(['hidden', 'sm:table-cell']),
+    )
+    expect(tabla.get('td:nth-child(2)').classes()).toEqual(
+      expect.arrayContaining(['hidden', 'sm:table-cell']),
+    )
     avisos.mockRestore()
   })
 
@@ -84,5 +88,50 @@ describe('TablaCrud', () => {
 
   it('muestra el texto de vacío sin filas', () => {
     expect(montar([]).text()).toContain('No hay registros.')
+  })
+})
+
+describe('TablaCrud seleccionable', () => {
+  const beto: Fila = { id: 2, nombre: 'Beto', email: 'beto@sicco.test', activo: false }
+
+  it('sin la prop no muestra casillas ni columna de selección', () => {
+    const tabla = montar([ana, beto])
+
+    expect(tabla.findAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(tabla.findAll('th')).toHaveLength(4)
+    expect(tabla.findAll('tbody tr')[0]!.findAll('td')).toHaveLength(4)
+  })
+
+  it('con la prop agrega una casilla por fila y emite las filas marcadas', async () => {
+    const tabla = mount(TablaCrud, {
+      props: { filas: [ana, beto], columnas, clave: 'id', vacio: '', seleccionable: true },
+      global: { plugins: [PrimeVue] },
+    })
+    const casillas = tabla.findAll('tbody input[type="checkbox"]')
+    expect(casillas).toHaveLength(2)
+    expect(tabla.findAll('th')).toHaveLength(4)
+
+    await casillas[1]!.trigger('change')
+
+    expect(tabla.emitted('update:seleccion')).toEqual([[[beto]]])
+  })
+
+  it('marca las filas que recibe en seleccion', () => {
+    const tabla = mount(TablaCrud, {
+      props: {
+        filas: [ana, beto],
+        columnas,
+        clave: 'id',
+        vacio: '',
+        seleccionable: true,
+        seleccion: [ana],
+      },
+      global: { plugins: [PrimeVue] },
+    })
+
+    const marcadas = tabla
+      .findAll('tbody input[type="checkbox"]')
+      .map((c) => (c.element as HTMLInputElement).checked)
+    expect(marcadas).toEqual([true, false])
   })
 })
