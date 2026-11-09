@@ -28,6 +28,8 @@ const implementados = [
   '/facturas',
   '/desperdicio',
   '/alertas',
+  '/reportes',
+  '/reportes/eat',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -141,6 +143,18 @@ const routes: RouteRecordRaw[] = [
           titulo: 'Control de desperdicio',
           porProyecto: true,
         },
+      },
+      {
+        path: 'reportes',
+        name: 'reportes',
+        component: () => import('@/views/reportes/ReportesView.vue'),
+        meta: { roles: ['oficina_tecnica', 'gerencia'], titulo: 'Reportes' },
+      },
+      {
+        path: 'reportes/eat',
+        name: 'reporte-eat',
+        component: () => import('@/views/reportes/ReporteEatView.vue'),
+        meta: { roles: ['oficina_tecnica', 'gerencia'], titulo: 'Reporte EAT', porProyecto: true },
       },
       ...modulos,
       {
