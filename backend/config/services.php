@@ -39,6 +39,11 @@ return [
         'por_minuto' => (int) env('OCR_POR_MINUTO', 20),
     ],
 
+    // CU15 Reporte EAT: consultas y descargas por minuto y usuario.
+    'reportes' => [
+        'por_minuto' => (int) env('REPORTES_POR_MINUTO', 20),
+    ],
+
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'ocr_model' => env('ANTHROPIC_OCR_MODEL', 'claude-opus-5-5'),

@@ -58,5 +58,8 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('ocr', fn (Request $request) => Limit::perMinute(config('services.ocr.por_minuto'))
             ->by($request->user()?->id ?: $request->ip()));
+
+        RateLimiter::for('reportes', fn (Request $request) => Limit::perMinute(config('services.reportes.por_minuto'))
+            ->by($request->user()?->id ?: $request->ip()));
     }
 }

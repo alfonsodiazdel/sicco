@@ -13,6 +13,20 @@ export const http = axios.create({
   headers: { Accept: 'application/json' },
 })
 
+// Con responseType blob, axios entrega también como Blob el cuerpo JSON de un error. Se lee aquí,
+// antes que los demás interceptores, para que el código del error y su mensaje se reconozcan igual.
+http.interceptors.response.use(undefined, async (error) => {
+  const respuesta = axios.isAxiosError(error) ? error.response : undefined
+  if (respuesta?.data instanceof Blob) {
+    try {
+      respuesta.data = JSON.parse(await respuesta.data.text())
+    } catch {
+      // No era JSON: el error sigue como llegó.
+    }
+  }
+  return Promise.reject(error)
+})
+
 /** Obtiene la cookie XSRF-TOKEN que Sanctum exige antes de peticiones con estado. */
 export function obtenerCsrf() {
   return axios.get('/sanctum/csrf-cookie', { withCredentials: true })
