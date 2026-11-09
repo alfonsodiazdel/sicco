@@ -26,3 +26,17 @@ server {
 
     include /etc/nginx/sicco/app.conf;
 }
+
+# https://www.<dominio> → https://<dominio>. Usa el mismo certificado, que incluye
+# www cuando DEMO_WWW=true en backend/.env.
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.${DEMO_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DEMO_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DEMO_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    return 301 https://${DEMO_DOMAIN}$request_uri;
+}

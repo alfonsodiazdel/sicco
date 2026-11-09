@@ -7,7 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 dc() { docker compose -f docker-compose.demo.yml --env-file backend/.env "$@"; }
-env_valor() { grep -E "^$1=" backend/.env | tail -n 1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'; }
+# Quita \r (archivo editado en Windows), espacios al final y comillas.
+env_valor() { grep -E "^$1=" backend/.env | tail -n 1 | cut -d= -f2- | tr -d '\r' | sed -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//'; }
 paso() { echo; echo "==> $*"; }
 
 # 1. Variables de entorno: la primera vez se crean desde la plantilla.
@@ -68,24 +69,44 @@ dc up -d --remove-orphans
 dc exec -T php php artisan queue:restart
 
 # 2. Certificado HTTPS (solo si hay dominio configurado).
-dominio="$(env_valor DEMO_DOMAIN)"
+dominio="$(env_valor DEMO_DOMAIN || true)"
 if [ -n "$dominio" ]; then
+    nombres=("$dominio")
+    www="$(env_valor DEMO_WWW || true)"
+    case "$www" in
+        true) nombres+=("www.$dominio") ;;
+        ""|false) ;;
+        *) echo "Aviso: DEMO_WWW=$www no es true ni false; el certificado no incluirá www.$dominio" ;;
+    esac
+    dominios=()
+    for nombre in "${nombres[@]}"; do dominios+=(-d "$nombre"); done
+
+    habia_certificado=false
     if dc run --rm --entrypoint test certbot -f "/etc/letsencrypt/live/$dominio/fullchain.pem"; then
-        paso "Renovando certificado si está por vencer"
-        dc run --rm certbot renew --quiet
-        dc exec -T nginx nginx -s reload
-    else
-        paso "Emitiendo certificado de Let's Encrypt para $dominio"
-        if ! dc run --rm certbot certonly --webroot -w /var/www/certbot \
-            -d "$dominio" --email "$(env_valor LETSENCRYPT_EMAIL)" \
-            --agree-tos --no-eff-email --non-interactive; then
-            echo "No se pudo emitir el certificado. Revisa que el registro A de $dominio apunte a este Droplet"
-            echo "y que el puerto 80 esté abierto. La app sigue disponible por HTTP."
-            exit 1
+        habia_certificado=true
+    fi
+
+    # Un solo comando para todo: emite el certificado la primera vez, lo renueva si
+    # está por vencer (--keep-until-expiring) y lo amplía si se agregó www (--expand).
+    paso "Certificado de Let's Encrypt para ${nombres[*]}"
+    if ! dc run --rm certbot certonly --webroot -w /var/www/certbot \
+        --cert-name "$dominio" "${dominios[@]}" \
+        --email "$(env_valor LETSENCRYPT_EMAIL)" \
+        --agree-tos --no-eff-email --non-interactive \
+        --keep-until-expiring --expand; then
+        echo "No se pudo emitir el certificado. Revisa que los registros DNS de ${nombres[*]}"
+        echo "apunten a este Droplet y que el puerto 80 esté abierto."
+        if [ "$habia_certificado" = false ]; then
+            echo "La app sigue disponible por HTTP."
         fi
-        dc restart nginx
+        exit 1
     fi
 fi
+
+# nginx arma su configuración (plantilla HTTP o HTTPS) solo al arrancar, así que se
+# reinicia en cada despliegue para tomar el certificado y los cambios de plantilla.
+paso "Reiniciando nginx"
+dc restart nginx
 
 paso "Listo"
 dc ps --format "table {{.Service}}\t{{.Status}}"
