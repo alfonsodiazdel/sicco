@@ -657,8 +657,8 @@ describe('precio de la propia factura', function () {
 });
 
 describe('límite de consultas', function () {
-    it('limita las consultas por minuto de cada usuario con el límite de las rutas con OCR', function (string $ruta) {
-        config(['services.ocr.por_minuto' => 2]);
+    it('limita las consultas por minuto de cada usuario con su propio límite', function (string $ruta) {
+        config(['services.reportes.por_minuto' => 2, 'services.ocr.por_minuto' => 100]);
         $e = escenarioEat();
         $url = "/api/v1/proyectos/{$e['proyecto']->id}/reportes/{$ruta}?fecha_corte=2026-10-31";
 
@@ -670,6 +670,25 @@ describe('límite de consultas', function () {
         // El límite es por usuario.
         $this->actingAs(asignadoA($e['proyecto'], Rol::Gerencia))->getJson($url)->assertOk();
         expect(DB::table('reportes_generados')->count())->toBe(3);
+    })->with(['eat', 'eat/excel', 'eat/pdf']);
+
+    it('gastar el cupo de las lecturas con OCR no bloquea el reporte', function (string $ruta) {
+        config(['services.reportes.por_minuto' => 2, 'services.ocr.por_minuto' => 2]);
+        $e = escenarioEat();
+
+        // Sin archivo responde 422, pero la petición igual cuenta para el límite del OCR.
+        $this->actingAs($e['usuario'])->postJson('/api/v1/facturas/lecturas')->assertStatus(422);
+        $this->actingAs($e['usuario'])->postJson('/api/v1/facturas/lecturas')->assertStatus(422);
+        $this->actingAs($e['usuario'])->postJson('/api/v1/facturas/lecturas')->assertStatus(429);
+
+        $url = "/api/v1/proyectos/{$e['proyecto']->id}/reportes/{$ruta}?fecha_corte=2026-10-31";
+        $this->actingAs($e['usuario'])->getJson($url)->assertOk();
+        $this->actingAs($e['usuario'])->getJson($url)->assertOk();
+        $this->actingAs($e['usuario'])->getJson($url)->assertStatus(429);
+        expect(DB::table('reportes_generados')->count())->toBe(2);
+
+        // Y el OCR sigue bloqueado: los dos límites no se comparten en ningún sentido.
+        $this->actingAs($e['usuario'])->postJson('/api/v1/facturas/lecturas')->assertStatus(429);
     })->with(['eat', 'eat/excel', 'eat/pdf']);
 });
 
