@@ -6,6 +6,7 @@ use App\Models\GuiaRemision;
 use App\Models\ProductoProveedor;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
+use App\Services\Ocr\LecturaFactura;
 use App\Services\Ocr\LecturaGuia;
 use App\Services\Ocr\LecturaNoDisponible;
 use Illuminate\Http\UploadedFile;
@@ -31,6 +32,11 @@ function ocrQueLee(?array $datos): object
             return $this->datos === null
                 ? throw new LecturaNoDisponible('Sin respuesta')
                 : LecturaGuia::desdeDatos($this->datos);
+        }
+
+        public function leerFactura(string $archivo, string $mediaType, array $indicaciones = []): LecturaFactura
+        {
+            throw new LecturaNoDisponible('No se usa en las guías');
         }
     };
     app()->instance(OcrServiceInterface::class, $ocr);
