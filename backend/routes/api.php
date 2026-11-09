@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\FacturaController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
 use App\Http\Controllers\Api\V1\GuiaController;
 use App\Http\Controllers\Api\V1\GuiaSinSectorController;
@@ -98,6 +99,20 @@ Route::prefix('v1')->group(function () {
             Route::put('guias/{guia}/asignaciones', [AsignacionController::class, 'update'])
                 ->whereNumber('guia')
                 ->middleware('rol:ingeniero_produccion');
+
+            // CU11 Registrar factura de concreto con CU12 Vincular guías: las registra Oficina técnica
+            // en sus proyectos; el administrador las consulta.
+            Route::middleware('rol:oficina_tecnica,administrador')->group(function () {
+                Route::get('proyectos/{proyecto}/facturas', [FacturaController::class, 'index'])->whereNumber('proyecto');
+                Route::get('facturas/{factura}', [FacturaController::class, 'show'])->whereNumber('factura');
+                Route::get('facturas/{factura}/archivo', [FacturaController::class, 'archivo'])->whereNumber('factura');
+            });
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::get('proyectos/{proyecto}/guias/por-facturar', [FacturaController::class, 'guiasPorFacturar'])->whereNumber('proyecto');
+                // Lectura de la factura con OCR: cada una cuesta en la API de IA.
+                Route::post('facturas/lecturas', [FacturaController::class, 'lectura'])->middleware('throttle:ocr');
+                Route::post('facturas', [FacturaController::class, 'store']);
+            });
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

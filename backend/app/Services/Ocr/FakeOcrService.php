@@ -28,4 +28,31 @@ class FakeOcrService implements OcrServiceInterface
             'placa' => $campo('ABC-123', 0.55),
         ], ['modelo' => 'fake']);
     }
+
+    /**
+     * Una factura de Holcim como la F012-180490: 13 m³ de f'c 280 que cobran dos guías, más un
+     * cargo de bombeo para ver cómo se separa del concreto.
+     */
+    public function leerFactura(string $archivo, string $mediaType, array $indicaciones = []): LecturaFactura
+    {
+        $campo = fn (string|int|float $valor, float $confianza = 0.97) => ['valor' => $valor, 'confianza' => $confianza];
+
+        return LecturaFactura::desdeDatos([
+            'es_factura' => true,
+            'numero' => $campo('F012-'.random_int(100000, 999999)),
+            'fecha' => $campo(today()->toDateString()),
+            'proveedor' => $campo('HOLCIM PERU S.A.'),
+            'ruc' => $campo('20380289360'),
+            'subtotal' => $campo(4609),
+            'igv' => $campo(829.62),
+            'total' => $campo(5438.62),
+            'items' => [
+                ['descripcion' => 'HOLCIM CLASICO', 'codigo_producto' => '70280NB5746', 'resistencia' => 280, 'es_concreto' => true,
+                    'cantidad' => 13, 'valor_unitario' => 293, 'importe' => 3809, 'confianza' => 0.95],
+                ['descripcion' => 'SERVICIO DE BOMBEO', 'codigo_producto' => null, 'resistencia' => null, 'es_concreto' => false,
+                    'cantidad' => 20, 'valor_unitario' => 40, 'importe' => 800, 'confianza' => 0.6],
+            ],
+            'guias' => ['T006-00012289', 'T006-00012292'],
+        ], ['modelo' => 'fake']);
+    }
 }

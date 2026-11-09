@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Guía de remisión del concreto recibido en obra (CU06–CU08). */
 #[Fillable([
     'proyecto_id', 'proveedor_id', 'numero', 'fecha', 'resistencia_id', 'producto_id', 'volumen_m3', 'placa',
-    'foto_ruta', 'estado_asignacion', 'origen', 'ocr_payload', 'ocr_confianza', 'registrado_por',
+    'foto_ruta', 'estado_asignacion', 'factura_id', 'origen', 'ocr_payload', 'ocr_confianza', 'registrado_por',
 ])]
 class GuiaRemision extends Model
 {
@@ -59,6 +59,12 @@ class GuiaRemision extends Model
     public function asignaciones(): HasMany
     {
         return $this->hasMany(Asignacion::class, 'guia_id');
+    }
+
+    /** La factura que la cobra; con ella la guía está «Facturada» (CU12). */
+    public function factura(): BelongsTo
+    {
+        return $this->belongsTo(Factura::class);
     }
 
     public function historialAsignaciones(): HasMany

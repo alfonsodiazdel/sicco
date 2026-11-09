@@ -247,6 +247,76 @@ iguala su volumen y `parcial` si no, y cada guardado deja el reparto anterior y 
 lo avisa sin impedirlo. Si un sector pasa lo presupuestado × (1 + desperdicio), la respuesta lo
 indica y la pantalla lo avisa; registrar y enviar la alerta queda para CU14.
 
+### Facturas (CU11 con CU12)
+
+Pantalla `/facturas`, para Oficina técnica (el administrador consulta); el proyecto es el del
+selector del encabezado. Lista las facturas del proyecto, de la más reciente a la más antigua, con
+el costo real (suma de subtotales sin IGV, postcondición de CU11), el total facturado y el volumen.
+Cada factura abre su archivo (`GET /facturas/{id}/archivo`, por la API como la foto de la guía) y
+su detalle con las guías vinculadas y el importe de cada una.
+
+«Nueva factura» (`/facturas/nueva`) pide los datos de la factura, el detalle por resistencia y las
+guías que cobra. «Vincular guías» abre CU12: lista las guías del proveedor y proyecto aún no
+facturadas (`GET /proyectos/{id}/guias/por-facturar?proveedor_id=`), el usuario marca las que
+cobra la factura y ve «Seleccionado: X m³ – S/ Y». Sin pendientes: «No hay guías pendientes del
+proveedor». Al guardar: «Factura registrada correctamente» y vuelve a la lista.
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje |
+|---|---|---|---|---|---|
+| N.° de factura | `FACTURA.numero` | texto, mayúsculas sin espacios | S | ≤ 20; único por proveedor | Este dato es requerido; La factura ya fue registrada |
+| Fecha de emisión | `FACTURA.fecha` | fecha | S | no posterior a hoy | Este dato es requerido; La fecha no puede ser posterior a hoy |
+| Proveedor | `FACTURA.proveedor_id` | lista de proveedores | S | — | Este dato es requerido |
+| Archivo | `FACTURA.archivo_ruta` | JPG, PNG, WebP o PDF | S | ≤ 10 MB | Adjunte una imagen (JPG, PNG o WebP) o un PDF de hasta 10 MB |
+| Resistencia | `FACTURA_LINEA.resistencia_id` | catálogo de resistencias | S | sin repetir en la factura | Este dato es requerido; La resistencia ya está en la factura |
+| Volumen (m³) | `FACTURA_LINEA.volumen_m3` | número | S | > 0, dos decimales, ≤ 9 999.99 | Ingrese un valor mayor a cero; Ingrese como máximo dos decimales |
+| P. unit. (S/) | `FACTURA_LINEA.precio_unitario` | número, sin IGV | S | > 0, dos decimales | Ingrese un valor mayor a cero; Ingrese como máximo dos decimales |
+| IGV (S/) | `FACTURA.igv` | número | S | ≥ 0, dos decimales; se propone el 18 % del subtotal | El IGV no puede ser negativo |
+| Guías | `GUIA_REMISION.factura_id` | guías del proveedor y proyecto | S | al menos una; no facturadas | Vincule al menos una guía; La guía … ya está facturada o no es del proveedor y proyecto |
+
+El subtotal (suma de volumen × precio de cada línea, redondeado al céntimo), el total (subtotal +
+IGV) y el volumen facturado los calcula el backend; el front los muestra con la misma regla. El
+importe de cada guía es su volumen por el precio de la línea de su resistencia (CU12 paso 3).
+
+No están en la tesis y se decidieron con el usuario (08/11/2026): el detalle por resistencia (las
+facturas reales lo traen así; da el volumen facturado de CU11 paso 5 y el importe de las guías), el
+importe de la guía con el precio de la factura y no el del presupuesto, y guardar subtotal, IGV y
+total. El volumen se compara **por resistencia**, no solo el total. Si no coincide, el backend
+responde 422 `requiere_confirmacion` («El volumen facturado no coincide con las guías»), la
+pantalla pide confirmar y reenvía con `confirmado=1`; la factura queda con
+`diferencia_confirmada` y la lista la marca «Volumen distinto». La guía queda «Facturada» al tener
+`factura_id` (arquitectura §6.2); una guía se vincula a una sola factura y se bloquea al registrar.
+
+**Lectura con OCR (09/11/2026).** «Nueva factura» empieza por el archivo: «Leer factura» lo sube a
+`POST /facturas/lecturas` (Oficina técnica, `throttle:ocr`), que lo guarda en una carpeta temporal
+del usuario y lo envía a Claude (el PDF como documento, la foto reducida como imagen) con salida
+estructurada. Si el OCR falla o no reconoce una factura: «No se pudo leer la factura» y se pasa al
+ingreso manual con el archivo adjunto; «Ingresar manualmente» salta la lectura. El formulario llega
+lleno y marca en ámbar lo que debe revisarse:
+
+- Cabecera: número (normalizado), fecha, proveedor por el RUC del emisor (si no está registrado, se
+  pide elegirlo), IGV y total. Se rebaja la confianza si subtotal + IGV ≠ total, si el RUC no pasa
+  el dígito verificador o si los ítems no suman el subtotal; si el total calculado no es el leído,
+  se avisa junto al total.
+- Ítems de concreto: la resistencia se resuelve como en las guías (producto registrado de la
+  concretera, regla de su código, f'c leído). Se toma el valor unitario **sin IGV** (Holcim imprime
+  «V. Unit.» y «P. Unit.»). Varias líneas del mismo f'c y precio se suman.
+- Ítems que no son concreto (bombeo, «concreto bombeable», aditivos…) pasan a **Otros cargos**
+  (`factura_cargos`): suman al subtotal y al costo real, no al volumen ni a la comparación con las
+  guías.
+- Guías: se marcan las que cita la factura y están pendientes; de las citadas que no están
+  registradas, son de otro proyecto o ya están facturadas, se avisa. Si no cita ninguna, se
+  proponen por resistencia las pendientes más antiguas que completan exacto el volumen facturado
+  (también con «Proponer por volumen» en el diálogo de CU12).
+
+Al guardar se envía `archivo_temporal` en lugar del archivo; la factura queda con `origen = ocr`,
+`ocr_payload` y `ocr_confianza`. El número se guarda con el correlativo a 8 dígitos
+(`NumeroComprobante`): F001-5228 y F001-00005228 son la misma factura.
+
+| Campo | Columna (DER) | Tipo | Oblig. | Regla | Mensaje |
+|---|---|---|---|---|---|
+| Otro cargo: descripción | `FACTURA_CARGO.descripcion` | texto | S | ≤ 200 | Este dato es requerido |
+| Otro cargo: importe | `FACTURA_CARGO.importe` | número, sin IGV | S | > 0, dos decimales | Ingrese un valor mayor a cero |
+
 ## 4. Diferencias entre el front y el backend
 
 1. **Solo la autenticación tiene reglas en el servidor:** `LoginRequest` y `CambiarPasswordRequest`.

@@ -107,3 +107,72 @@ it('no da lectura si la API responde con error', function () {
     ocrClaude([new Response(529, ['Content-Type' => 'application/json'], '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}')])
         ->leerGuia(imagenGuia(), 'image/jpeg');
 })->throws(LecturaNoDisponible::class);
+
+function respuestaFactura(array $cambios = []): array
+{
+    $campo = fn ($valor, float $confianza = 0.95) => ['valor' => $valor, 'confianza' => $confianza];
+
+    return [
+        'es_factura' => true,
+        'numero' => $campo('F001-5228'),
+        'fecha' => $campo(today()->toDateString()),
+        'proveedor' => $campo('CONCRET-MIX E.I.R.L.'),
+        'ruc' => $campo('20603381077'),
+        'subtotal' => $campo(5077.5),
+        'igv' => $campo(913.95),
+        'total' => $campo(5991.45),
+        'items' => [
+            ['descripcion' => 'CONCRETO PREMEZCLADO FC280 KG/CM2', 'codigo_producto' => 'AD', 'resistencia' => 280, 'es_concreto' => true,
+                'cantidad' => 14.5, 'valor_unitario' => 295, 'importe' => 4277.5, 'confianza' => 0.95],
+            ['descripcion' => 'CONCRETO BOMBEABLE', 'codigo_producto' => '001', 'resistencia' => null, 'es_concreto' => false,
+                'cantidad' => 20, 'valor_unitario' => 40, 'importe' => 800, 'confianza' => 0.9],
+        ],
+        'guias' => [],
+        ...$cambios,
+    ];
+}
+
+it('envía el PDF de la factura como documento y lee su detalle', function () {
+    $enviadas = [];
+    $ocr = ocrClaude([respuestaClaude(respuestaFactura())], $enviadas);
+
+    $lectura = $ocr->leerFactura('%PDF-1.4 factura', 'application/pdf');
+
+    expect($lectura->valor('numero'))->toBe('F001-00005228')
+        ->and($lectura->valor('total'))->toBe(5991.45)
+        ->and($lectura->items)->toHaveCount(2)
+        ->and($lectura->items[0]['es_concreto'])->toBeTrue()
+        ->and($lectura->items[1]['es_concreto'])->toBeFalse()
+        ->and($lectura->confianzaMinima())->toBe(0.9);
+
+    $cuerpo = json_decode((string) $enviadas[0]['request']->getBody(), true);
+    $documento = $cuerpo['messages'][0]['content'][0];
+    expect($documento['type'])->toBe('document')
+        ->and($documento['source']['media_type'])->toBe('application/pdf')
+        ->and(base64_decode($documento['source']['data']))->toBe('%PDF-1.4 factura')
+        ->and($cuerpo['output_config']['format']['schema']['required'])->toContain('items', 'guias', 'es_factura')
+        ->and($cuerpo['system'])->toContain('valor_unitario: precio unitario SIN IGV');
+});
+
+it('envía la foto de la factura reducida como imagen', function () {
+    $enviadas = [];
+    ocrClaude([respuestaClaude(respuestaFactura())], $enviadas)->leerFactura(imagenGuia(), 'image/jpeg');
+
+    $imagen = json_decode((string) $enviadas[0]['request']->getBody(), true)['messages'][0]['content'][0];
+    expect($imagen['type'])->toBe('image')
+        ->and(array_slice(getimagesizefromstring(base64_decode($imagen['source']['data'])), 0, 2))->toBe([1176, 1568]);
+});
+
+it('rebaja la confianza si los importes no cuadran', function () {
+    $datos = respuestaFactura(['total' => ['valor' => 6000, 'confianza' => 0.99]]);
+    $datos['items'][0]['importe'] = 4300;
+
+    $lectura = ocrClaude([respuestaClaude($datos)])->leerFactura('%PDF', 'application/pdf');
+
+    expect($lectura->campos['total']['confianza'])->toBe(0.4)
+        ->and($lectura->items[0]['confianza'])->toBe(0.4);
+});
+
+it('no da lectura si el archivo no es una factura', function () {
+    ocrClaude([respuestaClaude(respuestaFactura(['es_factura' => false]))])->leerFactura('%PDF', 'application/pdf');
+})->throws(LecturaNoDisponible::class);

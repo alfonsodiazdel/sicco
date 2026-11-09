@@ -8,9 +8,10 @@ use App\Contracts\OcrServiceInterface;
 use Illuminate\Support\Facades\Log;
 
 /**
- * CU07 con Claude: la foto va como imagen al Messages API y la respuesta llega como JSON validado
- * contra un esquema (salida estructurada), sin OCR clásico de por medio. Las guías cambian de
- * formato entre concreteras; el modelo ubica cada dato por su significado, no por su posición.
+ * CU07 y la lectura de facturas (CU11) con Claude: la foto o el PDF van al Messages API y la
+ * respuesta llega como JSON validado contra un esquema (salida estructurada), sin OCR clásico de
+ * por medio. Guías y facturas cambian de formato entre concreteras; el modelo ubica cada dato por
+ * su significado, no por su posición.
  */
 class ClaudeOcrService implements OcrServiceInterface
 {
@@ -39,6 +40,34 @@ class ClaudeOcrService implements OcrServiceInterface
         Marca es_guia_remision en false si la imagen no es una guía de remisión.
         TXT;
 
+    private const INSTRUCCIONES_FACTURA = <<<'TXT'
+        Lees facturas electrónicas de concreto premezclado emitidas en Perú por una concretera a una
+        constructora. Extrae estos datos tal como aparecen en la factura:
+
+        - numero: serie y correlativo de la factura, p. ej. "F001-00002803" o "F012-180490". No es el número de pedido, de orden de compra ni de documento de referencia.
+        - fecha: fecha de emisión, en formato AAAA-MM-DD.
+        - proveedor: razón social de la concretera que emite la factura.
+        - ruc: RUC del emisor, 11 dígitos. No es el RUC del cliente (la constructora).
+        - subtotal: operaciones gravadas o valor de venta, sin IGV.
+        - igv: monto del IGV.
+        - total: importe total a pagar, con IGV (antes de detracciones o retenciones).
+        - items: cada línea del detalle, con:
+          - descripcion: tal como aparece, p. ej. "CONCRETO PREMEZCLADO FC280 KG/CM2" o "HOLCIM CLASICO".
+          - codigo_producto: código del producto, si lo hay, p. ej. "70280NB5746". No es la unidad (MTQ, M3).
+          - resistencia: resistencia f'c del concreto en kg/cm², solo el número entero, p. ej. 280; null si la línea no es concreto o no la indica.
+          - es_concreto: true si la línea cobra concreto premezclado; false si es un servicio u otro cargo (bombeo, "concreto bombeable", aditivos, tiempo de espera, flete, etc.).
+          - cantidad: cantidad facturada (m³ en el concreto).
+          - valor_unitario: precio unitario SIN IGV. Si la factura muestra dos precios (p. ej. "V. Unit." y "P. Unit."), usa el que no incluye IGV.
+          - importe: valor total de la línea sin IGV.
+          - confianza: de 0 a 1, qué tan seguro estás de la línea completa.
+        - guias: números de las guías de remisión que cita la factura (en el detalle, en observaciones o en "guías de remisión"), p. ej. "T006-00012289". Lista vacía si no cita ninguna.
+
+        Para los datos de cabecera devuelve "valor" y "confianza" de 0 a 1. Si un dato no aparece o es
+        ilegible, devuelve valor null y confianza 0: nunca lo inventes ni lo deduzcas.
+
+        Marca es_factura en false si el archivo no es una factura.
+        TXT;
+
     public function __construct(
         private readonly Client $cliente,
         private readonly string $modelo,
@@ -47,14 +76,61 @@ class ClaudeOcrService implements OcrServiceInterface
     public function leerGuia(string $imagen, string $mediaType, array $indicaciones = []): LecturaGuia
     {
         [$imagen, $mediaType] = $this->reducir($imagen, $mediaType);
-        $instrucciones = $indicaciones
-            ? self::INSTRUCCIONES.'
 
-Indicaciones por concretera:
-- '.implode('
-- ', $indicaciones)
-            : self::INSTRUCCIONES;
+        [$datos, $payload] = $this->consultar(
+            self::conIndicaciones(self::INSTRUCCIONES, $indicaciones),
+            ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mediaType, 'data' => base64_encode($imagen)]],
+            'Extrae los datos de esta guía de remisión.',
+            self::esquema(),
+            'guía',
+        );
 
+        return LecturaGuia::desdeDatos($datos, $payload);
+    }
+
+    /**
+     * El PDF va como documento: el modelo lee su texto y su imagen, más preciso que una foto. Una
+     * imagen se reduce como la de la guía.
+     */
+    public function leerFactura(string $archivo, string $mediaType, array $indicaciones = []): LecturaFactura
+    {
+        if ($mediaType === 'application/pdf') {
+            $bloque = ['type' => 'document', 'source' => ['type' => 'base64', 'mediaType' => 'application/pdf', 'data' => base64_encode($archivo)]];
+        } else {
+            [$archivo, $mediaType] = $this->reducir($archivo, $mediaType);
+            $bloque = ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mediaType, 'data' => base64_encode($archivo)]];
+        }
+
+        [$datos, $payload] = $this->consultar(
+            self::conIndicaciones(self::INSTRUCCIONES_FACTURA, $indicaciones),
+            $bloque,
+            'Extrae los datos de esta factura.',
+            self::esquemaFactura(),
+            'factura',
+        );
+
+        return LecturaFactura::desdeDatos($datos, $payload);
+    }
+
+    /** @param  list<string>  $indicaciones */
+    private static function conIndicaciones(string $instrucciones, array $indicaciones): string
+    {
+        return $indicaciones
+            ? $instrucciones."\n\nIndicaciones por concretera:\n- ".implode("\n- ", $indicaciones)
+            : $instrucciones;
+    }
+
+    /**
+     * Envía el archivo con las instrucciones y devuelve el JSON de la salida estructurada.
+     *
+     * @param  array<string, mixed>  $bloque  Imagen o documento.
+     * @param  array<string, mixed>  $esquema
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     *
+     * @throws LecturaNoDisponible
+     */
+    private function consultar(string $instrucciones, array $bloque, string $pedido, array $esquema, string $documento): array
+    {
         try {
             // Con esfuerzo bajo el modelo razona poco y la lectura cabe en los 20 s de CU07.
             // «fallbacks: default» reintenta en otro modelo si el pedido es rechazado por política.
@@ -64,32 +140,29 @@ Indicaciones por concretera:
                 system: $instrucciones,
                 messages: [[
                     'role' => 'user',
-                    'content' => [
-                        ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mediaType, 'data' => base64_encode($imagen)]],
-                        ['type' => 'text', 'text' => 'Extrae los datos de esta guía de remisión.'],
-                    ],
+                    'content' => [$bloque, ['type' => 'text', 'text' => $pedido]],
                 ]],
                 outputConfig: [
                     'effort' => 'low',
-                    'format' => ['type' => 'json_schema', 'schema' => self::esquema()],
+                    'format' => ['type' => 'json_schema', 'schema' => $esquema],
                 ],
                 betas: ['server-side-fallback-2026-07-01'],
                 fallbacks: 'default',
             );
         } catch (AnthropicException $e) {
-            Log::warning('OCR de guía no disponible', ['error' => $e->getMessage()]);
+            Log::warning("OCR de {$documento} no disponible", ['error' => $e->getMessage()]);
             throw new LecturaNoDisponible('El servicio OCR no respondió.', previous: $e);
         }
 
         if ($mensaje->stopReason !== 'end_turn') {
-            Log::warning('OCR de guía incompleto', ['stop_reason' => $mensaje->stopReason]);
+            Log::warning("OCR de {$documento} incompleto", ['stop_reason' => $mensaje->stopReason]);
             throw new LecturaNoDisponible("Lectura incompleta ({$mensaje->stopReason}).");
         }
 
         $texto = null;
-        foreach ($mensaje->content as $bloque) {
-            if ($bloque->type === 'text') {
-                $texto = $bloque->text;
+        foreach ($mensaje->content as $contenido) {
+            if ($contenido->type === 'text') {
+                $texto = $contenido->text;
                 break;
             }
         }
@@ -98,11 +171,47 @@ Indicaciones por concretera:
             throw new LecturaNoDisponible('Respuesta del OCR no válida.');
         }
 
-        return LecturaGuia::desdeDatos($datos, [
-            'modelo' => $mensaje->model,
-            'id' => $mensaje->id,
-            'datos' => $datos,
-        ]);
+        return [$datos, ['modelo' => $mensaje->model, 'id' => $mensaje->id, 'datos' => $datos]];
+    }
+
+    /** @return array<string, mixed> */
+    private static function esquemaFactura(): array
+    {
+        $campo = fn (array $tipo) => [
+            'type' => 'object',
+            'properties' => ['valor' => ['type' => $tipo], 'confianza' => ['type' => 'number']],
+            'required' => ['valor', 'confianza'],
+            'additionalProperties' => false,
+        ];
+        $item = [
+            'descripcion' => ['type' => ['string', 'null']],
+            'codigo_producto' => ['type' => ['string', 'null']],
+            'resistencia' => ['type' => ['integer', 'null']],
+            'es_concreto' => ['type' => 'boolean'],
+            'cantidad' => ['type' => ['number', 'null']],
+            'valor_unitario' => ['type' => ['number', 'null']],
+            'importe' => ['type' => ['number', 'null']],
+            'confianza' => ['type' => 'number'],
+        ];
+
+        $propiedades = ['es_factura' => ['type' => 'boolean']];
+        foreach (LecturaFactura::CAMPOS as $nombre) {
+            $propiedades[$nombre] = $campo(in_array($nombre, ['subtotal', 'igv', 'total'], true) ? ['number', 'null'] : ['string', 'null']);
+        }
+        $propiedades['items'] = ['type' => 'array', 'items' => [
+            'type' => 'object',
+            'properties' => $item,
+            'required' => array_keys($item),
+            'additionalProperties' => false,
+        ]];
+        $propiedades['guias'] = ['type' => 'array', 'items' => ['type' => 'string']];
+
+        return [
+            'type' => 'object',
+            'properties' => $propiedades,
+            'required' => array_keys($propiedades),
+            'additionalProperties' => false,
+        ];
     }
 
     /** @return array<string, mixed> */

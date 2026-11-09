@@ -1,0 +1,220 @@
+import { http } from '@/api/http'
+import { proveedoresApi } from '@/api/proveedores'
+import { errorDeValidacion } from '@/services/errores'
+import { resistenciasEjemplo } from '@/services/resistencias'
+import { compararVolumenes, importe, sumar, volumenesCoinciden } from '@/validaciones/factura'
+import type {
+  FacturaDetalle,
+  FacturaFila,
+  LecturaFactura,
+  RegistroFactura,
+  RespuestaLecturaFactura,
+  RespuestaRegistroFactura,
+} from '@/types/facturas'
+import type { GuiaFila } from '@/types/guias'
+import type { Proveedor } from '@/types/proveedor'
+
+export interface FacturasServicio {
+  /** Las facturas del proyecto, de la más reciente a la más antigua. */
+  listar(proyectoId: number): Promise<FacturaFila[]>
+  /** La factura con su detalle, sus otros cargos y las guías que cobra, con su importe. */
+  obtener(id: number): Promise<FacturaDetalle>
+  /** CU11 paso 1 con OCR: sube el archivo y lo lee; si el OCR falla, `lectura` es null. */
+  leer(proyectoId: number, archivo: File): Promise<RespuestaLecturaFactura>
+  /** CU12 paso 1: guías del proveedor y proyecto aún no facturadas. */
+  guiasPorFacturar(proyectoId: number, proveedorId: number): Promise<GuiaFila[]>
+  /**
+   * CU11 pasos 5–6. Sin `confirmado`, si el volumen no coincide con las guías la API responde 422
+   * con `requiere_confirmacion` (flujo alternativo 1).
+   */
+  registrar(datos: RegistroFactura): Promise<RespuestaRegistroFactura>
+  /** Las concreteras registradas, para elegir el proveedor de la factura. */
+  proveedores(): Promise<Proveedor[]>
+}
+
+/** La imagen o el PDF de la factura; la API lo entrega con la sesión. */
+export const urlArchivoFactura = (facturaId: number) =>
+  `${http.defaults.baseURL}/facturas/${facturaId}/archivo`
+
+/** Multipart con los arreglos como los lee Laravel: `lineas[0][volumen_m3]`, `guia_ids[]`. */
+function formulario(datos: RegistroFactura) {
+  const form = new FormData()
+  const { lineas, cargos = [], guia_ids, confirmado, ...campos } = datos
+  for (const [campo, valor] of Object.entries(campos)) {
+    if (valor instanceof File) form.append(campo, valor, valor.name)
+    else form.append(campo, String(valor))
+  }
+  const arreglo = (nombre: string, filas: object[]) =>
+    filas.forEach((fila, i) => {
+      for (const [campo, valor] of Object.entries(fila)) {
+        form.append(`${nombre}[${i}][${campo}]`, String(valor))
+      }
+    })
+  arreglo('lineas', lineas)
+  arreglo('cargos', cargos)
+  for (const id of guia_ids) form.append('guia_ids[]', String(id))
+  // Laravel acepta «1»/«0» como booleano; «true» no.
+  form.append('confirmado', confirmado ? '1' : '0')
+  return form
+}
+
+export function crearFacturasApi(): FacturasServicio {
+  return {
+    async listar(proyectoId) {
+      return (await http.get<FacturaFila[]>(`/proyectos/${proyectoId}/facturas`)).data
+    },
+    async obtener(id) {
+      return (await http.get<FacturaDetalle>(`/facturas/${id}`)).data
+    },
+    async leer(proyectoId, archivo) {
+      const form = new FormData()
+      form.append('proyecto_id', String(proyectoId))
+      form.append('archivo', archivo, archivo.name)
+      return (await http.post<RespuestaLecturaFactura>('/facturas/lecturas', form)).data
+    },
+    async guiasPorFacturar(proyectoId, proveedorId) {
+      const url = `/proyectos/${proyectoId}/guias/por-facturar`
+      return (await http.get<GuiaFila[]>(url, { params: { proveedor_id: proveedorId } })).data
+    },
+    async registrar(datos) {
+      return (await http.post<RespuestaRegistroFactura>('/facturas', formulario(datos))).data
+    },
+    async proveedores() {
+      // Las concreteras de una empresa son pocas; se traen todas para el selector.
+      return (await proveedoresApi.listar({ per_page: 200 })).data
+    },
+  }
+}
+
+const proveedoresEjemplo: Proveedor[] = [
+  { id: 1, ruc: '20100030595', razon_social: 'UNICON S.A.' },
+  { id: 2, ruc: '20512345678', razon_social: 'Concremax S.A.' },
+]
+
+const guia = (
+  id: number,
+  proveedor: Proveedor,
+  numero: string,
+  fecha: string,
+  resistenciaId: number,
+  volumen_m3: number,
+): GuiaFila => ({
+  id,
+  proyecto_id: 1,
+  proveedor: { ...proveedor },
+  numero,
+  fecha,
+  resistencia: { ...resistenciasEjemplo.find((r) => r.id === resistenciaId)! },
+  codigo_producto: null,
+  volumen_m3,
+  placa: 'ABC-123',
+  estado_asignacion: 'asignada',
+  origen: 'ocr',
+})
+
+// Las guías de la factura F001-2803 del proyecto Larco: f'c 280 (id 3) y f'c 350 (id 4).
+const guiasEjemplo = (): GuiaFila[] => [
+  guia(1, proveedoresEjemplo[0]!, 'T001-00003855', '2026-10-27', 3, 8.5),
+  guia(2, proveedoresEjemplo[0]!, 'T001-00003869', '2026-10-27', 4, 7.5),
+  guia(3, proveedoresEjemplo[0]!, 'T001-00003875', '2026-10-28', 4, 7),
+  guia(4, proveedoresEjemplo[1]!, 'G002-00000101', '2026-10-28', 3, 9),
+]
+
+/**
+ * Para las pruebas de las vistas: valida lo mismo que el backend con datos en memoria.
+ * `lectura` decide qué devuelve el OCR (null: no pudo leer).
+ */
+export function crearFacturasEnMemoria(
+  lectura: () => LecturaFactura | null = () => null,
+): FacturasServicio {
+  const guias = guiasEjemplo()
+  const facturas: FacturaDetalle[] = []
+  /** Guía → factura que la cobra. */
+  const vinculadas = new Map<number, number>()
+  let siguiente = 1
+
+  const copia = (f: FacturaDetalle): FacturaFila => {
+    const { lineas: _l, cargos: _c, guias: _g, ...fila } = f
+    return { ...fila, proveedor: { ...fila.proveedor } }
+  }
+
+  return {
+    async listar(proyectoId) {
+      return facturas
+        .filter((f) => f.proyecto_id === proyectoId)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id)
+        .map(copia)
+    },
+    async obtener(id) {
+      const factura = facturas.find((f) => f.id === id)
+      if (!factura) throw new Error('Factura no encontrada.')
+      return structuredClone(factura)
+    },
+    async leer() {
+      const leida = lectura()
+      return {
+        archivo_temporal: '00000000-0000-0000-0000-000000000000.pdf',
+        lectura: leida,
+        ...(leida ? {} : { message: 'No se pudo leer la factura' }),
+      }
+    },
+    async guiasPorFacturar(proyectoId, proveedorId) {
+      return guias
+        .filter((g) => g.proyecto_id === proyectoId && g.proveedor.id === proveedorId)
+        .filter((g) => !vinculadas.has(g.id))
+        .map((g) => ({ ...g }))
+    },
+    async registrar(datos) {
+      if (
+        facturas.some((f) => f.proveedor.id === datos.proveedor_id && f.numero === datos.numero)
+      ) {
+        throw errorDeValidacion({ numero: ['La factura ya fue registrada'] })
+      }
+      const elegidas = datos.guia_ids.map((id) => guias.find((g) => g.id === id)!)
+      const filas = datos.lineas.map((l) => ({ ...l }))
+      if (!volumenesCoinciden(compararVolumenes(filas, elegidas)) && !datos.confirmado) {
+        throw errorDeValidacion(
+          { guia_ids: ['El volumen facturado no coincide con las guías'] },
+          'requiere_confirmacion',
+        )
+      }
+      const lineas = datos.lineas.map((l, i) => ({
+        id: i + 1,
+        resistencia: { ...resistenciasEjemplo.find((r) => r.id === l.resistencia_id)! },
+        volumen_m3: l.volumen_m3,
+        precio_unitario: l.precio_unitario,
+        importe: importe(l.volumen_m3, l.precio_unitario),
+      }))
+      const cargos = (datos.cargos ?? []).map((c, i) => ({ id: i + 1, ...c }))
+      const subtotal = sumar(...lineas.map((l) => l.importe), ...cargos.map((c) => c.importe))
+      const factura: FacturaDetalle = {
+        id: siguiente++,
+        proyecto_id: datos.proyecto_id,
+        proveedor: { ...proveedoresEjemplo.find((p) => p.id === datos.proveedor_id)! },
+        numero: datos.numero.toUpperCase(),
+        fecha: datos.fecha,
+        volumen_m3: sumar(...lineas.map((l) => l.volumen_m3)),
+        subtotal,
+        igv: datos.igv,
+        total: sumar(subtotal, datos.igv),
+        diferencia_confirmada: !!datos.confirmado,
+        origen: 'archivo_temporal' in datos ? 'ocr' : 'manual',
+        guias_count: elegidas.length,
+        lineas,
+        cargos,
+        guias: elegidas.map((g) => {
+          const linea = lineas.find((l) => l.resistencia.id === g.resistencia.id)
+          return { ...g, importe: linea ? importe(g.volumen_m3, linea.precio_unitario) : null }
+        }),
+      }
+      facturas.push(factura)
+      for (const g of elegidas) vinculadas.set(g.id, factura.id)
+      return { data: copia(factura), message: 'Factura registrada correctamente' }
+    },
+    async proveedores() {
+      return proveedoresEjemplo.map((p) => ({ ...p }))
+    },
+  }
+}
+
+export const facturasServicio: FacturasServicio = crearFacturasApi()

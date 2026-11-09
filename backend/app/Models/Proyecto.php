@@ -49,4 +49,10 @@ class Proyecto extends Model
     {
         return $this->hasMany(GuiaRemision::class);
     }
+
+    /** Facturas de concreto del proyecto (CU11): su subtotal es el costo real. */
+    public function facturas(): HasMany
+    {
+        return $this->hasMany(Factura::class);
+    }
 }

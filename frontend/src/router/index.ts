@@ -25,6 +25,7 @@ const implementados = [
   '/niveles',
   '/guias/registrar',
   '/guias/sin-sector',
+  '/facturas',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -116,6 +117,18 @@ const routes: RouteRecordRaw[] = [
         name: 'asignar-guia',
         component: () => import('@/views/guias/AsignarGuiaView.vue'),
         meta: { roles: ['ingeniero_produccion'], titulo: 'Asignar guía' },
+      },
+      {
+        path: 'facturas',
+        name: 'facturas',
+        component: () => import('@/views/facturas/FacturasView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Facturas', porProyecto: true },
+      },
+      {
+        path: 'facturas/nueva',
+        name: 'nueva-factura',
+        component: () => import('@/views/facturas/NuevaFacturaView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Nueva factura', porProyecto: true },
       },
       ...modulos,
       {
