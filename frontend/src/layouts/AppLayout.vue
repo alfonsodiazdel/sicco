@@ -5,15 +5,18 @@ import Button from 'primevue/button'
 import Drawer from 'primevue/drawer'
 import Menu from 'primevue/menu'
 import Avatar from 'primevue/avatar'
+import OverlayBadge from 'primevue/overlaybadge'
 import { useToast } from 'primevue/usetoast'
 import SelectorProyecto from '@/components/organismos/SelectorProyecto.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAlertasStore } from '@/stores/alertas'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 import { menu } from '@/router/menu'
 
 const CLAVE_MENU_CONTRAIDO = 'sicco-menu-contraido'
 
 const auth = useAuthStore()
+const alertas = useAlertasStore()
 const proyectoActual = useProyectoActualStore()
 const router = useRouter()
 const route = useRoute()
@@ -69,6 +72,16 @@ watch(menuContraido, (contraido) =>
 )
 
 watch([() => route.fullPath, escritorio], () => (menuMovilAbierto.value = false))
+
+// CU14 paso 4: el ícono de notificaciones muestra las alertas pendientes. Se refresca al navegar
+// y cada minuto, para enterarse de las que registran otros usuarios.
+const MINUTO = 60_000
+watch(() => route.path, alertas.actualizar, { immediate: true })
+const intervaloAlertas = window.setInterval(alertas.actualizar, MINUTO)
+onBeforeUnmount(() => window.clearInterval(intervaloAlertas))
+const etiquetaAlertas = computed(() =>
+  alertas.pendientes === 1 ? '1 alerta pendiente' : `${alertas.pendientes} alertas pendientes`,
+)
 
 // Un enlace con ?proyecto=<id> elige ese proyecto en el encabezado. Si no es uno de los activos
 // asignados se avisa en vez de mostrar otro en silencio; luego se quita de la URL, que ya no
@@ -185,6 +198,24 @@ watch(
 
         <div class="flex shrink-0 items-center gap-2 sm:gap-4">
           <SelectorProyecto v-if="route.meta.porProyecto" />
+          <RouterLink
+            v-if="alertas.recibe"
+            to="/alertas"
+            class="flex size-10 items-center justify-center rounded-full text-surface-600 hover:bg-surface-100"
+            :aria-label="`Alertas de consumo: ${etiquetaAlertas}`"
+            :title="etiquetaAlertas"
+            data-campana
+          >
+            <OverlayBadge
+              v-if="alertas.pendientes"
+              :value="alertas.pendientes > 99 ? '99+' : alertas.pendientes"
+              severity="danger"
+              size="small"
+            >
+              <i class="pi pi-bell text-lg" aria-hidden="true" />
+            </OverlayBadge>
+            <i v-else class="pi pi-bell text-lg" aria-hidden="true" />
+          </RouterLink>
           <button
             type="button"
             class="flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-100"

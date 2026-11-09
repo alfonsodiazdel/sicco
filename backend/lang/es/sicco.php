@@ -67,4 +67,9 @@ return [
         'excede' => 'El volumen excede lo presupuestado para el elemento',
         'partida_ajena' => 'La partida no pertenece al proyecto del nivel',
     ],
+    'alertas' => [
+        'revisada' => 'Alerta marcada como revisada',
+        'ya_revisada' => 'La alerta ya fue revisada',
+        'registrada' => 'Se registró una alerta de consumo y se avisará por correo al ingeniero responsable y a gerencia',
+    ],
 ];

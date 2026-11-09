@@ -12,7 +12,11 @@ import type { RolClave, Usuario } from '@/types/auth'
 
 const { toast, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
-  servicios: { proyectos: null as ProyectosServicio | null, asignados: [] as number[] },
+  servicios: {
+    proyectos: null as ProyectosServicio | null,
+    asignados: [] as number[],
+    alertasPendientes: vi.fn(async () => 0),
+  },
 }))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
@@ -26,6 +30,12 @@ vi.mock('@/services/proyectos', async (importOriginal) => {
     },
   }
 })
+
+vi.mock('@/services/alertas', () => ({
+  alertasServicio: {
+    pendientes: () => servicios.alertasPendientes(),
+  },
+}))
 
 function simularPantalla(escritorio: boolean) {
   vi.stubGlobal(
@@ -238,4 +248,53 @@ describe('AppLayout · selector de proyecto', () => {
       expect(router.currentRoute.value.fullPath).toBe('/partidas')
     },
   )
+})
+
+describe('AppLayout · ícono de alertas (CU14 paso 4)', () => {
+  beforeEach(() => simularPantalla(true))
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    servicios.alertasPendientes.mockReset().mockResolvedValue(0)
+  })
+
+  async function montarComo(rol: RolClave) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useAuthStore().usuario = { nombres: 'Ana', apellidos: 'Paz', rol: { clave: rol } } as Usuario
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:ruta(.*)*', component: { template: '<p>Vista</p>' } }],
+    })
+    await router.push('/')
+    const wrapper = mount(AppLayout, { global: { plugins: [pinia, router, PrimeVue] } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it.each<RolClave>(['ingeniero_produccion', 'gerencia'])(
+    'muestra a %s cuántas alertas siguen pendientes y lleva a la pantalla',
+    async (rol) => {
+      servicios.alertasPendientes.mockResolvedValue(3)
+      const wrapper = await montarComo(rol)
+
+      const campana = wrapper.get('[data-campana]')
+      expect(campana.attributes('href')).toBe('/alertas')
+      expect(campana.attributes('aria-label')).toBe('Alertas de consumo: 3 alertas pendientes')
+      expect(campana.text()).toContain('3')
+    },
+  )
+
+  it('sin pendientes no muestra número', async () => {
+    const wrapper = await montarComo('gerencia')
+
+    expect(wrapper.get('[data-campana]').text()).toBe('')
+  })
+
+  it.each<RolClave>(['almacenero', 'oficina_tecnica'])('no aparece a %s', async (rol) => {
+    const wrapper = await montarComo(rol)
+
+    expect(wrapper.find('[data-campana]').exists()).toBe(false)
+    expect(servicios.alertasPendientes).not.toHaveBeenCalled()
+  })
 })

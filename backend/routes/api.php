@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AlertaController;
 use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
@@ -119,6 +120,16 @@ Route::prefix('v1')->group(function () {
             Route::get('proyectos/{proyecto}/desperdicio', [DesperdicioController::class, 'show'])
                 ->whereNumber('proyecto')
                 ->middleware('rol:ingeniero_produccion,gerencia,administrador');
+
+            // CU14 Recibir alerta de consumo: la reciben Producción y Gerencia en sus proyectos y la
+            // marcan como revisada; el administrador las consulta.
+            Route::middleware('rol:ingeniero_produccion,gerencia,administrador')->group(function () {
+                Route::get('alertas', [AlertaController::class, 'index']);
+                Route::get('alertas/resumen', [AlertaController::class, 'resumen']);
+            });
+            Route::patch('alertas/{alerta}/revisar', [AlertaController::class, 'revisar'])
+                ->whereNumber('alerta')
+                ->middleware('rol:ingeniero_produccion,gerencia');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

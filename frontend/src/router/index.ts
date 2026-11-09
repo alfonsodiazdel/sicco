@@ -27,6 +27,7 @@ const implementados = [
   '/guias/sin-sector',
   '/facturas',
   '/desperdicio',
+  '/alertas',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -142,6 +143,12 @@ const routes: RouteRecordRaw[] = [
         },
       },
       ...modulos,
+      {
+        path: 'alertas',
+        name: 'alertas',
+        component: () => import('@/views/AlertasView.vue'),
+        meta: { roles: ['ingeniero_produccion', 'gerencia'], titulo: 'Alertas' },
+      },
       {
         path: 'no-autorizado',
         name: 'no-autorizado',

@@ -101,5 +101,7 @@ export interface AsignacionGuia {
   asignaciones: AsignacionFila[]
   /** Sectores que ya pasan lo presupuestado más el desperdicio (CU09 flujo alternativo 2). */
   sectores_excedidos?: { id: number; nombre: string }[]
+  /** Alertas de consumo (CU14) nuevas que registró este guardado. */
+  alertas_registradas?: number
   message?: string
 }

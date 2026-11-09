@@ -244,8 +244,9 @@ el volumen vaciado de cada sector se ajusta por la diferencia, la guía queda `a
 iguala su volumen y `parcial` si no, y cada guardado deja el reparto anterior y el nuevo en
 `historial_asignaciones` (requerimiento especial de CU09; tabla propia en lugar de
 `spatie/laravel-activitylog`). Si el f'c de la partida del sector no es el de la guía, la pantalla
-lo avisa sin impedirlo. Si un sector pasa lo presupuestado × (1 + desperdicio), la respuesta lo
-indica y la pantalla lo avisa; registrar y enviar la alerta queda para CU14.
+lo avisa sin impedirlo. Si un sector pasa lo presupuestado × (1 + desperdicio), en el mismo
+guardado se registra su alerta de consumo (CU14); la respuesta trae `sectores_excedidos` y
+`alertas_registradas` (cuántas son nuevas) y la pantalla lo avisa.
 
 ### Control de desperdicio (CU13)
 
@@ -274,6 +275,39 @@ No están en la tesis y se infirieron:
   da 0.00 %, no un porcentaje negativo. La diferencia en m³ sí se muestra con su signo.
 - Sin ningún vaciado en el proyecto: «Aún no hay vaciados registrados» (flujo alternativo 1).
 - Sin filtro de fechas: `SECTOR.volumen_vaciado_m3` es un acumulado.
+
+### Alertas de consumo (CU14)
+
+Pantalla `/alertas` «Alertas de consumo» (Producción y Gerencia; el administrador la consulta sin
+marcar). Backend: `GET /alertas?estado=&proyecto_id=` (de la más reciente a la más antigua, solo de
+los proyectos asignados), `GET /alertas/resumen` (`{ pendientes }` para el ícono) y
+`PATCH /alertas/{id}/revisar`. Un estado fuera de `pendiente|revisada` da `422`; revisar una alerta
+ya revisada da `409` «La alerta ya fue revisada»; una alerta de otro proyecto, `403`.
+
+Tabla `alertas`: lo del DER (`sector_id`, `exceso_m3`, `fecha`, `estado`) más `proyecto_id`,
+`revisada_por`, `revisada_at` y `correo_enviado_at` (arquitectura §6.6).
+
+No están en la tesis y se infirieron:
+- **Exceso** = vaciado − límite, con el límite de CU09/CU13 (`CalculadoraDesperdicio`). El prototipo
+  dice «superó lo presupuestado en 1.20 m³»; la pantalla dice «superó su límite en …» para no
+  confundirlo con la diferencia de CU13.
+- **Una sola alerta pendiente por sector.** Si el sector ya tiene una pendiente y vuelve a pasar el
+  límite, solo se actualiza su exceso y no se repite el correo. Si ya fue revisada y el sector
+  vuelve a crecer, se registra una alerta nueva.
+- **Las correcciones no generan alertas:** solo se registra una nueva si el guardado subió el
+  vaciado del sector. Si la corrección deja al sector bajo el límite, la alerta pendiente se
+  conserva (es el registro de que pasó) con su último exceso; la cierra el usuario.
+- **Destinatarios del correo:** el ingeniero responsable del proyecto (`proyectos.ingeniero_id`) y
+  los usuarios de Gerencia asignados al proyecto, solo activos, en un único mensaje.
+- **Reintento (flujo alternativo 1):** el correo sale en cola (`EnviarAlertaConsumo`) después de
+  confirmar la asignación, con 5 intentos (esperas de 1 min, 5 min, 15 min y 1 h). Mientras no sale,
+  `correo_enviado_at` queda vacío y la pantalla marca «Correo por enviar». Si se agotan los
+  intentos, el comando `alertas:reenviar-correos` (cada hora) vuelve a encolar las de la última
+  semana con más de dos horas sin enviar. Requiere el worker de colas y el scheduler.
+- **Ícono de notificaciones (paso 4):** campana en el encabezado con el número de pendientes; se
+  refresca al navegar, cada minuto, al asignar una guía que registra alertas y al revisar.
+- **Detalle (paso 5):** al abrir una alerta se ven presupuestado, factor, límite, vaciado actual
+  (puede haber cambiado desde la alerta), exceso, estado del correo y quién la revisó.
 
 ### Facturas (CU11 con CU12)
 

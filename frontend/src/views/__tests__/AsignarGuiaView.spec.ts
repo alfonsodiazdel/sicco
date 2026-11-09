@@ -19,7 +19,12 @@ const { toast, servicios } = vi.hoisted(() => ({
     partidas: null as PartidasServicio | null,
     niveles: null as NivelesServicio | null,
     asignaciones: null as AsignacionesServicio | null,
+    alertasPendientes: vi.fn(async () => 0),
   },
+}))
+
+vi.mock('@/services/alertas', () => ({
+  alertasServicio: { pendientes: () => servicios.alertasPendientes() },
 }))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
@@ -205,5 +210,27 @@ describe('AsignarGuiaView (CU09)', () => {
 
     expect(boton(vista, 'Guardar asignación')).toBeUndefined()
     expect(select(vista, 0).props('disabled')).toBe(true)
+  })
+
+  it('avisa que se registró la alerta de consumo (CU14) y refresca el ícono', async () => {
+    const { vista } = await montar()
+    const real = servicios.asignaciones!.guardar
+    vi.spyOn(servicios.asignaciones!, 'guardar').mockImplementation(async (...args) => ({
+      ...(await real(...args)),
+      sectores_excedidos: [{ id: 1, nombre: 'Sector A' }],
+      alertas_registradas: 1,
+    }))
+    servicios.alertasPendientes.mockClear()
+    await select(vista, 0).setValue(1)
+    await guardar(vista)
+
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'warn',
+        summary: 'El Sector A supera lo presupuestado más el desperdicio',
+        detail: expect.stringContaining('Se registró la alerta de consumo'),
+      }),
+    )
+    expect(servicios.alertasPendientes).toHaveBeenCalled()
   })
 })

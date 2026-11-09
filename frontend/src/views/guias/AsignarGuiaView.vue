@@ -18,10 +18,12 @@ import type { NivelFila, SectorFila } from '@/types/niveles'
 import type { PartidaFila } from '@/types/partidas'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { useAlertasStore } from '@/stores/alertas'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const alertas = useAlertasStore()
 const auth = useAuthStore()
 
 // El administrador entra en modo consulta: la asignación la guarda Producción.
@@ -119,14 +121,20 @@ async function guardar() {
       summary: respuesta.message ?? 'Guía asignada correctamente',
       life: 4000,
     })
-    // CU09 flujo alternativo 2: la alerta de consumo (CU14) se registrará con ese caso de uso.
+    // CU09 flujo alternativo 2 → CU14: el backend ya registró la alerta de consumo y encoló el
+    // correo al ingeniero responsable y a gerencia.
+    const nuevas = respuesta.alertas_registradas ?? 0
     for (const s of respuesta.sectores_excedidos ?? []) {
       toast.add({
         severity: 'warn',
         summary: `El ${s.nombre} supera lo presupuestado más el desperdicio`,
+        detail: nuevas
+          ? 'Se registró la alerta de consumo y se avisará por correo al ingeniero responsable y a gerencia.'
+          : undefined,
         life: 8000,
       })
     }
+    if (nuevas) alertas.actualizar()
     router.push({ name: 'guias-sin-sector' })
   } catch (error) {
     const campos = erroresDeValidacion(error)
