@@ -12,6 +12,7 @@ use App\Models\Asignacion;
 use App\Models\GuiaRemision;
 use App\Models\HistorialAsignacion;
 use App\Models\Sector;
+use App\Services\Desperdicio\CalculadoraDesperdicio;
 use App\Support\Volumen;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -107,12 +108,10 @@ class AsignacionController extends Controller
         ], fn ($valor) => $valor !== null));
     }
 
-    /** Límite del sector (CU14): presupuestado × (1 + factor de desperdicio). El factor está en %. */
+    /** Límite del sector (CU14), calculado igual que en el control de desperdicio (CU13). */
     private static function excede(Sector $sector): bool
     {
-        $limite = Volumen::centesimos($sector->volumen_presup_m3) * (100 + (float) $sector->partida->factor_desperdicio) / 100;
-
-        return Volumen::centesimos($sector->volumen_vaciado_m3) > round($limite);
+        return CalculadoraDesperdicio::excede($sector);
     }
 
     /** @param  Collection<int, int>  $centesimos  por sector */

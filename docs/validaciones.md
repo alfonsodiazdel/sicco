@@ -247,6 +247,34 @@ iguala su volumen y `parcial` si no, y cada guardado deja el reparto anterior y 
 lo avisa sin impedirlo. Si un sector pasa lo presupuestado × (1 + desperdicio), la respuesta lo
 indica y la pantalla lo avisa; registrar y enviar la alerta queda para CU14.
 
+### Control de desperdicio (CU13)
+
+Pantalla `/desperdicio` (Producción y Gerencia; el administrador la consulta), sobre el proyecto
+del encabezado. Solo lectura: el único control es «Detalle por» (Elemento estructural, Nivel o
+Sector, por defecto Sector), que consulta al cambiarlo; no hay botón «Consultar» (la tesis lo pide
+en el paso 2, pero con un solo filtro sobra). Backend: `GET /proyectos/{id}/desperdicio?detalle=`
+(`CalculadoraDesperdicio`); un detalle fuera de la lista da `422`.
+
+Por fila: presupuestado, vaciado, diferencia (vaciado − presupuestado) y
+`% = (vaciado − presupuestado) / presupuestado × 100`. Agrupar por nivel o elemento suma los
+sectores. Tabla y gráfico de barras (Chart.js) presupuestado vs. vaciado.
+
+No están en la tesis y se infirieron:
+- «Supera el factor de desperdicio» = `vaciado > presupuestado × (1 + factor de la partida)`, el
+  mismo límite de CU09/CU14 (`CalculadoraDesperdicio::excede`, en centésimos y con el medio
+  centésimo hacia arriba: 1.90 m³ al 5 % da 2.00 m³); en filas agrupadas, la suma de los límites de
+  sus sectores. Esas filas van en rojo (tabla y barra del gráfico).
+- Los nombres se repiten (un «Sector A» por nivel, dos partidas del mismo elemento y f'c): cada
+  fila trae un `id`, el gráfico rotula «Piso 1 · Sector A» y, si un elemento se repite, le agrega
+  el ítem de la partida o, sin ítem, su descripción. La tabla muestra el ítem bajo el elemento.
+- Al cambiar «Detalle por», la tabla sigue entera con el detalle anterior hasta que llega la nueva
+  respuesta, y una respuesta que llega tarde no pisa a la última pedida.
+- Una fila sin vaciados muestra «—» en el %, en lugar de −100 %.
+- El % de desperdicio no baja de 0: vaciar menos de lo presupuestado (un sector a medio vaciar)
+  da 0.00 %, no un porcentaje negativo. La diferencia en m³ sí se muestra con su signo.
+- Sin ningún vaciado en el proyecto: «Aún no hay vaciados registrados» (flujo alternativo 1).
+- Sin filtro de fechas: `SECTOR.volumen_vaciado_m3` es un acumulado.
+
 ### Facturas (CU11 con CU12)
 
 Pantalla `/facturas`, para Oficina técnica (el administrador consulta); el proyecto es el del

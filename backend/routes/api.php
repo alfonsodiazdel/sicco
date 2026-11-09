@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\DesperdicioController;
 use App\Http\Controllers\Api\V1\FacturaController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
 use App\Http\Controllers\Api\V1\GuiaController;
@@ -113,6 +114,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('facturas/lecturas', [FacturaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('facturas', [FacturaController::class, 'store']);
             });
+
+            // CU13 Control de desperdicio: lo consultan Producción y Gerencia en sus proyectos.
+            Route::get('proyectos/{proyecto}/desperdicio', [DesperdicioController::class, 'show'])
+                ->whereNumber('proyecto')
+                ->middleware('rol:ingeniero_produccion,gerencia,administrador');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

@@ -26,6 +26,7 @@ const implementados = [
   '/guias/registrar',
   '/guias/sin-sector',
   '/facturas',
+  '/desperdicio',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -129,6 +130,16 @@ const routes: RouteRecordRaw[] = [
         name: 'nueva-factura',
         component: () => import('@/views/facturas/NuevaFacturaView.vue'),
         meta: { roles: ['oficina_tecnica'], titulo: 'Nueva factura', porProyecto: true },
+      },
+      {
+        path: 'desperdicio',
+        name: 'desperdicio',
+        component: () => import('@/views/DesperdicioView.vue'),
+        meta: {
+          roles: ['ingeniero_produccion', 'gerencia'],
+          titulo: 'Control de desperdicio',
+          porProyecto: true,
+        },
       },
       ...modulos,
       {
