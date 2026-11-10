@@ -44,6 +44,14 @@ return [
         'por_minuto' => (int) env('REPORTES_POR_MINUTO', 20),
     ],
 
+    // CU18 Exportar documentos: ZIP por minuto y usuario. Vacía, en cero o con texto valdría 0 y
+    // bloquearía toda exportación, así que en esos casos se usa 5.
+    'exportaciones' => [
+        'por_minuto' => filter_var(env('EXPORTACIONES_POR_MINUTO'), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'default' => 5],
+        ]),
+    ],
+
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'ocr_model' => env('ANTHROPIC_OCR_MODEL', 'claude-opus-5-5'),

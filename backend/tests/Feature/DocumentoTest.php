@@ -190,3 +190,58 @@ describe('ZIP de documentos (CU18)', function () {
             ->toContain("Faltantes (0):\n- ninguno\n");
     });
 });
+
+/** Un proyecto con una guía para exportar y la URL de su ZIP. */
+function zipDeUnaGuia(): array
+{
+    $proyecto = obra();
+    Storage::put("guias/{$proyecto->id}/a.jpg", 'foto-a');
+    guiaParaExportar($proyecto, Proveedor::factory()->create(), 'T001-00000101', "guias/{$proyecto->id}/a.jpg");
+
+    return [$proyecto, "/api/v1/proyectos/{$proyecto->id}/documentos/guias/zip?desde=2026-11-01&hasta=2026-11-30"];
+}
+
+describe('límite de exportaciones en ZIP (CU18)', function () {
+    it('permite 5 exportaciones por minuto a cada usuario y la sexta responde 429', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $usuario = asignadoA($proyecto);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->actingAs($usuario)->get($url)->assertOk();
+        }
+        $this->actingAs($usuario)->get($url)->assertStatus(429);
+
+        // El cupo es de cada usuario: otro usuario del mismo proyecto sigue exportando.
+        $this->actingAs(asignadoA($proyecto))->get($url)->assertOk();
+    });
+
+    it('gastar el cupo del reporte EAT no bloquea la exportación', function () {
+        config(['services.reportes.por_minuto' => 2]);
+        [$proyecto, $url] = zipDeUnaGuia();
+        $usuario = asignadoA($proyecto);
+
+        // Sin fecha de corte responde 422, pero la petición igual cuenta para el límite del reporte.
+        $reporte = "/api/v1/proyectos/{$proyecto->id}/reportes/eat";
+        $this->actingAs($usuario)->getJson($reporte)->assertStatus(422);
+        $this->actingAs($usuario)->getJson($reporte)->assertStatus(422);
+        $this->actingAs($usuario)->getJson($reporte)->assertStatus(429);
+
+        $this->actingAs($usuario)->get($url)->assertOk();
+    });
+
+    it('usa 5 por minuto cuando EXPORTACIONES_POR_MINUTO está vacía o no es un número válido', function (string $valor) {
+        $_ENV['EXPORTACIONES_POR_MINUTO'] = $_SERVER['EXPORTACIONES_POR_MINUTO'] = $valor;
+        try {
+            config(['services.exportaciones' => (require config_path('services.php'))['exportaciones']]);
+        } finally {
+            unset($_ENV['EXPORTACIONES_POR_MINUTO'], $_SERVER['EXPORTACIONES_POR_MINUTO']);
+        }
+        [$proyecto, $url] = zipDeUnaGuia();
+        $usuario = asignadoA($proyecto);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->actingAs($usuario)->get($url)->assertOk();
+        }
+        $this->actingAs($usuario)->get($url)->assertStatus(429);
+    })->with(['vacía' => '', 'texto' => 'cinco', 'cero' => '0']);
+});
