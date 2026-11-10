@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * CU15 Reporte EAT a una fecha de corte: presupuesto, consumido, saldo y proyección a término por
- * partida, más las guías sin sector y los cargos de factura. Los montos de cada fila se calculan en
+ * partida, más las guías sin sector y los cargos de factura. Las guías sin sector se muestran aparte con
+ * un aviso y no suman al total: el saldo de las partidas todavía incluye ese volumen y lo contaría dos
+ * veces. Los cargos sí suman. Los montos de cada fila se calculan en
  * SQL con DECIMAL exacto y se redondean con ROUND (la mitad hacia arriba); subtotales y total suman
  * esas filas en céntimos enteros, para que la tabla cuadre al céntimo.
  *
@@ -23,6 +25,8 @@ final readonly class ReporteEatQuery
         'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles',
         'saldo_m3', 'saldo_soles', 'eat_m3', 'eat_soles',
     ];
+
+    public const AVISO_SIN_SECTOR = 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.';
 
     public function __construct(private Proyecto $proyecto, private string $fechaCorte) {}
 
@@ -46,7 +50,7 @@ final readonly class ReporteEatQuery
         $grupos = array_map(fn (array $g) => [...$g, 'subtotal' => self::sumar($g['filas'])], array_values($grupos));
 
         $aparte = [...$this->filaGuiasSinSector(), ...$cargos->all()];
-        $total = self::sumar([...array_column($grupos, 'subtotal'), ...$aparte]);
+        $total = self::sumar([...array_column($grupos, 'subtotal'), ...$cargos->all()]);
 
         return [
             'proyecto' => ['id' => $this->proyecto->id, 'codigo' => $this->proyecto->codigo, 'nombre' => $this->proyecto->nombre],
@@ -121,7 +125,7 @@ final readonly class ReporteEatQuery
         return [[
             'tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector',
             ...self::montos(0, 0, $m3, $soles, 0, -$soles, $m3, $soles),
-            'sobrecosto' => false,
+            'sobrecosto' => false, 'aviso' => self::AVISO_SIN_SECTOR,
         ]];
     }
 

@@ -17,6 +17,7 @@
     tr.subtotal td, tr.total td { font-weight: bold; }
     tr.total td { border-top: 1.2pt solid #222; }
     td.sobrecosto { color: #c00; font-weight: bold; }
+    tr.aviso td { font-style: italic; }
 </style>
 </head>
 <body>
@@ -37,7 +38,7 @@
     <tbody>
         @foreach ($filas as $fila)
             <tr class="{{ $fila['tipo'] }}">
-                @if ($fila['tipo'] === 'grupo')
+                @if (in_array($fila['tipo'], ['grupo', 'aviso'], true))
                     <td colspan="{{ count($columnas) }}">{{ $fila['elemento'] }}</td>
                 @else
                     <td>{{ $fila['elemento'] }}</td>
