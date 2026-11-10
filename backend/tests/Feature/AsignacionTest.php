@@ -362,3 +362,23 @@ describe('foto de la guía', function () {
             ->assertJsonPath('message', 'La foto de la guía no está disponible');
     });
 });
+
+describe('sector culminado (CU09 con CU05)', function () {
+    it('no deja asignar, cambiar ni quitar concreto de un sector culminado, pero sí volver a guardar el mismo reparto', function () {
+        [$p, $a, $b, $ing] = obraConSectores();
+        $guia = guiaDe($p);
+        $this->actingAs($ing);
+        repartirGuia($guia, [$a->id => 5, $b->id => 3.5])->assertOk();
+        $a->forceFill(['fecha_culminacion' => today()->toDateString()])->save();
+        $mensaje = 'El sector Piso 1 – Sector A está culminado; reábralo para cambiar sus guías';
+
+        repartirGuia($guia, [$a->id => 4, $b->id => 4.5])->assertUnprocessable()->assertJsonValidationErrors(['asignaciones' => $mensaje]);
+        repartirGuia($guia, [$b->id => 8.5])->assertUnprocessable()->assertJsonValidationErrors(['asignaciones' => $mensaje]);
+        repartirGuia(guiaDe($p), [$a->id => 1])->assertUnprocessable()->assertJsonValidationErrors(['asignaciones' => $mensaje]);
+        expect((float) $a->fresh()->volumen_vaciado_m3)->toBe(5.0);
+        expect((float) $b->fresh()->volumen_vaciado_m3)->toBe(3.5);
+
+        // El mismo reparto no toca el sector culminado.
+        repartirGuia($guia, [$a->id => 5, $b->id => 3.5])->assertOk();
+    });
+});

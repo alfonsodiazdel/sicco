@@ -45,6 +45,7 @@ return [
         'sin_sectores' => 'Agregue al menos un sector',
         'sector_repetido' => 'El sector ya está en la asignación',
         'sector_ajeno' => 'El sector no pertenece al proyecto de la guía',
+        'sector_culminado' => 'El sector :sector está culminado; reábralo para cambiar sus guías',
     ],
     'facturas' => [
         'registrada' => 'Factura registrada correctamente',
@@ -66,6 +67,11 @@ return [
         'duplicado' => 'El sector ya existe en el nivel',
         'excede' => 'El volumen excede lo presupuestado para el elemento',
         'partida_ajena' => 'La partida no pertenece al proyecto del nivel',
+        'culminado' => 'El sector está culminado; reábralo para editarlo',
+        'ya_culminado' => 'El sector ya está culminado',
+        'no_culminado' => 'El sector no está culminado',
+        'culminado_ok' => 'Sector culminado correctamente',
+        'reabierto_ok' => 'Sector reabierto correctamente',
     ],
     'alertas' => [
         'revisada' => 'Alerta marcada como revisada',

@@ -10,21 +10,31 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * CU15 Reporte EAT a una fecha de corte: presupuesto, consumido, saldo y proyección a término por
- * partida, más las guías sin sector y los cargos de factura. Las guías sin sector se muestran aparte con
- * un aviso y no suman al total: el saldo de las partidas todavía incluye ese volumen y lo contaría dos
- * veces. Los cargos sí suman. Los montos de cada fila se calculan en
- * SQL con DECIMAL exacto y se redondean con ROUND (la mitad hacia arriba); subtotales y total suman
- * esas filas en céntimos enteros, para que la tabla cuadre al céntimo.
+ * CU15 Reporte EAT a una fecha de corte: cuánto costará el concreto al término de la obra.
  *
- * Los fragmentos SQL van como [sql, bindings] para encadenarlos sin interpolar valores.
+ * Por partida: EAT = costo real de los sectores culminados al corte + proyección de lo que falta.
+ * Lo que falta es el metrado neto menos el neto de los sectores culminados, con su desperdicio y al
+ * precio vigente; incluye los sectores abiertos, aunque ya tengan concreto, y el metrado aún sin
+ * sector. Si un sector abierto ya pasó su límite (neto × (1 + desperdicio)), el exceso se suma a la
+ * proyección: el EAT nunca queda debajo de lo ya vaciado. El presupuesto meta lleva el desperdicio,
+ * igual que el CU04.
+ *
+ * Aparte: los cargos de factura (bombeo, aditivos…) suman solo lo facturado hasta el corte; no se
+ * proyectan. Las guías sin sector se muestran con un aviso y no suman: ese concreto acabará en un
+ * sector abierto, ya proyectado, o en uno culminado, como costo real.
+ *
+ * Los montos de cada fila se calculan en SQL con DECIMAL exacto y se redondean con ROUND (la mitad
+ * hacia arriba); subtotales y total suman esas filas en céntimos enteros, para que la tabla cuadre al
+ * céntimo. Los fragmentos SQL van como [sql, bindings] para encadenarlos sin interpolar valores.
  */
 final readonly class ReporteEatQuery
 {
     public const MONTOS = [
-        'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles',
-        'saldo_m3', 'saldo_soles', 'eat_m3', 'eat_soles',
+        'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles', 'saldo_soles',
+        'real_m3', 'real_soles', 'proyectado_m3', 'proyectado_soles', 'eat_m3', 'eat_soles', 'variacion_soles',
     ];
+
+    public const AVISO_CARGOS = 'Los cargos que no son concreto incluyen solo lo facturado hasta la fecha de corte.';
 
     public const AVISO_SIN_SECTOR = 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.';
 
@@ -67,7 +77,10 @@ final readonly class ReporteEatQuery
 
     private function partidas(): Collection
     {
-        $saldo = 'GREATEST(p.metrado_m3 - COALESCE(c.m3, 0), 0)';
+        // Volumen por (1 + desperdicio): el factor se guarda en % (5.00 es 5 %).
+        $conDesperdicio = fn (string $m3) => "{$m3} * (100 + p.factor_desperdicio) / 100";
+        $proyectado = 'ROUND('.$conDesperdicio('GREATEST(p.metrado_m3 - COALESCE(c.neto_culminado, 0), 0)').', 2)'
+            .' + COALESCE(c.exceso_abiertos, 0)';
         [$precio, $bPrecio] = $this->precioPartida('p');
         [$vigente, $bVigente] = $this->precioVigente('p');
 
@@ -76,30 +89,59 @@ final readonly class ReporteEatQuery
             ->join('resistencias as r', 'r.id', '=', 'p.resistencia_id')
             ->leftJoinSub($this->consumoPorPartida(), 'c', 'c.presupuesto_id', '=', 'p.id')
             ->where('p.proyecto_id', $this->proyecto->id)
-            ->select(['p.id', 'p.item', 'p.elemento', 'r.nombre as resistencia', 'gp.id as grupo_id', 'gp.nombre as grupo', 'p.metrado_m3'])
-            ->selectRaw("ROUND(p.metrado_m3 * {$precio}, 2) AS presupuesto_soles", $bPrecio)
-            ->selectRaw('COALESCE(c.m3, 0) AS consumido_m3, COALESCE(c.soles, 0) AS consumido_soles')
-            ->selectRaw("{$saldo} AS saldo_m3")
-            ->selectRaw("ROUND({$saldo} * {$vigente}, 2) AS proyeccion_soles", $bVigente)
+            ->select(['p.id', 'p.item', 'p.elemento', 'r.nombre as resistencia', 'gp.id as grupo_id', 'gp.nombre as grupo'])
+            ->selectRaw('ROUND('.$conDesperdicio('p.metrado_m3').', 2) AS presupuesto_m3')
+            // Como el CU04: el producto exacto, redondeado una vez.
+            ->selectRaw('ROUND('.$conDesperdicio('p.metrado_m3')." * {$precio}, 2) AS presupuesto_soles", $bPrecio)
+            ->selectRaw('COALESCE(c.m3, 0) AS consumido_m3, ROUND(COALESCE(c.soles, 0), 2) AS consumido_soles')
+            ->selectRaw('COALESCE(c.real_m3, 0) AS real_m3, ROUND(COALESCE(c.real_soles, 0), 2) AS real_soles')
+            ->selectRaw("{$proyectado} AS proyectado_m3")
+            ->selectRaw("ROUND(({$proyectado}) * {$vigente}, 2) AS proyectado_soles", $bVigente)
             ->orderBy('gp.orden')->orderBy('gp.id')->orderBy('p.item')->orderBy('p.id')
             ->get();
     }
 
-    /** Asignaciones de guías hasta el corte, por partida (las asignaciones no tienen fecha propia). */
+    /**
+     * Por partida, desde sus sectores: lo vaciado hasta el corte (todo y en los culminados), el neto de
+     * los culminados al corte y lo que los abiertos ya pasaron de su límite. Los soles van sin
+     * redondear: se redondean una vez por fila.
+     */
     private function consumoPorPartida(): Builder
+    {
+        $culminado = '(s.fecha_culminacion IS NOT NULL AND s.fecha_culminacion <= ?)';
+        $limite = 'ROUND(s.volumen_presup_m3 * (100 + ps.factor_desperdicio) / 100, 2)';
+        $m3 = 'COALESCE(v.m3, 0)';
+        $soles = 'COALESCE(v.soles, 0)';
+        $corte = [$this->fechaCorte];
+
+        return DB::table('sectores as s')
+            ->join('partidas as ps', 'ps.id', '=', 's.presupuesto_id')
+            ->leftJoinSub($this->vaciadoPorSector(), 'v', 'v.sector_id', '=', 's.id')
+            ->where('ps.proyecto_id', $this->proyecto->id)
+            ->groupBy('s.presupuesto_id')
+            ->select('s.presupuesto_id')
+            ->selectRaw("SUM({$m3}) AS m3, SUM({$soles}) AS soles")
+            ->selectRaw("SUM(CASE WHEN {$culminado} THEN {$m3} ELSE 0 END) AS real_m3", $corte)
+            ->selectRaw("SUM(CASE WHEN {$culminado} THEN {$soles} ELSE 0 END) AS real_soles", $corte)
+            ->selectRaw("SUM(CASE WHEN {$culminado} THEN s.volumen_presup_m3 ELSE 0 END) AS neto_culminado", $corte)
+            ->selectRaw("SUM(CASE WHEN {$culminado} THEN 0 ELSE GREATEST({$m3} - {$limite}, 0) END) AS exceso_abiertos", $corte);
+    }
+
+    /** Asignaciones de guías hasta el corte, por sector (las asignaciones no tienen fecha propia). */
+    private function vaciadoPorSector(): Builder
     {
         [$precio, $bindings] = $this->precioGuia('g', $this->precioPartida('pc'));
 
         return DB::table('asignaciones as a')
             ->join('guias_remision as g', 'g.id', '=', 'a.guia_id')
-            ->join('sectores as s', 's.id', '=', 'a.sector_id')
-            ->join('partidas as pc', 'pc.id', '=', 's.presupuesto_id')
+            ->join('sectores as sv', 'sv.id', '=', 'a.sector_id')
+            ->join('partidas as pc', 'pc.id', '=', 'sv.presupuesto_id')
             ->where('g.proyecto_id', $this->proyecto->id)
             ->where('g.fecha', '<=', $this->fechaCorte)
-            ->groupBy('s.presupuesto_id')
-            ->select('s.presupuesto_id')
+            ->groupBy('a.sector_id')
+            ->select('a.sector_id')
             ->selectRaw('SUM(a.volumen_m3) AS m3')
-            ->selectRaw("ROUND(SUM(a.volumen_m3 * {$precio}), 2) AS soles", $bindings);
+            ->selectRaw("SUM(a.volumen_m3 * {$precio}) AS soles", $bindings);
     }
 
     /** Volumen aún sin sector, con el mismo criterio que la lista de guías sin sector. */
@@ -122,9 +164,14 @@ final readonly class ReporteEatQuery
             return [];
         }
 
+        // Solo lo recibido: no entra al EAT ni al total, así que el resto queda vacío.
         return [[
             'tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector',
-            ...self::montos(0, 0, $m3, $soles, 0, -$soles, $m3, $soles),
+            ...self::montos(
+                presupuesto_m3: 0, presupuesto_soles: 0, consumido_m3: $m3, consumido_soles: $soles, saldo_soles: null,
+                real_m3: null, real_soles: null, proyectado_m3: null, proyectado_soles: null,
+                eat_m3: null, eat_soles: null, variacion_soles: null,
+            ),
             'sobrecosto' => false, 'aviso' => self::AVISO_SIN_SECTOR,
         ]];
     }
@@ -143,9 +190,14 @@ final readonly class ReporteEatQuery
             ->map(function (object $c) {
                 $importe = self::centimos($c->importe);
 
+                // Sin volumen y sin proyección: lo facturado es todo su EAT.
                 return [
                     'tipo' => 'cargo', 'concepto' => $c->concepto,
-                    ...self::montos(0, 0, null, $importe, null, -$importe, null, $importe),
+                    ...self::montos(
+                        presupuesto_m3: 0, presupuesto_soles: 0, consumido_m3: null, consumido_soles: $importe,
+                        saldo_soles: -$importe, real_m3: null, real_soles: $importe, proyectado_m3: null,
+                        proyectado_soles: 0, eat_m3: null, eat_soles: $importe, variacion_soles: -$importe,
+                    ),
                     'sobrecosto' => false,
                 ];
             })
@@ -211,18 +263,24 @@ final readonly class ReporteEatQuery
 
     private function filaPartida(object $p): array
     {
-        $consumidoM3 = Volumen::centesimos($p->consumido_m3);
-        $saldoM3 = Volumen::centesimos($p->saldo_m3);
         $presupuesto = self::centimos($p->presupuesto_soles);
         $consumido = self::centimos($p->consumido_soles);
+        $realM3 = Volumen::centesimos($p->real_m3);
+        $real = self::centimos($p->real_soles);
+        $proyectadoM3 = Volumen::centesimos($p->proyectado_m3);
+        $proyectado = self::centimos($p->proyectado_soles);
         $montos = self::montos(
-            Volumen::centesimos($p->metrado_m3), $presupuesto, $consumidoM3, $consumido,
-            $saldoM3, $presupuesto - $consumido, $consumidoM3 + $saldoM3, $consumido + self::centimos($p->proyeccion_soles),
+            presupuesto_m3: Volumen::centesimos($p->presupuesto_m3), presupuesto_soles: $presupuesto,
+            consumido_m3: Volumen::centesimos($p->consumido_m3), consumido_soles: $consumido,
+            saldo_soles: $presupuesto - $consumido,
+            real_m3: $realM3, real_soles: $real, proyectado_m3: $proyectadoM3, proyectado_soles: $proyectado,
+            eat_m3: $realM3 + $proyectadoM3, eat_soles: $real + $proyectado,
+            variacion_soles: $presupuesto - $real - $proyectado,
         );
 
         return [
             'partida_id' => (int) $p->id, 'item' => $p->item, 'etiqueta' => "{$p->elemento} · {$p->resistencia}",
-            ...$montos, 'sobrecosto' => $montos['eat_soles'] > $montos['presupuesto_soles'],
+            ...$montos, 'sobrecosto' => $montos['variacion_soles'] < 0,
         ];
     }
 
@@ -232,13 +290,21 @@ final readonly class ReporteEatQuery
         $suma = array_map(fn (string $k) => array_sum(array_map(fn (array $f) => $f[$k] ?? 0, $filas)), self::MONTOS);
         $montos = array_combine(self::MONTOS, $suma);
 
-        return [...$montos, 'sobrecosto' => $montos['eat_soles'] > $montos['presupuesto_soles']];
+        return [...$montos, 'sobrecosto' => $montos['variacion_soles'] < 0];
     }
 
-    /** Montos en centésimos (m³) y céntimos (S/); null en los m³ de un cargo. */
+    /**
+     * Montos en centésimos (m³) y céntimos (S/), por nombre y en el orden de MONTOS; null donde no
+     * aplica (los m³ de un cargo, el EAT de las guías sin sector).
+     */
     private static function montos(?int ...$valores): array
     {
-        return array_combine(self::MONTOS, $valores);
+        $faltan = array_diff(self::MONTOS, array_keys($valores));
+        if ($faltan !== [] || count($valores) !== count(self::MONTOS)) {
+            throw new \LogicException('Montos del reporte EAT incompletos: '.implode(', ', $faltan));
+        }
+
+        return array_map(fn (string $k) => $valores[$k], array_combine(self::MONTOS, self::MONTOS));
     }
 
     /** A la respuesta: de centésimos y céntimos enteros a números con 2 decimales. */

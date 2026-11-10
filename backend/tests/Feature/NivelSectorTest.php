@@ -1,8 +1,13 @@
 <?php
 
+use App\Enums\EstadoAsignacion;
+use App\Enums\OrigenGuia;
 use App\Enums\Rol;
+use App\Models\Asignacion;
+use App\Models\GuiaRemision;
 use App\Models\Nivel;
 use App\Models\Partida;
+use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\Sector;
 use Database\Seeders\GrupoPartidaSeeder;
@@ -11,6 +16,7 @@ use Database\Seeders\PartidaDemoSeeder;
 use Database\Seeders\ProyectoDemoSeeder;
 use Database\Seeders\ResistenciaSeeder;
 use Database\Seeders\UsuarioDemoSeeder;
+use Illuminate\Support\Carbon;
 
 /** Proyecto con una partida de columnas de 180.50 m³ y un ingeniero asignado. */
 function obraConColumnas(): array
@@ -131,6 +137,7 @@ describe('sectores', function () {
                 'nombre' => 'Sector A',
                 'volumen_presup_m3' => 60,
                 'volumen_vaciado_m3' => 0,
+                'fecha_culminacion' => null,
             ]);
     });
 
@@ -245,4 +252,80 @@ it('el seeder de demo arma los niveles y sectores de las pantallas', function ()
     expect($p1->niveles()->orderBy('orden')->pluck('nombre')->all())->toBe(['Sótano 1', 'Piso 1', 'Piso 2']);
     expect(Sector::count())->toBe(5);
     expect((float) Sector::where('nombre', 'Sector C')->value('volumen_presup_m3'))->toBe(122.5);
+});
+
+describe('culminación de sectores', function () {
+    beforeEach(function () {
+        $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));
+    });
+
+    it('Producción culmina un sector con su fecha y lo reabre', function () {
+        [$p, $columnas, $ing] = obraConColumnas();
+        $s = sector(nivel($p), $columnas, 60);
+
+        $this->actingAs($ing)->postJson("/api/v1/sectores/{$s->id}/culminar", ['fecha_culminacion' => '2026-11-09'])
+            ->assertOk()
+            ->assertJsonPath('data.fecha_culminacion', '2026-11-09')
+            ->assertJsonPath('message', 'Sector culminado correctamente');
+        expect($s->fresh()->fecha_culminacion->toDateString())->toBe('2026-11-09');
+        expect($s->fresh()->culminado_por)->toBe($ing->id);
+
+        $this->actingAs($ing)->postJson("/api/v1/sectores/{$s->id}/culminar", ['fecha_culminacion' => '2026-11-09'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['sector' => 'El sector ya está culminado']);
+        // Culminado no se edita.
+        $this->actingAs($ing)->putJson("/api/v1/sectores/{$s->id}", ['nombre' => 'Sector A', 'presupuesto_id' => $columnas->id, 'volumen_presup_m3' => 50])
+            ->assertUnprocessable()->assertJsonValidationErrors(['sector' => 'El sector está culminado; reábralo para editarlo']);
+
+        $this->actingAs($ing)->postJson("/api/v1/sectores/{$s->id}/reabrir")
+            ->assertOk()
+            ->assertJsonPath('data.fecha_culminacion', null)
+            ->assertJsonPath('message', 'Sector reabierto correctamente');
+        expect($s->fresh()->culminado_por)->toBeNull();
+        $this->actingAs($ing)->postJson("/api/v1/sectores/{$s->id}/reabrir")
+            ->assertUnprocessable()->assertJsonValidationErrors(['sector' => 'El sector no está culminado']);
+    });
+
+    it('valida la fecha: requerida, no futura, no antes del inicio del proyecto ni de la última guía del sector', function () {
+        [$p, $columnas, $ing] = obraConColumnas();
+        $p->update(['fecha_inicio' => '2026-10-01']);
+        $s = sector(nivel($p), $columnas, 60);
+        $guia = GuiaRemision::create([
+            'proyecto_id' => $p->id, 'proveedor_id' => Proveedor::factory()->create()->id,
+            'numero' => 'T001-00000001', 'fecha' => '2026-10-20', 'resistencia_id' => resistencia(280)->id,
+            'volumen_m3' => 8, 'foto_ruta' => 'guias/1/f.jpg', 'estado_asignacion' => EstadoAsignacion::Asignada,
+            'origen' => OrigenGuia::Manual, 'registrado_por' => $ing->id,
+        ]);
+        Asignacion::create(['guia_id' => $guia->id, 'sector_id' => $s->id, 'volumen_m3' => 8, 'registrado_por' => $ing->id]);
+        $url = "/api/v1/sectores/{$s->id}/culminar";
+        $antes = 'La fecha de culminación no puede ser anterior al inicio del proyecto ni a la última guía del sector';
+
+        foreach ([
+            [null, 'Ingrese la fecha de culminación'],
+            ['09/11/2026', 'Ingrese una fecha válida'],
+            ['2026-11-10', 'La fecha de culminación no puede ser posterior a hoy'],
+            ['2026-09-30', $antes],
+            ['2026-10-19', $antes],
+        ] as [$fecha, $mensaje]) {
+            $this->actingAs($ing)->postJson($url, ['fecha_culminacion' => $fecha])
+                ->assertUnprocessable()->assertJsonValidationErrors(['fecha_culminacion' => $mensaje]);
+        }
+        expect($s->fresh()->fecha_culminacion)->toBeNull();
+
+        $this->actingAs($ing)->postJson($url, ['fecha_culminacion' => '2026-10-20'])->assertOk();
+    });
+
+    it('solo Producción asignada culmina o reabre; a un proyecto ajeno responde 403 sin validar', function () {
+        [$p, $columnas] = obraConColumnas();
+        $s = sector(nivel($p), $columnas, 60);
+
+        foreach ([Rol::OficinaTecnica, Rol::Gerencia, Rol::Almacenero] as $rol) {
+            $this->actingAs(asignadoA($p, $rol))->postJson("/api/v1/sectores/{$s->id}/culminar", ['fecha_culminacion' => '2026-11-09'])->assertForbidden();
+            $this->actingAs(asignadoA($p, $rol))->postJson("/api/v1/sectores/{$s->id}/reabrir")->assertForbidden();
+        }
+        $ajeno = conRol(Rol::IngenieroProduccion);
+        $this->actingAs($ajeno)->postJson("/api/v1/sectores/{$s->id}/culminar", [])
+            ->assertForbidden()->assertJsonPath('message', 'No tiene acceso a este proyecto.');
+        $this->actingAs($ajeno)->postJson("/api/v1/sectores/{$s->id}/reabrir")->assertForbidden();
+        expect($s->fresh()->fecha_culminacion)->toBeNull();
+    });
 });

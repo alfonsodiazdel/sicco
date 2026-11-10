@@ -17,7 +17,14 @@ class Sector extends Model
         return [
             'volumen_presup_m3' => 'decimal:2',
             'volumen_vaciado_m3' => 'decimal:2',
+            'fecha_culminacion' => 'immutable_date',
         ];
+    }
+
+    /** Culminado: ya no recibe guías ni cambia; se reabre para corregirlo. */
+    public function culminado(): bool
+    {
+        return $this->fecha_culminacion !== null;
     }
 
     public function nivel(): BelongsTo

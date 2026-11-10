@@ -78,6 +78,8 @@ Route::prefix('v1')->group(function () {
                 Route::put('niveles/{nivel}', [NivelController::class, 'update'])->whereNumber('nivel');
                 Route::post('niveles/{nivel}/sectores', [SectorController::class, 'store'])->whereNumber('nivel');
                 Route::put('sectores/{sector}', [SectorController::class, 'update'])->whereNumber('sector');
+                Route::post('sectores/{sector}/culminar', [SectorController::class, 'culminar'])->whereNumber('sector');
+                Route::post('sectores/{sector}/reabrir', [SectorController::class, 'reabrir'])->whereNumber('sector');
             });
 
             // CU06–CU08 Registrar guía de remisión: el almacenero, desde el celular, en sus proyectos.

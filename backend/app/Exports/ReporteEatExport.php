@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Queries\ReporteEatQuery;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 use OpenSpout\Common\Entity\Cell;
@@ -15,12 +16,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 final class ReporteEatExport
 {
     public const COLUMNAS = [
-        'Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo m³', 'Saldo S/', 'EAT m³', 'EAT S/',
+        'Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo S/',
+        'Real culminado S/', 'Proyectado m³', 'Proyectado S/', 'EAT S/', 'Variación S/',
     ];
 
+    /** El monto de cada columna, en el mismo orden. La última (variación) va en rojo si hay sobrecosto. */
     private const MONTOS = [
-        'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles',
-        'saldo_m3', 'saldo_soles', 'eat_m3', 'eat_soles',
+        'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles', 'saldo_soles',
+        'real_soles', 'proyectado_m3', 'proyectado_soles', 'eat_soles', 'variacion_soles',
     ];
 
     /**
@@ -65,6 +68,7 @@ final class ReporteEatExport
             'proyecto' => "{$reporte['proyecto']['codigo']} {$reporte['proyecto']['nombre']}",
             'fecha_corte' => CarbonImmutable::parse($reporte['fecha_corte'])->format('d/m/Y'),
             'igv' => 'Montos sin IGV',
+            'cargos' => ReporteEatQuery::AVISO_CARGOS,
         ];
     }
 
@@ -103,6 +107,7 @@ final class ReporteEatExport
             $writer->addRow(Row::fromValues(['Proyecto', self::texto($encabezado['proyecto'])]));
             $writer->addRow(Row::fromValues(['Fecha de corte', $encabezado['fecha_corte']]));
             $writer->addRow(Row::fromValues([$encabezado['igv']]));
+            $writer->addRow(Row::fromValues([$encabezado['cargos']]));
             $writer->addRow(Row::fromValues([]));
             $writer->addRow(Row::fromValuesWithStyle(self::COLUMNAS, $negrita));
 
@@ -110,8 +115,8 @@ final class ReporteEatExport
                 $resaltada = in_array($fila['tipo'], ['grupo', 'subtotal', 'total'], true);
                 $celdas = [Cell::fromValue(self::texto($fila['elemento']), $resaltada ? $negrita : null)];
                 foreach ($fila['montos'] as $i => $valor) {
-                    $esEatSoles = $i === count(self::MONTOS) - 1;
-                    $estilo = $esEatSoles && $fila['sobrecosto'] ? $sobrecosto : ($resaltada ? $montoNegrita : $monto);
+                    $esVariacion = $i === count(self::MONTOS) - 1;
+                    $estilo = $esVariacion && $fila['sobrecosto'] ? $sobrecosto : ($resaltada ? $montoNegrita : $monto);
                     $celdas[] = $valor === null ? Cell::fromValue('—') : Cell::fromValue($valor, $estilo);
                 }
                 $writer->addRow(new Row($celdas));

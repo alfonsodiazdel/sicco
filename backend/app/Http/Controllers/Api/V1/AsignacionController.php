@@ -62,6 +62,13 @@ class AsignacionController extends Controller
             $registradas = 0;
             foreach ($sectores as $sector) {
                 $diferencia = $nuevas->get($sector->id, 0) - $centesimosAnteriores->get($sector->id, 0);
+                // Lo vaciado en un sector culminado ya es costo real en el EAT (CU15): no cambia.
+                // Volver a guardar el mismo reparto sí se puede.
+                if ($diferencia !== 0 && $sector->culminado()) {
+                    throw ValidationException::withMessages([
+                        'asignaciones' => __('sicco.asignaciones.sector_culminado', ['sector' => "{$sector->nivel->nombre} – {$sector->nombre}"]),
+                    ]);
+                }
                 if ($diferencia !== 0) {
                     $sector->forceFill([
                         'volumen_vaciado_m3' => (Volumen::centesimos($sector->volumen_vaciado_m3) + $diferencia) / 100,
