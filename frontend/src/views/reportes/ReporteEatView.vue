@@ -134,7 +134,7 @@ onMounted(async () => {
 <template>
   <PaginaListado
     :titulo="proyecto ? `Reporte EAT – ${proyecto.nombre}` : 'Reporte EAT'"
-    subtitulo="Presupuesto, consumido, saldo y estimado a término del concreto. Montos sin IGV."
+    subtitulo="Costo del concreto al término de la obra: lo real de los sectores culminados más lo proyectado de lo que falta. Montos sin IGV; los cargos que no son concreto incluyen solo lo facturado hasta la fecha de corte."
   >
     <template #acciones>
       <Button

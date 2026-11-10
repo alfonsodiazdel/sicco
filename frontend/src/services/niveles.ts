@@ -12,6 +12,9 @@ export interface NivelesServicio {
   listarSectores(proyectoId: number): Promise<SectorFila[]>
   crearSector(nivelId: number, datos: SectorDatos): Promise<SectorFila>
   actualizarSector(id: number, datos: SectorDatos): Promise<SectorFila>
+  /** CU05: `fecha` en `YYYY-MM-DD`, no futura ni anterior a la última guía del sector. */
+  culminarSector(id: number, fecha: string): Promise<SectorFila>
+  reabrirSector(id: number): Promise<SectorFila>
 }
 
 const nivelesEjemplo: NivelFila[] = [
@@ -28,13 +31,22 @@ const sector = (
   nombre: string,
   volumen_presup_m3: number,
   volumen_vaciado_m3: number,
-): SectorFila => ({ id, nivel_id, presupuesto_id, nombre, volumen_presup_m3, volumen_vaciado_m3 })
+  fecha_culminacion: string | null = null,
+): SectorFila => ({
+  id,
+  nivel_id,
+  presupuesto_id,
+  nombre,
+  volumen_presup_m3,
+  volumen_vaciado_m3,
+  fecha_culminacion,
+})
 
 const sectoresEjemplo: SectorFila[] = [
   sector(1, 2, 2, 'Sector A', 60, 12),
   sector(2, 2, 2, 'Sector B', 58.5, 3.5),
   sector(3, 2, 3, 'Sector C', 122.5, 8),
-  sector(4, 1, 1, 'Zapatas eje 1-3', 40, 32),
+  sector(4, 1, 1, 'Zapatas eje 1-3', 40, 32, '2026-10-20'),
   sector(5, 1, 1, 'Zapatas eje 4-6', 36, 0),
 ]
 
@@ -45,6 +57,12 @@ export function crearNivelesEnMemoria(
   const sectores = sectoresEjemplo.map((s) => ({ ...s }))
   let siguienteNivel = niveles.length + 1
   let siguienteSector = sectores.length + 1
+
+  function buscarSector(id: number) {
+    const sector = sectores.find((s) => s.id === id)
+    if (!sector) throw new Error('Sector no encontrado.')
+    return sector
+  }
 
   function buscarNivel(id: number) {
     const nivel = niveles.find((n) => n.id === id)
@@ -88,15 +106,32 @@ export function crearNivelesEnMemoria(
         nivel_id: nivelId,
         ...datos,
         volumen_vaciado_m3: 0,
+        fecha_culminacion: null,
       }
       sectores.push({ ...nuevo })
       return nuevo
     },
     async actualizarSector(id, datos) {
-      const actual = sectores.find((s) => s.id === id)
-      if (!actual) throw new Error('Sector no encontrado.')
+      const actual = buscarSector(id)
+      if (actual.fecha_culminacion) {
+        throw errorDeValidacion({ sector: ['El sector está culminado; reábralo para editarlo'] })
+      }
       await validarVolumen(actual.nivel_id, datos, id)
       return { ...Object.assign(actual, datos) }
+    },
+    async culminarSector(id, fecha) {
+      const actual = buscarSector(id)
+      if (actual.fecha_culminacion) {
+        throw errorDeValidacion({ sector: ['El sector ya está culminado'] })
+      }
+      return { ...Object.assign(actual, { fecha_culminacion: fecha }) }
+    },
+    async reabrirSector(id) {
+      const actual = buscarSector(id)
+      if (!actual.fecha_culminacion) {
+        throw errorDeValidacion({ sector: ['El sector no está culminado'] })
+      }
+      return { ...Object.assign(actual, { fecha_culminacion: null }) }
     },
   }
 }
@@ -120,6 +155,13 @@ export function crearNivelesApi(): NivelesServicio {
     },
     async actualizarSector(id, datos) {
       return (await http.put<SectorFila>(`/sectores/${id}`, datos)).data
+    },
+    async culminarSector(id, fecha) {
+      const url = `/sectores/${id}/culminar`
+      return (await http.post<{ data: SectorFila }>(url, { fecha_culminacion: fecha })).data.data
+    },
+    async reabrirSector(id) {
+      return (await http.post<{ data: SectorFila }>(`/sectores/${id}/reabrir`)).data.data
     },
   }
 }

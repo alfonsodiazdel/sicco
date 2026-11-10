@@ -35,6 +35,8 @@ const sectores = ref<SectorFila[]>([])
 const partidas = ref<PartidaFila[]>([])
 const filas = ref<FilaAsignacion[]>([])
 const errores = ref<Record<string, string>>({})
+// Sectores que ya tiene la guía: si luego se culminaron, el mismo reparto se puede volver a guardar.
+const sectoresGuardados = ref<number[]>([])
 const cargando = ref(true)
 const guardando = ref(false)
 
@@ -57,9 +59,12 @@ const opcionesSector = computed(() =>
         .filter((s) => s.nivel_id === n.id)
         .map((s) => {
           const p = partidaDe(s)
+          const etiqueta = p ? `${s.nombre} · ${p.elemento} · ${p.resistencia_fc}` : s.nombre
+          // CU05: un sector culminado ya no recibe guías.
           return {
             id: s.id,
-            etiqueta: p ? `${s.nombre} · ${p.elemento} · ${p.resistencia_fc}` : s.nombre,
+            etiqueta: s.fecha_culminacion ? `${etiqueta} (culminado)` : etiqueta,
+            culminado: !!s.fecha_culminacion && !sectoresGuardados.value.includes(s.id),
           }
         }),
     }))
@@ -100,6 +105,7 @@ async function cargar() {
   niveles.value = n
   sectores.value = s
   partidas.value = p
+  sectoresGuardados.value = datos.asignaciones.map((a) => a.sector_id)
   filas.value = datos.asignaciones.map((a) => ({
     sector_id: a.sector_id,
     volumen_m3: a.volumen_m3,
@@ -240,6 +246,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
               option-group-children="sectores"
               option-label="etiqueta"
               option-value="id"
+              option-disabled="culminado"
               placeholder="Seleccione"
               :disabled="!puedeAsignar"
               :invalid="!!errores[`asignaciones.${i}.sector_id`]"

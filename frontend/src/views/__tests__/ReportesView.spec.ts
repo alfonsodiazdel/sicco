@@ -9,12 +9,13 @@ enableAutoUnmount(afterEach)
 beforeEach(() => setActivePinia(createPinia()))
 
 describe('ReportesView', () => {
-  it('ofrece la tarjeta «Reporte EAT» que lleva a /reportes/eat', async () => {
+  it('ofrece las tarjetas «Reporte EAT» y «Corte de mes»', async () => {
     const enMemoria = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/reportes', component: ReportesView },
         { path: '/reportes/eat', component: { template: '<div />' } },
+        { path: '/reportes/corte-mes', component: { template: '<div />' } },
       ],
     })
     await enMemoria.push('/reportes')
@@ -23,8 +24,8 @@ describe('ReportesView', () => {
     const enlaces = vista.findAll('a')
     expect(enlaces.map((a) => [a.text(), a.attributes('href')])).toEqual([
       [expect.stringContaining('Reporte EAT'), '/reportes/eat'],
+      [expect.stringContaining('Corte de mes'), '/reportes/corte-mes'],
     ])
-    expect(vista.text()).not.toContain('Corte de mes')
   })
 
   it('las rutas de reportes no caen en la vista provisional y piden proyecto donde corresponde', () => {

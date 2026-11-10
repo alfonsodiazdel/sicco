@@ -17,6 +17,8 @@ class SectorResource extends JsonResource
             // El cast decimal:2 da texto; el frontend opera con números.
             'volumen_presup_m3' => (float) $this->volumen_presup_m3,
             'volumen_vaciado_m3' => (float) $this->volumen_vaciado_m3,
+            // CU05: null si está abierto.
+            'fecha_culminacion' => $this->fecha_culminacion?->toDateString(),
         ];
     }
 }

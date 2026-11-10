@@ -5,7 +5,8 @@
 <title>Reporte EAT {{ $encabezado['proyecto'] }}</title>
 <style>
     @page { margin: 18mm 12mm; }
-    body { font-family: DejaVu Sans, sans-serif; font-size: 9pt; color: #222; }
+    /* 11 columnas en A4 horizontal: 8pt para que los montos no se partan. */
+    body { font-family: DejaVu Sans, sans-serif; font-size: 8pt; color: #222; }
     h1 { font-size: 14pt; margin: 0 0 6pt; }
     .encabezado { margin-bottom: 10pt; }
     .encabezado p { margin: 0 0 2pt; }
@@ -25,7 +26,7 @@
 <div class="encabezado">
     <p><strong>Proyecto:</strong> {{ $encabezado['proyecto'] }}</p>
     <p><strong>Fecha de corte:</strong> {{ $encabezado['fecha_corte'] }}</p>
-    <p>{{ $encabezado['igv'] }}</p>
+    <p>{{ $encabezado['igv'] }}. {{ $encabezado['cargos'] }}</p>
 </div>
 <table>
     <thead>

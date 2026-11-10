@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AlertaController;
 use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DesperdicioController;
 use App\Http\Controllers\Api\V1\DocumentoController;
 use App\Http\Controllers\Api\V1\FacturaController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
+use App\Http\Controllers\Api\V1\ReporteCorteMesController;
 use App\Http\Controllers\Api\V1\ReporteEatController;
 use App\Http\Controllers\Api\V1\ResistenciaController;
 use App\Http\Controllers\Api\V1\RolController;
@@ -79,6 +81,8 @@ Route::prefix('v1')->group(function () {
                 Route::put('niveles/{nivel}', [NivelController::class, 'update'])->whereNumber('nivel');
                 Route::post('niveles/{nivel}/sectores', [SectorController::class, 'store'])->whereNumber('nivel');
                 Route::put('sectores/{sector}', [SectorController::class, 'update'])->whereNumber('sector');
+                Route::post('sectores/{sector}/culminar', [SectorController::class, 'culminar'])->whereNumber('sector');
+                Route::post('sectores/{sector}/reabrir', [SectorController::class, 'reabrir'])->whereNumber('sector');
             });
 
             // CU06–CU08 Registrar guía de remisión: el almacenero, desde el celular, en sus proyectos.
@@ -150,7 +154,14 @@ Route::prefix('v1')->group(function () {
                 Route::get('proyectos/{proyecto}/reportes/eat', [ReporteEatController::class, 'show'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/reportes/eat/excel', [ReporteEatController::class, 'excel'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/reportes/eat/pdf', [ReporteEatController::class, 'pdf'])->whereNumber('proyecto');
+                // CU16 Reporte de corte a fin de mes, con los mismos roles y el mismo registro.
+                Route::get('proyectos/{proyecto}/reportes/corte-mes', [ReporteCorteMesController::class, 'show'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/corte-mes/excel', [ReporteCorteMesController::class, 'excel'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/corte-mes/pdf', [ReporteCorteMesController::class, 'pdf'])->whereNumber('proyecto');
             });
+
+            // CU17 Dashboard gerencial: Gerencia ve sus proyectos activos; el administrador, todos.
+            Route::get('dashboard', [DashboardController::class, 'show'])->middleware('rol:gerencia,administrador');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {

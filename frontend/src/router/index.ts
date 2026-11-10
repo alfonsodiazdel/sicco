@@ -18,6 +18,7 @@ declare module 'vue-router' {
 
 const implementados = [
   '/',
+  '/dashboard',
   '/usuarios',
   '/proyectos',
   '/partidas',
@@ -31,6 +32,7 @@ const implementados = [
   '/alertas',
   '/reportes',
   '/reportes/eat',
+  '/reportes/corte-mes',
 ]
 
 // Vistas de los módulos ya implementados, por ruta del menú.
@@ -69,6 +71,12 @@ const routes: RouteRecordRaw[] = [
         name: 'inicio',
         component: () => import('@/views/InicioView.vue'),
         meta: { titulo: 'Inicio' },
+      },
+      {
+        path: 'dashboard',
+        name: 'dashboard',
+        component: () => import('@/views/DashboardView.vue'),
+        meta: { roles: ['gerencia'], titulo: 'Dashboard' },
       },
       {
         path: 'usuarios',
@@ -156,6 +164,12 @@ const routes: RouteRecordRaw[] = [
         name: 'reporte-eat',
         component: () => import('@/views/reportes/ReporteEatView.vue'),
         meta: { roles: ['oficina_tecnica', 'gerencia'], titulo: 'Reporte EAT', porProyecto: true },
+      },
+      {
+        path: 'reportes/corte-mes',
+        name: 'reporte-corte-mes',
+        component: () => import('@/views/reportes/ReporteCorteMesView.vue'),
+        meta: { roles: ['oficina_tecnica', 'gerencia'], titulo: 'Corte de mes', porProyecto: true },
       },
       {
         path: 'documentos',

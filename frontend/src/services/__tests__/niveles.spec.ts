@@ -35,6 +35,7 @@ describe('niveles en memoria', () => {
       nombre: 'Columnas eje 1',
       volumen_presup_m3: 62,
       volumen_vaciado_m3: 0,
+      fecha_culminacion: null,
     })
   })
 })

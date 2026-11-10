@@ -20,6 +20,8 @@ const { toast, servicios } = vi.hoisted(() => ({
     reportes: {
       eat: vi.fn<ReportesServicio['eat']>(),
       descargarEat: vi.fn<ReportesServicio['descargarEat']>(),
+      corteMes: vi.fn<ReportesServicio['corteMes']>(),
+      descargarCorteMes: vi.fn<ReportesServicio['descargarCorteMes']>(),
     } satisfies ReportesServicio,
   },
 }))
@@ -42,22 +44,30 @@ vi.mock('@/services/reportes', () => ({
   },
 }))
 
-// Orden de las columnas: presup. m³ / S/ · consumido m³ / S/ · saldo m³ / S/ · EAT m³ / S/.
+type Monto = number | null
+
+// En el orden de MontosEat: presup. m³ / S/ · consumido m³ / S/ · saldo S/ · real m³ / S/ ·
+// proyectado m³ / S/ · EAT m³ / S/ · variación S/. Los nulos son los de las filas aparte.
 const m = (
-  valores: [number, number, number | null, number, number | null, number, number | null, number],
+  valores: [Monto, Monto, Monto, Monto, Monto, Monto, Monto, Monto, Monto, Monto, Monto, Monto],
   sobrecosto: boolean,
 ): MontosEat => {
-  const [presupuesto_m3, presupuesto_soles, consumido_m3, consumido_soles] = valores
-  const [, , , , saldo_m3, saldo_soles, eat_m3, eat_soles] = valores
+  const claves = [
+    'presupuesto_m3',
+    'presupuesto_soles',
+    'consumido_m3',
+    'consumido_soles',
+    'saldo_soles',
+    'real_m3',
+    'real_soles',
+    'proyectado_m3',
+    'proyectado_soles',
+    'eat_m3',
+    'eat_soles',
+    'variacion_soles',
+  ] as const
   return {
-    presupuesto_m3,
-    presupuesto_soles,
-    consumido_m3: consumido_m3 as number,
-    consumido_soles,
-    saldo_m3: saldo_m3 as number,
-    saldo_soles,
-    eat_m3: eat_m3 as number,
-    eat_soles,
+    ...(Object.fromEntries(claves.map((c, i) => [c, valores[i]])) as Omit<MontosEat, 'sobrecosto'>),
     sobrecosto,
   }
 }
@@ -71,36 +81,36 @@ const e2: ReporteEat = {
       grupo_id: 1,
       nombre: 'Estructuras',
       filas: [
-        // 7 m³ × 310 = 2,170; EAT = 2,170 + 3 × 310 = 3,100 < 3,200.
+        // S1 abierto: proyecta 11 × 310 = 3,410 < 3,520.
         {
           partida_id: 1,
           item: '01.01',
           etiqueta: "Columnas · f'c 210",
-          ...m([10, 3200, 7, 2170, 3, 1030, 10, 3100], false),
+          ...m([11, 3520, 7, 2170, 1350, 0, 0, 11, 3410, 11, 3410, 110], false),
         },
-        // Superó lo presupuestado: EAT = consumido = 9 × 360 = 3,240 > 2,800.
+        // S2 culminado: real 9 × 360 = 3,240 > 3,080.
         {
           partida_id: 2,
           item: '01.02',
           etiqueta: "Vigas · f'c 280",
-          ...m([8, 2800, 9, 3240, 0, -440, 9, 3240], true),
+          ...m([8.8, 3080, 9, 3240, -160, 9, 3240, 0, 0, 9, 3240, -160], true),
         },
       ],
-      subtotal: m([18, 6000, 16, 5410, 3, 590, 19, 6340], true),
+      subtotal: m([19.8, 6600, 16, 5410, 1190, 9, 3240, 11, 3410, 20, 6650, -50], true),
     },
     {
       grupo_id: 2,
       nombre: 'Losas',
       filas: [
-        // 3 × 310 = 930; EAT = 930 + 2 × 310 = 1,550 > 1,300.
+        // S3 abierto: proyecta 5.5 × 310 = 1,705 > 1,430.
         {
           partida_id: 3,
           item: '02.01',
           etiqueta: "Losa aligerada · f'c 210",
-          ...m([5, 1300, 3, 930, 2, 370, 5, 1550], true),
+          ...m([5.5, 1430, 3, 930, 500, 0, 0, 5.5, 1705, 5.5, 1705, -275], true),
         },
       ],
-      subtotal: m([5, 1300, 3, 930, 2, 370, 5, 1550], true),
+      subtotal: m([5.5, 1430, 3, 930, 500, 0, 0, 5.5, 1705, 5.5, 1705, -275], true),
     },
   ],
   filas_aparte: [
@@ -108,12 +118,16 @@ const e2: ReporteEat = {
       tipo: 'guias_sin_sector',
       concepto: 'Guías sin sector',
       aviso: 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.',
-      ...m([0, 0, 1, 310, 0, -310, 1, 310], false),
+      ...m([0, 0, 1, 310, null, null, null, null, null, null, null, null], false),
     },
-    { tipo: 'cargo', concepto: 'Bombeo', ...m([0, 0, null, 150, null, -150, null, 150], false) },
+    {
+      tipo: 'cargo',
+      concepto: 'Bombeo',
+      ...m([0, 0, null, 150, -150, null, 150, null, 0, null, 150, -150], false),
+    },
   ],
-  // La guía sin sector no suma: 6,490 = 5,410 + 930 + 150; 8,040 = 6,340 + 1,550 + 150.
-  total: m([23, 7300, 19, 6490, 5, 810, 24, 8040], true),
+  // La guía sin sector no suma: EAT 6,650 + 1,705 + 150 = 8,505.
+  total: m([25.3, 8030, 19, 6490, 1540, 9, 3390, 16.5, 5115, 25.5, 8505, -475], true),
 }
 
 const sinDatos = { reporte: null, mensaje: 'No hay información para la fecha seleccionada' }
@@ -215,10 +229,12 @@ describe('ReporteEatView (CU15)', () => {
       'Presup. S/',
       'Consumido m³',
       'Consumido S/',
-      'Saldo m³',
       'Saldo S/',
-      'EAT m³',
+      'Real culminado S/',
+      'Proyectado m³',
+      'Proyectado S/',
       'EAT S/',
+      'Variación S/',
     ])
     expect(vista.findAll('[data-grupo-nombre]').map((g) => g.text())).toEqual([
       'Estructuras',
@@ -228,38 +244,51 @@ describe('ReporteEatView (CU15)', () => {
     expect(filas[0]![0]).toContain("Columnas · f'c 210")
     expect(filas[0]![0]).toContain('01.01')
     expect(filas[0]!.slice(1)).toEqual([
-      '10.00',
-      'S/ 3,200.00',
+      '11.00',
+      'S/ 3,520.00',
       '7.00',
       'S/ 2,170.00',
-      '3.00',
-      'S/ 1,030.00',
-      '10.00',
-      'S/ 3,100.00',
+      'S/ 1,350.00',
+      'S/ 0.00',
+      '11.00',
+      'S/ 3,410.00',
+      'S/ 3,410.00',
+      'S/ 110.00',
     ])
-    expect(filas[1]!.slice(5, 7)).toEqual(['0.00', 'S/ -440.00'])
+    // Vigas: culminado, todo real; variación −160.
+    expect(filas[1]!.slice(6)).toEqual([
+      'S/ 3,240.00',
+      '0.00',
+      'S/ 0.00',
+      'S/ 3,240.00',
+      'S/ -160.00',
+    ])
     expect(celdas(vista, '[data-subtotal]')).toEqual([
       [
         'Subtotal Estructuras',
-        '18.00',
-        'S/ 6,000.00',
+        '19.80',
+        'S/ 6,600.00',
         '16.00',
         'S/ 5,410.00',
-        '3.00',
-        'S/ 590.00',
-        '19.00',
-        'S/ 6,340.00',
+        'S/ 1,190.00',
+        'S/ 3,240.00',
+        '11.00',
+        'S/ 3,410.00',
+        'S/ 6,650.00',
+        'S/ -50.00',
       ],
       [
         'Subtotal Losas',
-        '5.00',
-        'S/ 1,300.00',
+        '5.50',
+        'S/ 1,430.00',
         '3.00',
         'S/ 930.00',
-        '2.00',
-        'S/ 370.00',
-        '5.00',
-        'S/ 1,550.00',
+        'S/ 500.00',
+        'S/ 0.00',
+        '5.50',
+        'S/ 1,705.00',
+        'S/ 1,705.00',
+        'S/ -275.00',
       ],
     ])
     expect(celdas(vista, '[data-fila-aparte]')).toEqual([
@@ -269,12 +298,26 @@ describe('ReporteEatView (CU15)', () => {
         'S/ 0.00',
         '1.00',
         'S/ 310.00',
-        '0.00',
-        'S/ -310.00',
-        '1.00',
-        'S/ 310.00',
+        '—',
+        '—',
+        '—',
+        '—',
+        '—',
+        '—',
       ],
-      ['Bombeo', '0.00', 'S/ 0.00', '—', 'S/ 150.00', '—', 'S/ -150.00', '—', 'S/ 150.00'],
+      [
+        'Bombeo',
+        '0.00',
+        'S/ 0.00',
+        '—',
+        'S/ 150.00',
+        'S/ -150.00',
+        'S/ 150.00',
+        '—',
+        'S/ 0.00',
+        'S/ 150.00',
+        'S/ -150.00',
+      ],
     ])
     expect(vista.findAll('[data-aviso]').map((a) => a.text())).toEqual([
       'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.',
@@ -283,14 +326,16 @@ describe('ReporteEatView (CU15)', () => {
     expect(celdas(vista, 'tfoot tr')).toEqual([
       [
         'Total',
-        '23.00',
-        'S/ 7,300.00',
+        '25.30',
+        'S/ 8,030.00',
         '19.00',
         'S/ 6,490.00',
-        '5.00',
-        'S/ 810.00',
-        '24.00',
-        'S/ 8,040.00',
+        'S/ 1,540.00',
+        'S/ 3,390.00',
+        '16.50',
+        'S/ 5,115.00',
+        'S/ 8,505.00',
+        'S/ -475.00',
       ],
     ])
   })
@@ -426,7 +471,7 @@ describe('ReporteEatView (CU15)', () => {
       proyecto: { id: 2, codigo: 'PRY-002', nombre: 'Torre Central' },
       grupos: [],
       filas_aparte: [],
-      total: m([1, 100, 1, 90, 0, 10, 1, 90], false),
+      total: m([1, 100, 1, 90, 10, 1, 90, 0, 0, 1, 90, 10], false),
     }
 
     // Primera consulta en espera; se cambia de proyecto y se vuelve a generar.

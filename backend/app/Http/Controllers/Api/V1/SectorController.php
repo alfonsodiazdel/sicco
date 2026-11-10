@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CulminarSectorRequest;
 use App\Http\Requests\SectorRequest;
 use App\Http\Resources\SectorResource;
 use App\Models\Nivel;
@@ -45,9 +46,52 @@ class SectorController extends Controller
     {
         $this->autorizarProyecto($request, Nivel::findOrFail($sector->nivel_id)->proyecto);
 
+        // Su volumen presupuestado ya es la base del costo real del reporte EAT (CU15).
+        if ($sector->culminado()) {
+            throw ValidationException::withMessages(['sector' => __('sicco.sectores.culminado')]);
+        }
+
         $this->guardar($request, fn () => tap($sector)->update($request->validated()), $sector);
 
         return SectorResource::make($sector);
+    }
+
+    /** CU05: el sector ya no recibe concreto. Lo que se le vació pasa a ser costo real en el EAT. */
+    public function culminar(CulminarSectorRequest $request, Sector $sector): JsonResponse
+    {
+        // El acceso al proyecto lo revisa CulminarSectorRequest antes de validar.
+        $actualizado = DB::transaction(function () use ($request, $sector) {
+            $sector = Sector::whereKey($sector->id)->lockForUpdate()->firstOrFail();
+            if ($sector->culminado()) {
+                throw ValidationException::withMessages(['sector' => __('sicco.sectores.ya_culminado')]);
+            }
+            $sector->forceFill([
+                'fecha_culminacion' => $request->validated('fecha_culminacion'),
+                'culminado_por' => $request->user()->id,
+            ])->save();
+
+            return $sector;
+        });
+
+        return SectorResource::make($actualizado)->additional(['message' => __('sicco.sectores.culminado_ok')])->response();
+    }
+
+    /** CU05: para corregir sus guías o su volumen; vuelve a proyectarse en el EAT. */
+    public function reabrir(Request $request, Sector $sector): JsonResponse
+    {
+        $this->autorizarProyecto($request, Nivel::findOrFail($sector->nivel_id)->proyecto);
+
+        $actualizado = DB::transaction(function () use ($sector) {
+            $sector = Sector::whereKey($sector->id)->lockForUpdate()->firstOrFail();
+            if (! $sector->culminado()) {
+                throw ValidationException::withMessages(['sector' => __('sicco.sectores.no_culminado')]);
+            }
+            $sector->forceFill(['fecha_culminacion' => null, 'culminado_por' => null])->save();
+
+            return $sector;
+        });
+
+        return SectorResource::make($actualizado)->additional(['message' => __('sicco.sectores.reabierto_ok')])->response();
     }
 
     /**

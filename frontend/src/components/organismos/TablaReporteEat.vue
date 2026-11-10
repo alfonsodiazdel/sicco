@@ -1,23 +1,87 @@
 <script setup lang="ts">
+import Tooltip from 'primevue/tooltip'
 import { decimales, soles } from '@/services/presupuesto'
 import type { FilaAparteEat, MontosEat, ReporteEat } from '@/types/reportes'
 
 defineProps<{ reporte: ReporteEat }>()
 
+// El `title` nativo tarda en aparecer y a veces no aparece; el de PrimeVue sale al pasar el mouse
+// y al llegar con el teclado. Igual que en TablaPresupuesto.
+const vTooltip = Tooltip
+
 type Campo = Exclude<keyof MontosEat, 'sobrecosto'>
 
-const columnas: { campo: Campo; encabezado: string; enSoles: boolean }[] = [
-  { campo: 'presupuesto_m3', encabezado: 'Presup. m³', enSoles: false },
-  { campo: 'presupuesto_soles', encabezado: 'Presup. S/', enSoles: true },
-  { campo: 'consumido_m3', encabezado: 'Consumido m³', enSoles: false },
-  { campo: 'consumido_soles', encabezado: 'Consumido S/', enSoles: true },
-  { campo: 'saldo_m3', encabezado: 'Saldo m³', enSoles: false },
-  { campo: 'saldo_soles', encabezado: 'Saldo S/', enSoles: true },
-  { campo: 'eat_m3', encabezado: 'EAT m³', enSoles: false },
-  { campo: 'eat_soles', encabezado: 'EAT S/', enSoles: true },
+const ayudaElemento = "Partida del presupuesto: elemento y f'c. Debajo, su ítem."
+
+// Las mismas columnas que el Excel y el PDF. La variación va en rojo cuando hay sobrecosto.
+const columnas: { campo: Campo; encabezado: string; enSoles: boolean; ayuda: string }[] = [
+  {
+    campo: 'presupuesto_m3',
+    encabezado: 'Presup. m³',
+    enSoles: false,
+    ayuda: 'Metrado de la partida con su desperdicio: metrado × (1 + desperdicio).',
+  },
+  {
+    campo: 'presupuesto_soles',
+    encabezado: 'Presup. S/',
+    enSoles: true,
+    ayuda:
+      'Presupuesto meta: presup. m³ × precio unitario de la partida. Es el mismo total del presupuesto.',
+  },
+  {
+    campo: 'consumido_m3',
+    encabezado: 'Consumido m³',
+    enSoles: false,
+    ayuda:
+      'Concreto de las guías hasta la fecha de corte asignado a los sectores del elemento, culminados o abiertos.',
+  },
+  {
+    campo: 'consumido_soles',
+    encabezado: 'Consumido S/',
+    enSoles: true,
+    ayuda:
+      "Cada guía al precio de su factura; sin factura, al último precio facturado de su f'c o, si no hay, al de la partida.",
+  },
+  {
+    campo: 'saldo_soles',
+    encabezado: 'Saldo S/',
+    enSoles: true,
+    ayuda: 'Lo que queda del presupuesto a la fecha: presup. S/ − consumido S/.',
+  },
+  {
+    campo: 'real_soles',
+    encabezado: 'Real culminado S/',
+    enSoles: true,
+    ayuda: 'Costo de lo vaciado en los sectores culminados hasta la fecha de corte. Ya no cambia.',
+  },
+  {
+    campo: 'proyectado_m3',
+    encabezado: 'Proyectado m³',
+    enSoles: false,
+    ayuda: 'Lo que falta vaciar, con desperdicio: sectores abiertos y metrado aún sin sector.',
+  },
+  {
+    campo: 'proyectado_soles',
+    encabezado: 'Proyectado S/',
+    enSoles: true,
+    ayuda:
+      "Proyectado m³ al precio vigente: el último facturado de su f'c o, si no hay, el de la partida.",
+  },
+  {
+    campo: 'eat_soles',
+    encabezado: 'EAT S/',
+    enSoles: true,
+    ayuda: 'Costo estimado al término de la obra: real culminado + proyectado.',
+  },
+  {
+    campo: 'variacion_soles',
+    encabezado: 'Variación S/',
+    enSoles: true,
+    ayuda: 'Presupuesto − EAT. Negativa (en rojo) es sobrecosto; positiva, ahorro.',
+  },
 ]
 
-// Los cargos de factura no tienen volumen: sus m³ llegan nulos.
+// Los cargos no tienen volumen y las guías sin sector no tienen EAT: esos montos llegan nulos.
 function monto(fila: MontosEat | FilaAparteEat, columna: (typeof columnas)[number]) {
   const valor = fila[columna.campo]
   if (valor === null) return '—'
@@ -34,14 +98,30 @@ const celda = 'px-3 py-2 text-right font-mono whitespace-nowrap tabular-nums'
     <table class="w-full border-collapse text-xs sm:text-sm">
       <thead>
         <tr class="border-b border-surface-200 bg-white text-surface-700">
-          <th scope="col" class="px-3 py-2.5 text-left font-semibold">Elemento</th>
+          <th scope="col" class="px-3 py-2.5 text-left font-semibold">
+            <abbr
+              v-tooltip.top="ayudaElemento"
+              :aria-label="`Elemento: ${ayudaElemento}`"
+              tabindex="0"
+              class="cursor-help underline decoration-dotted underline-offset-4"
+              data-ayuda
+              >Elemento</abbr
+            >
+          </th>
           <th
             v-for="columna in columnas"
             :key="columna.campo"
             scope="col"
             class="px-3 py-2.5 text-right font-semibold whitespace-nowrap"
           >
-            {{ columna.encabezado }}
+            <abbr
+              v-tooltip.top="columna.ayuda"
+              :aria-label="`${columna.encabezado}: ${columna.ayuda}`"
+              tabindex="0"
+              class="cursor-help underline decoration-dotted underline-offset-4"
+              data-ayuda
+              >{{ columna.encabezado }}</abbr
+            >
           </th>
         </tr>
       </thead>

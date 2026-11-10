@@ -139,7 +139,14 @@ describe('DesperdicioView (CU13)', () => {
     await asentar()
     expect(encabezados()[0]).toBe('Nivel')
     expect(encabezados()).not.toContain('Sector')
-    expect(vista.find('button').exists()).toBe(false)
+    // La tabla es de solo lectura: sin botones de acción por fila.
+    expect(vista.find('table button').exists()).toBe(false)
+  })
+
+  it('a Gerencia le ofrece generar el reporte de corte de mes (CU16)', async () => {
+    const vista = await montar(conVaciados)
+
+    expect(vista.find('[data-corte-mes]').exists()).toBe(true)
   })
 
   it('distingue en el gráfico los sectores de igual nombre en distintos niveles', async () => {

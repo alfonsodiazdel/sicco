@@ -8,6 +8,12 @@ const reportes = [
     icono: 'pi pi-chart-line',
     ruta: '/reportes/eat',
   },
+  {
+    titulo: 'Corte de mes',
+    descripcion: 'Recibido, vaciado, facturado y pendiente de facturar al cierre de un mes.',
+    icono: 'pi pi-calendar',
+    ruta: '/reportes/corte-mes',
+  },
 ]
 </script>
 

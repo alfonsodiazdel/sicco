@@ -1,7 +1,13 @@
 <?php
 
+use App\Enums\EstadoAsignacion;
+use App\Enums\OrigenGuia;
 use App\Enums\Rol;
+use App\Models\Asignacion;
+use App\Models\Factura;
 use App\Models\GrupoPartida;
+use App\Models\GuiaRemision;
+use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\Resistencia;
 use App\Models\User;
@@ -64,4 +70,48 @@ function asignadoA(Proyecto $proyecto, Rol $rol = Rol::OficinaTecnica): User
     $proyecto->usuarios()->attach($usuario->id);
 
     return $usuario;
+}
+
+// Guías y facturas con fecha, para los reportes (CU16) y el dashboard (CU17).
+
+/** @param list<array{0: Resistencia, 1: float}> $lineas */
+function facturaCorte(Proyecto $proyecto, string $numero, string $fecha, array $lineas, float $volumen, float $subtotal, array $cargos = []): Factura
+{
+    $factura = Factura::create([
+        'proyecto_id' => $proyecto->id, 'proveedor_id' => Proveedor::factory()->create()->id,
+        'numero' => $numero, 'fecha' => $fecha, 'volumen_m3' => $volumen,
+        'subtotal' => $subtotal, 'igv' => round($subtotal * 0.18, 2), 'total' => round($subtotal * 1.18, 2),
+        'archivo_ruta' => "facturas/{$proyecto->id}/f.pdf", 'registrado_por' => conRol(Rol::OficinaTecnica)->id,
+    ]);
+    foreach ($lineas as [$resistencia, $precio]) {
+        $factura->lineas()->create(['resistencia_id' => $resistencia->id, 'volumen_m3' => 10, 'precio_unitario' => $precio, 'importe' => 10 * $precio]);
+    }
+    foreach ($cargos as $descripcion => $importe) {
+        $factura->cargos()->create(['descripcion' => $descripcion, 'importe' => $importe]);
+    }
+
+    return $factura;
+}
+
+/** @param array<int, float> $reparto volumen por id de sector */
+function guiaCorte(Proyecto $proyecto, string $numero, string $fecha, Resistencia $r, float $volumen, ?Factura $factura, array $reparto = []): GuiaRemision
+{
+    $usuario = conRol(Rol::Almacenero);
+    $asignado = array_sum($reparto);
+    $guia = GuiaRemision::create([
+        'proyecto_id' => $proyecto->id, 'proveedor_id' => Proveedor::factory()->create(['razon_social' => "Concretera {$numero}"])->id,
+        'numero' => $numero, 'fecha' => $fecha, 'resistencia_id' => $r->id, 'volumen_m3' => $volumen,
+        'foto_ruta' => "guias/{$proyecto->id}/foto.jpg",
+        'estado_asignacion' => match (true) {
+            $asignado <= 0 => EstadoAsignacion::SinSector,
+            $asignado < $volumen => EstadoAsignacion::Parcial,
+            default => EstadoAsignacion::Asignada,
+        },
+        'factura_id' => $factura?->id, 'origen' => OrigenGuia::Manual, 'registrado_por' => $usuario->id,
+    ]);
+    foreach ($reparto as $sectorId => $m3) {
+        Asignacion::create(['guia_id' => $guia->id, 'sector_id' => $sectorId, 'volumen_m3' => $m3, 'registrado_por' => $usuario->id]);
+    }
+
+    return $guia;
 }
