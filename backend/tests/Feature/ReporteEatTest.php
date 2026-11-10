@@ -832,6 +832,16 @@ function escenarioSoloGuiaSinSector(): array
     return ['proyecto' => $proyecto, 'usuario' => asignadoA($proyecto, Rol::OficinaTecnica)];
 }
 
+/** El nodo como elemento; si la consulta no lo encontró, la prueba falla diciendo qué faltaba. */
+function elementoEat(DOMNode|false|null $nodo, string $que): DOMElement
+{
+    if (! $nodo instanceof DOMElement) {
+        throw new UnexpectedValueException("No se encontró {$que}.");
+    }
+
+    return $nodo;
+}
+
 /** Negrita y rojo de la celda en la columna dada, en la fila cuya primera celda dice $texto. */
 function fuenteExcelEat(string $contenido, string $texto, string $columna): array
 {
@@ -848,14 +858,15 @@ function fuenteExcelEat(string $contenido, string $texto, string $columna): arra
 
     $xh = new DOMXPath($hoja);
     $xh->registerNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-    $fila = $xh->query("//m:row[m:c[1]//m:t[. = '{$texto}']]")->item(0);
-    $celda = $xh->query("m:c[@r = '{$columna}{$fila->getAttribute('r')}']", $fila)->item(0);
+    $fila = elementoEat($xh->query("//m:row[m:c[1]//m:t[. = '{$texto}']]")->item(0), "la fila «{$texto}»");
+    $celda = elementoEat($xh->query("m:c[@r = '{$columna}{$fila->getAttribute('r')}']", $fila)->item(0), "la celda {$columna} de «{$texto}»");
 
     $xe = new DOMXPath($estilos);
     $xe->registerNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-    $xf = $xe->query('//m:cellXfs/m:xf')->item((int) $celda->getAttribute('s'));
-    $fuente = $xe->query('//m:fonts/m:font')->item((int) $xf->getAttribute('fontId'));
-    $color = $xe->query('m:color', $fuente)->item(0)?->getAttribute('rgb') ?? '';
+    $xf = elementoEat($xe->query('//m:cellXfs/m:xf')->item((int) $celda->getAttribute('s')), 'el estilo de la celda');
+    $fuente = elementoEat($xe->query('//m:fonts/m:font')->item((int) $xf->getAttribute('fontId')), 'la fuente de la celda');
+    $color = $xe->query('m:color', $fuente)->item(0);
+    $color = $color instanceof DOMElement ? $color->getAttribute('rgb') : '';
 
     return ['negrita' => $xe->query('m:b', $fuente)->length > 0, 'rojo' => str_ends_with(strtoupper($color), 'FF0000')];
 }
@@ -868,6 +879,7 @@ function filasHtmlEat(string $html): array
 
     $filas = [];
     foreach ((new DOMXPath($documento))->query('//tbody/tr') as $tr) {
+        $tr = elementoEat($tr, 'la fila de la tabla');
         $celdas = [];
         foreach ($tr->getElementsByTagName('td') as $td) {
             $celdas[] = [trim($td->textContent), $td->getAttribute('class')];
