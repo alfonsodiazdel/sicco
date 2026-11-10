@@ -8,6 +8,8 @@ use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\User;
+use App\Services\Documentos\ArmadorZip;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 
@@ -51,10 +53,11 @@ function facturaParaExportar(Proyecto $proyecto, Proveedor $proveedor, string $n
     ]);
 }
 
-/** Las entradas del ZIP descargado, con su contenido. Borra el temporal: la prueba no lo envía. */
-function entradasDelZip(TestResponse $respuesta): array
+/** Las entradas del ZIP descargado, con su contenido. */
+function entradasDelZip(TestResponse|string $respuesta): array
 {
-    $ruta = $respuesta->baseResponse->getFile()->getPathname();
+    $ruta = tempnam(sys_get_temp_dir(), 'prueba');
+    file_put_contents($ruta, is_string($respuesta) ? $respuesta : $respuesta->streamedContent());
     $zip = new ZipArchive;
     expect($zip->open($ruta))->toBeTrue();
     $entradas = [];
@@ -207,12 +210,12 @@ describe('límite de exportaciones en ZIP (CU18)', function () {
         $usuario = asignadoA($proyecto);
 
         for ($i = 0; $i < 5; $i++) {
-            $this->actingAs($usuario)->get($url)->assertOk();
+            $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
         }
         $this->actingAs($usuario)->get($url)->assertStatus(429);
 
         // El cupo es de cada usuario: otro usuario del mismo proyecto sigue exportando.
-        $this->actingAs(asignadoA($proyecto))->get($url)->assertOk();
+        $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
     });
 
     it('gastar el cupo del reporte EAT no bloquea la exportación', function () {
@@ -226,7 +229,7 @@ describe('límite de exportaciones en ZIP (CU18)', function () {
         $this->actingAs($usuario)->getJson($reporte)->assertStatus(422);
         $this->actingAs($usuario)->getJson($reporte)->assertStatus(429);
 
-        $this->actingAs($usuario)->get($url)->assertOk();
+        $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
     });
 
     it('usa 5 por minuto cuando EXPORTACIONES_POR_MINUTO está vacía o no es un número válido', function (string $valor) {
@@ -240,8 +243,172 @@ describe('límite de exportaciones en ZIP (CU18)', function () {
         $usuario = asignadoA($proyecto);
 
         for ($i = 0; $i < 5; $i++) {
-            $this->actingAs($usuario)->get($url)->assertOk();
+            $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
         }
         $this->actingAs($usuario)->get($url)->assertStatus(429);
+    })->with(['vacía' => '', 'texto' => 'cinco', 'cero' => '0']);
+});
+
+describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', function () {
+    it('arma el ZIP sin escribir archivos temporales', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $antes = scandir(sys_get_temp_dir());
+
+        $contenido = $this->actingAs(asignadoA($proyecto))->get($url)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/zip')
+            ->assertHeader('X-Accel-Buffering', 'no')
+            ->streamedContent();
+
+        expect(scandir(sys_get_temp_dir()))->toBe($antes)
+            ->and(array_values(entradasDelZip($contenido)))->toContain('foto-a');
+    });
+
+    it('acepta un ZIP que pesa justo el máximo y rechaza con 422 uno que lo pasa, antes de enviar nada', function () {
+        config(['services.exportaciones.max_mb' => 1]);
+        $proyecto = obra();
+        $proveedor = Proveedor::factory()->create();
+        Storage::put("guias/{$proyecto->id}/a.jpg", str_repeat('a', 512 * 1024));
+        Storage::put("guias/{$proyecto->id}/b.jpg", str_repeat('b', 512 * 1024));
+        guiaParaExportar($proyecto, $proveedor, 'T001-00000101', "guias/{$proyecto->id}/a.jpg");
+        guiaParaExportar($proyecto, $proveedor, 'T001-00000102', "guias/{$proyecto->id}/b.jpg");
+        $url = "/api/v1/proyectos/{$proyecto->id}/documentos/guias/zip?desde=2026-11-01&hasta=2026-11-30";
+        $usuario = asignadoA($proyecto);
+
+        expect($this->actingAs($usuario)->get($url)->assertOk()->streamedContent())->toStartWith('PK');
+
+        Storage::put("guias/{$proyecto->id}/b.jpg", str_repeat('b', 512 * 1024 + 1));
+        $this->actingAs($usuario)->get($url)
+            ->assertStatus(422)
+            ->assertHeader('Content-Type', 'application/json')
+            ->assertExactJson([
+                'message' => 'El ZIP pesaría 2 MB y el máximo es 1 MB. Acote los filtros o la selección, por ejemplo con un rango de fechas menor.',
+                'code' => 'demasiado_peso',
+            ]);
+        // El rechazo no ocupa un cupo.
+        expect(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+    });
+
+    it('responde 429 cuando las 2 exportaciones simultáneas están en curso y deja pasar al liberarse una', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $usuario = asignadoA($proyecto);
+        $primera = Cache::lock('exportar-zip:0', 300);
+        $segunda = Cache::lock('exportar-zip:1', 300);
+        expect($primera->get())->toBeTrue()->and($segunda->get())->toBeTrue();
+
+        $this->actingAs($usuario)->get($url)
+            ->assertStatus(429)
+            ->assertExactJson([
+                'message' => 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.',
+                'code' => 'sin_cupo',
+            ]);
+
+        $segunda->release();
+        $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
+    });
+
+    it('libera el cupo aunque el armado del ZIP falle a la mitad', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        app()->bind(ArmadorZip::class, fn () => new class extends ArmadorZip
+        {
+            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            {
+                echo 'PK';
+                throw new RuntimeException('se cayó el disco');
+            }
+        });
+        $respuesta = $this->actingAs(asignadoA($proyecto))->get($url)->assertOk();
+
+        // streamedContent() deja abierto su buffer de salida si el envío lanza una excepción.
+        $nivel = ob_get_level();
+        try {
+            $respuesta->streamedContent();
+            $error = null;
+        } catch (RuntimeException $e) {
+            $error = $e->getMessage();
+        } finally {
+            while (ob_get_level() > $nivel) {
+                ob_end_clean();
+            }
+        }
+
+        expect($error)->toBe('se cayó el disco')
+            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+    });
+
+    it('si el proceso muere sin liberar el cupo, este vence a los 300 segundos sin avanzar', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $usuario = asignadoA($proyecto);
+        // Sin leer la respuesta el ZIP nunca se envía: es como un proceso que murió con el cupo tomado.
+        $this->actingAs($usuario)->get($url)->assertOk();
+        $this->actingAs($usuario)->get($url)->assertOk();
+        $this->actingAs($usuario)->get($url)->assertStatus(429);
+
+        $this->travel(299)->seconds();
+        $this->actingAs($usuario)->get($url)->assertStatus(429);
+        $this->travel(2)->seconds();
+        $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
+    });
+
+    it('una descarga lenta conserva el cupo mientras sigue enviando archivos', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $tomado = new ArrayObject;
+        $prueba = $this;
+        app()->bind(ArmadorZip::class, fn () => new class($prueba, $tomado) extends ArmadorZip
+        {
+            public function __construct(private $prueba, private ArrayObject $tomado) {}
+
+            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            {
+                foreach ([1, 2, 3] as $archivo) {
+                    $this->prueba->travel(200)->seconds();
+                    $alAvanzar();
+                    $this->tomado[] = ! Cache::lock('exportar-zip:0', 1)->get();
+                }
+            }
+        });
+
+        $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
+
+        // 600 s en total, más que los 300 del plazo, y el cupo nunca quedó libre a mitad.
+        expect($tomado->getArrayCopy())->toBe([true, true, true])
+            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+    });
+
+    it('lista como faltante un archivo que llega incompleto, y el ZIP sigue siendo válido', function () {
+        Storage::put('guias/a.jpg', 'foto-a');
+        Storage::put('guias/b.jpg', 'foto-b');
+        $salida = fopen('php://memory', 'w+b');
+
+        (new ArmadorZip)->transmitir([
+            ['ruc' => '20100000001', 'numero' => 'T001-1', 'ruta' => 'guias/a.jpg', 'bytes' => 6],
+            // Pesaba 100 bytes al medirlo y ahora se leen 6: la lectura se cortó.
+            ['ruc' => '20100000001', 'numero' => 'T001-2', 'ruta' => 'guias/b.jpg', 'bytes' => 100],
+            ['ruc' => '20100000001', 'numero' => 'T001-3', 'ruta' => 'guias/c.jpg', 'bytes' => null],
+        ], ['Exportación de prueba'], salida: $salida);
+
+        rewind($salida);
+        $entradas = entradasDelZip(stream_get_contents($salida));
+        expect($entradas['20100000001-T001-1.jpg'])->toBe('foto-a')
+            ->and($entradas['manifest.txt'])
+            ->toContain("Documentos encontrados: 3\n")
+            ->toContain("Incluidos (1):\n- 20100000001-T001-1.jpg\n")
+            ->toContain("Faltantes (2):\n- 20100000001-T001-2: incompleto (6 de 100 bytes) en 20100000001-T001-2.jpg\n- 20100000001-T001-3: no está en el disco\n");
+    });
+
+    it('usa 500 MB, 2 simultáneas y 300 segundos cuando sus variables están vacías o no son números válidos', function (string $valor) {
+        $variables = ['EXPORTACION_ZIP_MAX_MB', 'EXPORTACIONES_SIMULTANEAS', 'EXPORTACION_ZIP_LOCK_SEGUNDOS'];
+        foreach ($variables as $variable) {
+            $_ENV[$variable] = $_SERVER[$variable] = $valor;
+        }
+        try {
+            $exportaciones = (require config_path('services.php'))['exportaciones'];
+        } finally {
+            foreach ($variables as $variable) {
+                unset($_ENV[$variable], $_SERVER[$variable]);
+            }
+        }
+
+        expect($exportaciones)->toMatchArray(['max_mb' => 500, 'simultaneas' => 2, 'candado_segundos' => 300]);
     })->with(['vacía' => '', 'texto' => 'cinco', 'cero' => '0']);
 });

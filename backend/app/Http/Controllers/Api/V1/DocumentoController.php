@@ -9,11 +9,13 @@ use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Services\Documentos\ArmadorZip;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Illuminate\Support\Facades\Cache;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * CU18 Exportar documentos: lista las guías o facturas del proyecto con filtros y descarga en un
@@ -52,8 +54,11 @@ class DocumentoController extends Controller
             ])]);
     }
 
-    /** El tope se revisa con un conteo, antes de bajar ningún archivo. */
-    public function zip(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo, ArmadorZip $armador): BinaryFileResponse
+    /**
+     * Los topes de cantidad y de peso y el cupo se revisan antes del primer byte: una vez que el
+     * ZIP empieza a salir ya no se puede responder con un error.
+     */
+    public function zip(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo, ArmadorZip $armador): StreamedResponse
     {
         $consulta = $this->consulta($request, $proyecto, $tipo);
         $total = $consulta->count();
@@ -64,18 +69,56 @@ class DocumentoController extends Controller
             self::rechazar('demasiados_documentos', 'Se pueden exportar hasta '.self::TOPE." documentos a la vez y hay {$total}. Acote los filtros o la selección.");
         }
 
-        $ruta = $armador->armar(
-            $consulta->lazy()->map(fn (GuiaRemision|Factura $d) => [
-                'ruc' => $d->proveedor->ruc,
-                'numero' => $d->numero,
-                'ruta' => $d instanceof GuiaRemision ? $d->foto_ruta : $d->archivo_ruta,
-            ]),
-            $this->encabezado($request, $proyecto, $tipo, $consulta),
-        );
+        $medicion = $armador->medir($consulta->lazy()->map(fn (GuiaRemision|Factura $d) => [
+            'ruc' => $d->proveedor->ruc,
+            'numero' => $d->numero,
+            'ruta' => $d instanceof GuiaRemision ? $d->foto_ruta : $d->archivo_ruta,
+        ]));
+        $maximo = config('services.exportaciones.max_mb');
+        if ($medicion['bytes'] > $maximo * 1024 * 1024) {
+            $mb = (int) ceil($medicion['bytes'] / 1024 / 1024);
+            self::rechazar('demasiado_peso', "El ZIP pesaría {$mb} MB y el máximo es {$maximo} MB. Acote los filtros o la selección, por ejemplo con un rango de fechas menor.");
+        }
 
-        return response()
-            ->download($ruta, $this->nombreZip($request, $proyecto, $tipo), ['Content-Type' => 'application/zip'])
-            ->deleteFileAfterSend(true);
+        $encabezado = $this->encabezado($request, $proyecto, $tipo, $consulta);
+        $candado = self::tomarCupo();
+        $segundos = config('services.exportaciones.candado_segundos');
+
+        return response()->stream(function () use ($armador, $medicion, $encabezado, $candado, $segundos) {
+            try {
+                // Cada archivo enviado renueva el plazo: vence solo si el envío deja de avanzar.
+                $armador->transmitir($medicion['documentos'], $encabezado, fn () => $candado->refresh($segundos));
+            } finally {
+                $candado->release();
+            }
+        }, 200, [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="'.$this->nombreZip($request, $proyecto, $tipo).'"',
+            // Sin esto nginx guarda la respuesta en su propio disco antes de mandarla.
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Una de las ranuras de exportación de toda la app. Vence sola si el proceso muere sin
+     * liberarla, y se libera también al terminar la petición si el cliente corta la descarga.
+     */
+    private static function tomarCupo(): Lock
+    {
+        $segundos = config('services.exportaciones.candado_segundos');
+        for ($i = 0; $i < config('services.exportaciones.simultaneas'); $i++) {
+            $candado = Cache::lock("exportar-zip:{$i}", $segundos);
+            if ($candado->get()) {
+                register_shutdown_function(fn () => $candado->release());
+
+                return $candado;
+            }
+        }
+
+        throw new HttpResponseException(response()->json(
+            ['message' => 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.', 'code' => 'sin_cupo'],
+            Response::HTTP_TOO_MANY_REQUESTS,
+        ));
     }
 
     /** Con `ids`, solo la selección dentro del proyecto; sin ellos, los filtros. */

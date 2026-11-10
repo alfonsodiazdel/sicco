@@ -3,88 +3,114 @@
 namespace App\Services\Documentos;
 
 use Illuminate\Support\Facades\Storage;
-use League\Flysystem\PathTraversalDetected;
-use RuntimeException;
-use ZipArchive;
+use League\Flysystem\FilesystemException;
+use Throwable;
+use ZipStream\CompressionMethod;
+use ZipStream\ZipStream;
 
 /**
- * Arma en un archivo temporal el ZIP con los documentos y un manifest.txt con lo pedido, lo
- * incluido y lo que falta. Cada archivo se copia a disco antes de agregarlo: ZipArchive no lee
- * nada hasta close(), y con addFromString tendría todo el lote en memoria.
+ * Envía el ZIP mientras lo arma, sin escribir nada en disco: cada archivo pasa del disco de
+ * documentos a la respuesta. Va sin compresión porque los JPG y PDF ya vienen comprimidos. El
+ * manifest.txt va al final, para listar lo incluido y lo que faltó sin leer el lote dos veces.
  */
 class ArmadorZip
 {
     /**
+     * Pesa cada archivo con los metadatos del disco, sin leerlo.
+     *
      * @param  iterable<array{ruc: string, numero: string, ruta: ?string}>  $documentos
-     * @param  list<string>  $encabezado  Lo que se pidió, una línea por dato.
-     * @return string Ruta del ZIP; quien lo envía lo borra.
+     * @return array{bytes: int, documentos: list<array{ruc: string, numero: string, ruta: ?string, bytes: ?int}>}
      */
-    public function armar(iterable $documentos, array $encabezado): string
+    public function medir(iterable $documentos): array
     {
         $disco = Storage::disk();
-        $ruta = tempnam(sys_get_temp_dir(), 'zip');
-        $zip = new ZipArchive;
-        if ($ruta === false || $zip->open($ruta, ZipArchive::OVERWRITE) !== true) {
-            throw new RuntimeException('No se pudo crear el ZIP.');
+        $total = 0;
+        $medidos = [];
+        foreach ($documentos as $documento) {
+            try {
+                $bytes = $documento['ruta'] ? $disco->size($documento['ruta']) : null;
+            } catch (FilesystemException) {
+                // Una ruta con «..» o sin archivo no se lee: se trata como archivo ausente.
+                $bytes = null;
+            }
+            $total += $bytes ?? 0;
+            $medidos[] = [...$documento, 'bytes' => $bytes];
         }
 
-        $copias = [];
+        return ['bytes' => $total, 'documentos' => $medidos];
+    }
+
+    /**
+     * @param  list<array{ruc: string, numero: string, ruta: ?string, bytes: ?int}>  $documentos  Lo que devuelve medir().
+     * @param  list<string>  $encabezado  Lo que se pidió, una línea por dato.
+     * @param  ?callable  $alAvanzar  Se llama tras cada archivo enviado.
+     * @param  resource|null  $salida  Por defecto, la salida de la respuesta.
+     */
+    public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+    {
+        $disco = Storage::disk();
+        $zip = new ZipStream(
+            outputStream: $salida,
+            sendHttpHeaders: false,
+            defaultCompressionMethod: CompressionMethod::STORE,
+            defaultEnableZeroHeader: true,
+            flushOutput: $salida === null,
+        );
+
         $usados = ['manifest.txt' => true];
         $incluidos = [];
         $faltantes = [];
-        try {
-            foreach ($documentos as $documento) {
-                $etiqueta = "{$documento['ruc']}-{$documento['numero']}";
-                try {
-                    $flujo = $documento['ruta'] ? $disco->readStream($documento['ruta']) : null;
-                } catch (PathTraversalDetected) {
-                    // Una ruta con «..» no se lee fuera del disco: se trata como archivo ausente.
-                    $flujo = null;
-                }
-                if (! $flujo) {
-                    $faltantes[] = $etiqueta.': '.($documento['ruta'] ? 'no está en el disco' : 'sin archivo');
+        foreach ($documentos as $documento) {
+            $etiqueta = "{$documento['ruc']}-{$documento['numero']}";
+            try {
+                $flujo = $documento['bytes'] !== null ? $disco->readStream($documento['ruta']) : null;
+            } catch (FilesystemException) {
+                $flujo = null;
+            }
+            if (! $flujo) {
+                $faltantes[] = $etiqueta.': '.($documento['ruta'] ? 'no está en el disco' : 'sin archivo');
 
-                    continue;
-                }
+                continue;
+            }
 
-                $copia = tempnam(sys_get_temp_dir(), 'doc');
-                $destino = fopen($copia, 'wb');
-                stream_copy_to_stream($flujo, $destino);
-                fclose($destino);
+            $nombre = self::nombreUnico(
+                self::sanear($etiqueta),
+                self::sanear(strtolower(pathinfo($documento['ruta'], PATHINFO_EXTENSION))),
+                $usados,
+            );
+            try {
+                $zip->addFileFromStream(fileName: $nombre, stream: $flujo);
+                $leidos = ftell($flujo);
+            } catch (Throwable) {
+                // La respuesta ya empezó: no hay forma de devolver un error, se sigue con el resto.
+                $leidos = false;
+            } finally {
                 fclose($flujo);
-                $copias[] = $copia;
+            }
 
-                $nombre = self::nombreUnico(
-                    self::sanear($etiqueta),
-                    self::sanear(strtolower(pathinfo($documento['ruta'], PATHINFO_EXTENSION))),
-                    $usados,
-                );
-                $zip->addFile($copia, $nombre);
+            if ($leidos === false) {
+                $faltantes[] = "{$etiqueta}: falló la lectura";
+            } elseif ($leidos !== $documento['bytes']) {
+                $faltantes[] = "{$etiqueta}: incompleto ({$leidos} de {$documento['bytes']} bytes) en {$nombre}";
+            } else {
                 $incluidos[] = $nombre;
             }
-
-            $zip->addFromString('manifest.txt', implode("\n", [
-                ...$encabezado,
-                'Documentos encontrados: '.(count($incluidos) + count($faltantes)),
-                '',
-                'Incluidos ('.count($incluidos).'):',
-                ...self::lista($incluidos),
-                '',
-                'Faltantes ('.count($faltantes).'):',
-                ...self::lista($faltantes),
-            ])."\n");
-            if (! $zip->close()) {
-                throw new RuntimeException('No se pudo cerrar el ZIP.');
+            if ($alAvanzar) {
+                $alAvanzar();
             }
-        } catch (\Throwable $e) {
-            @unlink($ruta);
-
-            throw $e;
-        } finally {
-            array_map('unlink', $copias);
         }
 
-        return $ruta;
+        $zip->addFile(fileName: 'manifest.txt', data: implode("\n", [
+            ...$encabezado,
+            'Documentos encontrados: '.count($documentos),
+            '',
+            'Incluidos ('.count($incluidos).'):',
+            ...self::lista($incluidos),
+            '',
+            'Faltantes ('.count($faltantes).'):',
+            ...self::lista($faltantes),
+        ])."\n");
+        $zip->finish();
     }
 
     /** Deja solo letras sin tilde, dígitos, punto, guion y guion bajo: «/» o «\» nunca crean carpetas. */

@@ -44,11 +44,24 @@ return [
         'por_minuto' => (int) env('REPORTES_POR_MINUTO', 20),
     ],
 
-    // CU18 Exportar documentos: ZIP por minuto y usuario. Vacía, en cero o con texto valdría 0 y
-    // bloquearía toda exportación, así que en esos casos se usa 5.
+    // CU18 Exportar documentos. Vacías, en cero o con texto valdrían 0 y bloquearían toda
+    // exportación, así que en esos casos se usa el valor por defecto.
     'exportaciones' => [
+        // ZIP por minuto y usuario.
         'por_minuto' => filter_var(env('EXPORTACIONES_POR_MINUTO'), FILTER_VALIDATE_INT, [
             'options' => ['min_range' => 1, 'default' => 5],
+        ]),
+        // Peso máximo de un ZIP, en MB.
+        'max_mb' => filter_var(env('EXPORTACION_ZIP_MAX_MB'), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'default' => 500],
+        ]),
+        // ZIP que se arman a la vez en toda la app: cada uno ocupa un proceso de PHP mientras baja.
+        'simultaneas' => filter_var(env('EXPORTACIONES_SIMULTANEAS'), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'default' => 2],
+        ]),
+        // Segundos sin avanzar tras los que vence el cupo de un ZIP, si el proceso murió sin liberarlo.
+        'candado_segundos' => filter_var(env('EXPORTACION_ZIP_LOCK_SEGUNDOS'), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'default' => 300],
         ]),
     ],
 

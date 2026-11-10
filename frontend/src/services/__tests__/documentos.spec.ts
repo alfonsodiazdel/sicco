@@ -108,6 +108,25 @@ describe('documentosServicio', () => {
     expect(mensajeDeError(error)).toBe('No hay documentos que coincidan con la búsqueda.')
   })
 
+  it('un ZIP demasiado pesado muestra el mensaje de la API tal cual', async () => {
+    const message =
+      'El ZIP pesaría 3001 MB y el máximo es 500 MB. Acote los filtros o la selección, por ejemplo con un rango de fechas menor.'
+    http.defaults.adapter = rechazar(422, { message, code: 'demasiado_peso' })
+
+    const error = await documentosServicio.descargarZip(7, 'guias', { ids: [1] }).catch((e) => e)
+
+    expect(mensajeDeError(error)).toBe(message)
+  })
+
+  it('sin cupo de exportación (429) muestra el mensaje de la API tal cual', async () => {
+    const message = 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.'
+    http.defaults.adapter = rechazar(429, { message, code: 'sin_cupo' })
+
+    const error = await documentosServicio.descargarZip(7, 'guias', { ids: [1] }).catch((e) => e)
+
+    expect(mensajeDeError(error)).toBe(message)
+  })
+
   it('en un 422 de validación muestra el primer error', async () => {
     http.defaults.adapter = rechazar(422, {
       message: 'Ingrese una fecha válida (and 1 more error)',
