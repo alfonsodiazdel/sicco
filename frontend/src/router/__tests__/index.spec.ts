@@ -100,3 +100,47 @@ describe('destino tras iniciar sesión', () => {
     expect(destinoTrasLogin(redirect)).toBe(destino)
   })
 })
+
+describe('exportar documentos', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  async function abrir(ruta: string) {
+    await router.push('/')
+    await router.push(ruta)
+    return router.currentRoute.value
+  }
+
+  it.each<RolClave>(['oficina_tecnica', 'administrador'])('deja entrar a %s', async (rol) => {
+    iniciarSesion(rol)
+
+    const ruta = await abrir('/documentos')
+    expect(ruta.name).toBe('exportar-documentos')
+    expect(ruta.meta).toMatchObject({ titulo: 'Exportar documentos', porProyecto: true })
+  })
+
+  it.each<RolClave>(['almacenero', 'ingeniero_produccion', 'gerencia'])(
+    'manda a %s a la página sin acceso',
+    async (rol) => {
+      iniciarSesion(rol)
+
+      expect((await abrir('/documentos')).name).toBe('no-autorizado')
+    },
+  )
+
+  it.each<[RolClave, boolean]>([
+    ['oficina_tecnica', true],
+    ['administrador', true],
+    ['almacenero', false],
+    ['ingeniero_produccion', false],
+    ['gerencia', false],
+  ])('en el menú, %s ve la opción: %s', (rol, ve) => {
+    iniciarSesion(rol)
+    const auth = useAuthStore()
+    const item = menu.find((m) => m.ruta === '/documentos')!
+
+    expect(item.etiqueta).toBe('Exportar documentos')
+    expect(!item.roles || auth.puedeVer(...item.roles)).toBe(ve)
+  })
+})

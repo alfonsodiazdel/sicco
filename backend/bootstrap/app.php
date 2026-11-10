@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureUserIsActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -29,4 +30,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // ThrottleRequests fija «Too Many Attempts.» en el código, así que el archivo de idioma no lo
+        // traduce. Se conservan las cabeceras de la excepción (Retry-After, X-RateLimit-*).
+        $exceptions->map(ThrottleRequestsException::class, fn (ThrottleRequestsException $e) => new ThrottleRequestsException(
+            'Demasiadas solicitudes. Espere un minuto e inténtelo de nuevo.',
+            $e,
+            $e->getHeaders(),
+        ));
     })->create();

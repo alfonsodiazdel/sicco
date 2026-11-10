@@ -61,5 +61,8 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('reportes', fn (Request $request) => Limit::perMinute(config('services.reportes.por_minuto'))
             ->by($request->user()?->id ?: $request->ip()));
+
+        RateLimiter::for('exportaciones', fn (Request $request) => Limit::perMinute(config('services.exportaciones.por_minuto'))
+            ->by($request->user()?->id ?: $request->ip()));
     }
 }

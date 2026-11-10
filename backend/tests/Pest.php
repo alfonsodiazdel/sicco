@@ -11,11 +11,19 @@ use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\Resistencia;
 use App\Models\User;
+use App\Services\Documentos\CupoExportacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    // Un ZIP que la prueba no lee deja su cupo tomado en la conexión, y esa conexión sobrevive a la prueba.
+    ->afterEach(function () {
+        if (DB::getDriverName() === 'mysql') {
+            DB::selectOne('SELECT RELEASE_ALL_LOCKS() AS n');
+        }
+    })
     ->in('Feature');
 
 // Ayudas compartidas por las pruebas del presupuesto (grupos y partidas).
@@ -114,4 +122,19 @@ function guiaCorte(Proyecto $proyecto, string $numero, string $fecha, Resistenci
     }
 
     return $guia;
+}
+
+/** Si nadie tiene tomado el cupo de exportación (1..N); un cupo de esta misma conexión cuenta como tomado. */
+function cupoLibre(int $cupo): bool
+{
+    return (int) DB::selectOne('SELECT IS_FREE_LOCK(?) AS libre', [CupoExportacion::nombre($cupo)])->libre === 1;
+}
+
+/** Toma todos los cupos desde otra conexión, como otro proceso de PHP; se sueltan con DB::disconnect('otro_proceso'). */
+function ocuparCuposDesdeOtroProceso(): void
+{
+    config(['database.connections.otro_proceso' => config('database.connections.'.config('database.default'))]);
+    for ($cupo = 1; $cupo <= config('services.exportaciones.simultaneas'); $cupo++) {
+        expect((int) DB::connection('otro_proceso')->selectOne('SELECT GET_LOCK(?, 0) AS t', [CupoExportacion::nombre($cupo)])->t)->toBe(1);
+    }
 }

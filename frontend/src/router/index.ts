@@ -27,6 +27,7 @@ const implementados = [
   '/guias/registrar',
   '/guias/sin-sector',
   '/facturas',
+  '/documentos',
   '/desperdicio',
   '/alertas',
   '/reportes',
@@ -169,6 +170,12 @@ const routes: RouteRecordRaw[] = [
         name: 'reporte-corte-mes',
         component: () => import('@/views/reportes/ReporteCorteMesView.vue'),
         meta: { roles: ['oficina_tecnica', 'gerencia'], titulo: 'Corte de mes', porProyecto: true },
+      },
+      {
+        path: 'documentos',
+        name: 'exportar-documentos',
+        component: () => import('@/views/documentos/ExportarDocumentosView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Exportar documentos', porProyecto: true },
       },
       ...modulos,
       {
