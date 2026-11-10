@@ -70,7 +70,7 @@ class DocumentoController extends Controller
                 'numero' => $d->numero,
                 'ruta' => $d instanceof GuiaRemision ? $d->foto_ruta : $d->archivo_ruta,
             ]),
-            $this->encabezado($request, $proyecto, $tipo),
+            $this->encabezado($request, $proyecto, $tipo, $consulta),
         );
 
         return response()
@@ -96,10 +96,12 @@ class DocumentoController extends Controller
     }
 
     /** @return list<string> */
-    private function encabezado(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo): array
+    private function encabezado(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo, HasMany $consulta): array
     {
         if ($ids = $request->validated('ids')) {
-            $pedido = 'selección de '.count($ids).' documentos (id '.implode(', ', $ids).')';
+            // Solo los del proyecto, en el orden pedido: los ajenos o repetidos no se cuentan.
+            $ids = array_values(array_unique(array_intersect($ids, $consulta->pluck('id')->all())));
+            $pedido = 'selección de '.count($ids).(count($ids) === 1 ? ' documento' : ' documentos').' (id '.implode(', ', $ids).')';
         } else {
             $proveedor = Proveedor::find($request->validated('proveedor_id'));
             $pedido = implode(', ', array_filter([

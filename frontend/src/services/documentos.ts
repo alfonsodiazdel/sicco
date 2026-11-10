@@ -26,17 +26,13 @@ function nombreDeArchivo(cabecera: unknown, porDefecto: string) {
   return /filename="?([^";]+)"?/i.exec(cabecera)?.[1]?.trim() || porDefecto
 }
 
-// Con responseType blob, el cuerpo de un error también llega como Blob: se lee como JSON para que
-// mensajeDeError muestre el mensaje de la API.
-async function leerErrorBlob(error: unknown) {
-  if (!esErrorApi(error) || !(error.response?.data instanceof Blob)) return error
-  try {
-    const cuerpo = JSON.parse(await error.response.data.text()) as ErrorApi
-    const primero = Object.values(cuerpo.errors ?? {})[0]?.[0]
-    error.response.data = { ...cuerpo, message: primero ?? cuerpo.message }
-  } catch {
-    // Un cuerpo que no es JSON se queda como vino; la vista usa el mensaje por defecto.
-  }
+// El interceptor de http ya lee como JSON el cuerpo Blob del error. En un 422 se muestra el primer
+// error del campo en lugar del resumen de Laravel («… (and 1 more error)»).
+function conPrimerError(error: unknown) {
+  if (!esErrorApi(error) || !error.response?.data?.errors) return error
+  const cuerpo: ErrorApi = error.response.data
+  const primero = Object.values(cuerpo.errors ?? {})[0]?.[0]
+  if (primero) error.response.data = { ...cuerpo, message: primero }
   return error
 }
 
@@ -59,7 +55,7 @@ export function crearDocumentosApi(): DocumentosServicio {
         const nombre = nombreDeArchivo(respuesta.headers['content-disposition'], `${tipo}.zip`)
         return { blob: respuesta.data, nombre }
       } catch (error) {
-        throw await leerErrorBlob(error)
+        throw conPrimerError(error)
       }
     },
   }

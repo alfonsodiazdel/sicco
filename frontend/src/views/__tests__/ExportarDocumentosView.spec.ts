@@ -92,9 +92,9 @@ function crearServicio(filas = guias): DocumentosServicio {
   }
 }
 
-async function montar(filas = guias) {
+async function montar(filas = guias, asignados = [1, 2]) {
   const { crearProyectosEnMemoria } = await import('@/services/proyectos')
-  servicios.proyectos = crearProyectosEnMemoria(async () => [1, 2])
+  servicios.proyectos = crearProyectosEnMemoria(async () => asignados)
   servicios.documentos = crearServicio(filas)
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -236,5 +236,42 @@ describe('ExportarDocumentosView (CU18)', () => {
       expect.objectContaining({ severity: 'error', summary: message }),
     )
     expect(clic).not.toHaveBeenCalled()
+  })
+
+  it('con filtros cambiados sin buscar no deja descargar lo filtrado y pide pulsar Buscar', async () => {
+    const vista = await montar()
+    const aviso = 'Cambió los filtros. Pulse Buscar para actualizar la lista antes de descargar.'
+    expect(vista.text()).not.toContain(aviso)
+
+    await select(vista, 'proveedor')!.vm.$emit('update:modelValue', 2)
+    await asentar()
+
+    expect(boton(vista, 'Descargar todo lo filtrado').attributes('disabled')).toBeDefined()
+    expect(vista.text()).toContain(aviso)
+
+    await vista.get('form').trigger('submit')
+    await asentar()
+
+    expect(boton(vista, 'Descargar todo lo filtrado').attributes('disabled')).toBeUndefined()
+    expect(vista.text()).not.toContain(aviso)
+  })
+
+  it('muestra el RUC del proveedor junto a la razón social', async () => {
+    const vista = await montar()
+
+    const celda = vista.findAll('tbody tr')[0]!.findAll('td').find((td) =>
+      td.text().includes('UNICON S.A.') && !td.text().includes('T001'),
+    )!
+    expect(celda.text()).toContain('RUC 20100030595')
+  })
+
+  it('sin proyectos asignados avisa y no deja la tabla cargando', async () => {
+    const vista = await montar(guias, [])
+
+    expect(vista.text()).toContain(
+      'No tiene proyectos activos asignados. Pida al administrador que lo asigne a uno.',
+    )
+    expect(vista.find('.p-datatable-mask').exists()).toBe(false)
+    expect(servicios.documentos!.listarGuias).not.toHaveBeenCalled()
   })
 })

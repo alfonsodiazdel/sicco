@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import Button from 'primevue/button'
 import DatePicker from 'primevue/datepicker'
 import Select from 'primevue/select'
@@ -9,7 +10,7 @@ import type { Proveedor } from '@/types/proveedor'
 type Estado = GuiaDocumento['estado_asignacion']
 type Opcion = { valor: Estado; etiqueta: string }
 
-defineProps<{ proveedores: Proveedor[]; estados: Opcion[]; rangoInvalido: boolean }>()
+const props = defineProps<{ proveedores: Proveedor[]; estados: Opcion[]; rangoInvalido: boolean }>()
 const emit = defineEmits<{ buscar: [] }>()
 const tipo = defineModel<TipoDocumento>('tipo', { required: true })
 const desde = defineModel<Date | null>('desde', { required: true })
@@ -23,8 +24,14 @@ const tipos = [
 ]
 const comun = { showClear: true, fluid: true }
 const fecha = { ...comun, dateFormat: 'dd/mm/yy', placeholder: 'dd/mm/aaaa' }
-const conAviso = { pcInputText: { root: { 'aria-describedby': 'hasta-error' } } }
-const fechaFinal = { ...fecha, pt: conAviso }
+const fechaFinal = computed(() => ({
+  ...fecha,
+  pt: {
+    pcInputText: {
+      root: { 'aria-describedby': props.rangoInvalido ? 'hasta-error' : undefined },
+    },
+  },
+}))
 const lista = { ...comun, optionLabel: 'etiqueta', optionValue: 'valor', placeholder: 'Todos' }
 const proveedor = { ...lista, optionLabel: 'razon_social', optionValue: 'id' }
 </script>
@@ -52,17 +59,24 @@ const proveedor = { ...lista, optionLabel: 'razon_social', optionValue: 'id' }
       <DatePicker v-model="hasta" input-id="hasta" v-bind="fechaFinal" :invalid="rangoInvalido" />
     </div>
     <div class="flex flex-col gap-1 lg:w-56">
-      <label id="proveedor" class="text-sm font-medium">Proveedor</label>
+      <label id="proveedor-etiqueta" class="text-sm font-medium">Proveedor</label>
       <Select
         v-model="proveedorId"
         label-id="proveedor"
+        aria-labelledby="proveedor-etiqueta"
         :options="proveedores"
         v-bind="proveedor"
       />
     </div>
     <div v-if="tipo === 'guias'" class="flex flex-col gap-1 lg:w-40">
-      <label id="estado" class="text-sm font-medium">Estado</label>
-      <Select v-model="estado" label-id="estado" :options="estados" v-bind="lista" />
+      <label id="estado-etiqueta" class="text-sm font-medium">Estado</label>
+      <Select
+        v-model="estado"
+        label-id="estado"
+        aria-labelledby="estado-etiqueta"
+        :options="estados"
+        v-bind="lista"
+      />
     </div>
     <Button type="submit" label="Buscar" icon="pi pi-search" :disabled="rangoInvalido" />
     <p v-if="rangoInvalido" id="hasta-error" class="text-sm text-red-600 lg:self-center">

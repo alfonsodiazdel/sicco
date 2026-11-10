@@ -61,4 +61,23 @@ describe('FiltrosDocumentos', () => {
     )
     expect(filtros.get('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
+
+  it.each(['proveedor', 'estado'])('el combo %s tiene id único y se anuncia con su etiqueta', (id) => {
+    const filtros = montar('guias')
+
+    expect(filtros.findAll(`[id="${id}"]`)).toHaveLength(1)
+    const combo = filtros.get(`#${id}`)
+    expect(combo.attributes('role')).toBe('combobox')
+    const etiqueta = filtros.get(`[id="${combo.attributes('aria-labelledby')}"]`)
+    expect(etiqueta.text()).toBe(id === 'proveedor' ? 'Proveedor' : 'Estado')
+  })
+
+  it('la fecha final apunta al aviso solo cuando el aviso existe', () => {
+    expect(montar('guias').get('#hasta').attributes('aria-describedby')).toBeUndefined()
+
+    const invalido = montar('guias', true)
+    const descrito = invalido.get('#hasta').attributes('aria-describedby')
+    expect(descrito).toBe('hasta-error')
+    expect(invalido.find(`#${descrito}`).exists()).toBe(true)
+  })
 })

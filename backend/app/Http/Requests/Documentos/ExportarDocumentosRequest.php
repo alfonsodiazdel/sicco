@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Documentos;
 
 use App\Enums\EstadoAsignacion;
+use App\Http\Controllers\Api\V1\DocumentoController;
 use App\Http\Controllers\Concerns\AutorizaProyecto;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,7 +30,7 @@ class ExportarDocumentosRequest extends FormRequest
             'hasta' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:desde'],
             'proveedor_id' => ['nullable', 'integer'],
             'estado' => ['nullable', Rule::enum(EstadoAsignacion::class)],
-            'ids' => ['nullable', 'array'],
+            'ids' => ['nullable', 'array', 'max:'.DocumentoController::TOPE],
             'ids.*' => ['integer'],
         ];
     }
@@ -42,6 +43,7 @@ class ExportarDocumentosRequest extends FormRequest
             'proveedor_id.integer' => 'Seleccione un proveedor válido',
             'estado.enum' => 'Seleccione un estado válido',
             'ids.array' => 'La selección no es válida',
+            'ids.max' => 'Se pueden exportar hasta '.DocumentoController::TOPE.' documentos a la vez.',
             'ids.*.integer' => 'La selección no es válida',
         ];
     }

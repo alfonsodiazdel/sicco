@@ -3,6 +3,7 @@
 namespace App\Services\Documentos;
 
 use Illuminate\Support\Facades\Storage;
+use League\Flysystem\PathTraversalDetected;
 use RuntimeException;
 use ZipArchive;
 
@@ -34,7 +35,12 @@ class ArmadorZip
         try {
             foreach ($documentos as $documento) {
                 $etiqueta = "{$documento['ruc']}-{$documento['numero']}";
-                $flujo = $documento['ruta'] ? $disco->readStream($documento['ruta']) : null;
+                try {
+                    $flujo = $documento['ruta'] ? $disco->readStream($documento['ruta']) : null;
+                } catch (PathTraversalDetected) {
+                    // Una ruta con «..» no se lee fuera del disco: se trata como archivo ausente.
+                    $flujo = null;
+                }
                 if (! $flujo) {
                     $faltantes[] = $etiqueta.': '.($documento['ruta'] ? 'no está en el disco' : 'sin archivo');
 

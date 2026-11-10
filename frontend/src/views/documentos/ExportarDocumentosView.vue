@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
+import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
@@ -38,8 +39,6 @@ const filas = ref<Documento[]>([])
 const seleccion = ref<Documento[]>([])
 const cargando = ref(true)
 const descargando = ref(false)
-// Lo filtrado se descarga con los filtros de la última búsqueda, que son los de la tabla.
-let buscado: FiltroDocumentos = { desde: null, hasta: null, proveedor_id: null }
 
 const estados: { valor: GuiaDocumento['estado_asignacion']; etiqueta: string }[] = [
   { valor: 'sin_sector', etiqueta: 'Sin sector' },
@@ -49,6 +48,7 @@ const estados: { valor: GuiaDocumento['estado_asignacion']; etiqueta: string }[]
 
 const esGuias = computed(() => tipo.value === 'guias')
 const rangoInvalido = computed(() => !!desde.value && !!hasta.value && hasta.value < desde.value)
+const sinProyecto = computed(() => proyectoActual.cargado && !proyecto.value)
 const columnas = computed(() => [
   { campo: 'numero', encabezado: esGuias.value ? 'N° de guía' : 'N° de factura' },
   { campo: 'fecha', encabezado: 'Fecha' },
@@ -71,6 +71,9 @@ const filtro = (): FiltroDocumentos => ({
   proveedor_id: proveedorId.value,
   ...(esGuias.value && { estado: estado.value }),
 })
+// Lo filtrado se descarga con los filtros de la última búsqueda, que son los de la tabla.
+const buscado = ref<FiltroDocumentos>(filtro())
+const filtrosSinBuscar = computed(() => JSON.stringify(filtro()) !== JSON.stringify(buscado.value))
 
 function avisarError(error: unknown) {
   toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
@@ -78,16 +81,21 @@ function avisarError(error: unknown) {
 
 async function buscar() {
   const id = proyectoId.value
-  if (!id || rangoInvalido.value) return
+  if (!id) {
+    cargando.value = false
+    return
+  }
+  if (rangoInvalido.value) return
   const actual = tipo.value
-  buscado = filtro()
+  const pedido = filtro()
+  buscado.value = pedido
   cargando.value = true
   seleccion.value = []
   try {
     const encontrados =
       actual === 'guias'
-        ? await documentosServicio.listarGuias(id, buscado)
-        : await documentosServicio.listarFacturas(id, buscado)
+        ? await documentosServicio.listarGuias(id, pedido)
+        : await documentosServicio.listarFacturas(id, pedido)
     // Si se cambió de proyecto o de tipo mientras cargaba, esta respuesta ya no aplica.
     if (id === proyectoId.value && actual === tipo.value) filas.value = encontrados
   } catch (error) {
@@ -154,7 +162,7 @@ onMounted(async () => {
         label="Descargar todo lo filtrado"
         icon="pi pi-download"
         :loading="descargando"
-        :disabled="!filas.length || rangoInvalido"
+        :disabled="!filas.length || rangoInvalido || filtrosSinBuscar"
         @click="descargar(buscado)"
       />
     </template>
@@ -173,7 +181,20 @@ onMounted(async () => {
       />
     </template>
 
+    <Message v-if="sinProyecto" severity="warn" icon="pi pi-exclamation-triangle" class="m-3">
+      No tiene proyectos activos asignados. Pida al administrador que lo asigne a uno.
+    </Message>
+    <Message
+      v-else-if="filtrosSinBuscar && !rangoInvalido"
+      severity="info"
+      icon="pi pi-info-circle"
+      class="m-3"
+    >
+      Cambió los filtros. Pulse Buscar para actualizar la lista antes de descargar.
+    </Message>
+
     <TablaCrud
+      v-if="!sinProyecto"
       v-model:seleccion="seleccion"
       seleccionable
       :filas="filas"
@@ -184,12 +205,15 @@ onMounted(async () => {
     >
       <template #col-numero="{ fila }">
         <span class="font-medium">{{ fila.numero }}</span>
-        <span class="block text-sm text-surface-500 sm:hidden">{{
-          fila.proveedor.razon_social
-        }}</span>
+        <span class="block text-sm text-surface-500 sm:hidden"
+          >{{ fila.proveedor.razon_social }} · RUC {{ fila.proveedor.ruc }}</span
+        >
       </template>
       <template #col-fecha="{ fila }">{{ formatoFecha(fila.fecha) }}</template>
-      <template #col-proveedor="{ fila }">{{ fila.proveedor.razon_social }}</template>
+      <template #col-proveedor="{ fila }">
+        {{ fila.proveedor.razon_social }}
+        <span class="block text-sm text-surface-500">RUC {{ fila.proveedor.ruc }}</span>
+      </template>
       <template #col-volumen_m3="{ fila }">{{ decimales(fila.volumen_m3) }}</template>
       <template #col-estado_asignacion="{ fila }">{{ etiquetaEstado(fila) }}</template>
       <template #col-total="{ fila }">{{ 'total' in fila ? soles(fila.total) : '' }}</template>
