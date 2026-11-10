@@ -20,6 +20,8 @@ const { toast, servicios } = vi.hoisted(() => ({
     reportes: {
       eat: vi.fn<ReportesServicio['eat']>(),
       descargarEat: vi.fn<ReportesServicio['descargarEat']>(),
+      corteMes: vi.fn<ReportesServicio['corteMes']>(),
+      descargarCorteMes: vi.fn<ReportesServicio['descargarCorteMes']>(),
     } satisfies ReportesServicio,
   },
 }))

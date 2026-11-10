@@ -14,6 +14,8 @@ class ReporteGenerado extends Model
 
     public const TIPO_EAT = 'eat';
 
+    public const TIPO_CORTE_MES = 'corte_mes';
+
     public const FORMATO_PANTALLA = 'pantalla';
 
     public const FORMATO_EXCEL = 'excel';

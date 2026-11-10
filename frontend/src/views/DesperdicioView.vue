@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useToast } from 'primevue/usetoast'
 import Chart from 'primevue/chart'
+import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
@@ -12,10 +14,14 @@ import { decimales } from '@/services/presupuesto'
 import type { ControlDesperdicio, DetalleDesperdicio, FilaDesperdicio } from '@/types/desperdicio'
 import { mensajeDeError } from '@/api/http'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToast()
 const proyectoActual = useProyectoActualStore()
 const { proyecto, proyectoId } = storeToRefs(proyectoActual)
+// CU13 extendido por CU16: el reporte lo generan Oficina técnica y Gerencia, no Producción.
+const router = useRouter()
+const puedeReportar = useAuthStore().puedeVer('oficina_tecnica', 'gerencia')
 
 const detalles: { valor: DetalleDesperdicio; nombre: string }[] = [
   { valor: 'elemento', nombre: 'Elemento estructural' },
@@ -140,6 +146,15 @@ onMounted(async () => {
     :titulo="proyecto ? `Control de desperdicio – ${proyecto.nombre}` : 'Control de desperdicio'"
     subtitulo="Volumen presupuestado frente al vaciado, con su porcentaje de desperdicio"
   >
+    <template v-if="puedeReportar && proyectoId" #acciones>
+      <Button
+        label="Corte de mes"
+        icon="pi pi-calendar"
+        outlined
+        data-corte-mes
+        @click="router.push('/reportes/corte-mes')"
+      />
+    </template>
     <template #herramientas>
       <div class="flex flex-col gap-1 sm:w-60">
         <label for="detalle" class="text-sm font-medium">Detalle por</label>

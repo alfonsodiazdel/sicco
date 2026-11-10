@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\NivelController;
 use App\Http\Controllers\Api\V1\PartidaController;
 use App\Http\Controllers\Api\V1\ProveedorController;
 use App\Http\Controllers\Api\V1\ProyectoController;
+use App\Http\Controllers\Api\V1\ReporteCorteMesController;
 use App\Http\Controllers\Api\V1\ReporteEatController;
 use App\Http\Controllers\Api\V1\ResistenciaController;
 use App\Http\Controllers\Api\V1\RolController;
@@ -140,6 +141,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('proyectos/{proyecto}/reportes/eat', [ReporteEatController::class, 'show'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/reportes/eat/excel', [ReporteEatController::class, 'excel'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/reportes/eat/pdf', [ReporteEatController::class, 'pdf'])->whereNumber('proyecto');
+                // CU16 Reporte de corte a fin de mes, con los mismos roles y el mismo registro.
+                Route::get('proyectos/{proyecto}/reportes/corte-mes', [ReporteCorteMesController::class, 'show'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/corte-mes/excel', [ReporteCorteMesController::class, 'excel'])->whereNumber('proyecto');
+                Route::get('proyectos/{proyecto}/reportes/corte-mes/pdf', [ReporteCorteMesController::class, 'pdf'])->whereNumber('proyecto');
             });
 
             // CU02 Gestionar usuarios y roles

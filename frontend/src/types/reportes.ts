@@ -69,3 +69,70 @@ export interface ResultadoEat {
 }
 
 export type FormatoEat = 'excel' | 'pdf'
+
+/**
+ * CU16: reporte de corte a fin de mes. Recibido, vaciado y facturado son del mes; lo pendiente de
+ * facturar es acumulado al cierre. Montos sin IGV.
+ */
+export interface ResumenCorteMes {
+  guias_recibidas: number
+  recibido_m3: number
+  /** Lo asignado a sectores de las guías del mes. */
+  vaciado_m3: number
+  facturas: number
+  /** Solo el concreto; el monto incluye también los cargos (bombeo, aditivos…). */
+  facturado_m3: number
+  facturado_soles: number
+  /** Guías hasta el cierre sin factura fechada hasta ese día. */
+  guias_pendientes: number
+  pendiente_m3: number
+  pendiente_soles: number
+}
+
+/** Desperdicio acumulado: sectores culminados hasta el cierre y abiertos que ya pasaron lo presupuestado. */
+export interface DesperdicioCorteMes {
+  sectores: number
+  presupuestado_m3: number
+  vaciado_m3: number
+  diferencia_m3: number
+  desperdicio_pct: number | null
+  limite_m3: number
+  supera_limite: boolean
+}
+
+export interface GuiaCorteMes {
+  id: number
+  numero: string
+  proveedor: string
+  fecha: string
+  resistencia: string
+  volumen_m3: number
+  vaciado_m3: number
+  /** Número de la factura, solo si estaba fechada hasta el cierre. */
+  factura: string | null
+  factura_fecha: string | null
+  estado: 'facturada' | 'pendiente'
+  precio_unitario: number | null
+  importe_soles: number
+  /** false: guía de un mes anterior que seguía pendiente al cierre. */
+  del_mes: boolean
+}
+
+export interface ReporteCorteMes {
+  proyecto: { id: number; codigo: string; nombre: string }
+  anio: number
+  mes: number
+  fecha_inicio: string
+  fecha_cierre: string
+  /** Mes en curso: el corte aún no está cerrado. */
+  parcial: boolean
+  resumen: ResumenCorteMes
+  desperdicio: DesperdicioCorteMes
+  guias: GuiaCorteMes[]
+}
+
+/** Sin guías ni facturas en el mes el reporte es nulo y llega el mensaje del flujo alternativo. */
+export interface ResultadoCorteMes {
+  reporte: ReporteCorteMes | null
+  mensaje: string | null
+}
