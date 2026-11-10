@@ -20,4 +20,9 @@ export interface SectorFila extends SectorDatos {
   nivel_id: number
   /** Lo suma la asignación de guías (CU09); en CU05 solo se muestra. */
   volumen_vaciado_m3: number
+  /**
+   * `YYYY-MM-DD` si está culminado; null si está abierto. Culminado ya no recibe guías ni se edita,
+   * y en el reporte EAT (CU15) su vaciado pasa a costo real.
+   */
+  fecha_culminacion: string | null
 }

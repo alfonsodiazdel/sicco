@@ -5,14 +5,18 @@ import { crearReportesApi } from '@/services/reportes'
 import type { ReporteEat } from '@/types/reportes'
 
 const montos = {
-  presupuesto_m3: 10,
-  presupuesto_soles: 3200,
+  presupuesto_m3: 11,
+  presupuesto_soles: 3520,
   consumido_m3: 7,
   consumido_soles: 2170,
-  saldo_m3: 3,
-  saldo_soles: 1030,
-  eat_m3: 10,
-  eat_soles: 3100,
+  saldo_soles: 1350,
+  real_m3: 0,
+  real_soles: 0,
+  proyectado_m3: 11,
+  proyectado_soles: 3410,
+  eat_m3: 11,
+  eat_soles: 3410,
+  variacion_soles: 110,
   sobrecosto: false,
 }
 

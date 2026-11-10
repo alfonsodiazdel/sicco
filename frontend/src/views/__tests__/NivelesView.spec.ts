@@ -13,8 +13,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 import type { RolClave, Usuario } from '@/types/auth'
 
-const { toast, servicios } = vi.hoisted(() => ({
+const { toast, confirm, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn() },
+  confirm: { require: vi.fn() },
   servicios: {
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
@@ -24,6 +25,7 @@ const { toast, servicios } = vi.hoisted(() => ({
 }))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
+vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
 
 // Cada prueba arranca con los datos de ejemplo intactos.
 vi.mock('@/services/proyectos', async (importOriginal) => {
@@ -173,6 +175,7 @@ describe('NivelesView', () => {
       'Elemento',
       'Volumen presupuestado (m³)',
       'Vaciado (m³)',
+      'Estado',
       'Acciones',
     ])
     expect(filas(vista)).toEqual([
@@ -189,7 +192,7 @@ describe('NivelesView', () => {
     const vista = await montar()
     const ocultas = vista.findAll('th').filter((th) => th.classes().includes('hidden'))
 
-    expect(ocultas.map((th) => th.text())).toEqual(['Elemento', 'Vaciado (m³)'])
+    expect(ocultas.map((th) => th.text())).toEqual(['Elemento', 'Vaciado (m³)', 'Estado'])
     expect(vista.get('tbody tr:first-child td:first-child .sm\\:hidden').text()).toBe(
       "Zapata · f'c 210 kg/cm²",
     )
@@ -254,6 +257,7 @@ describe('NivelesView', () => {
         nombre: 'Placa eje A',
         volumen_presup_m3: 60.5,
         volumen_vaciado_m3: 0,
+        fecha_culminacion: null,
       },
     ])
   })
@@ -524,5 +528,77 @@ describe('NivelesView', () => {
     }
     expect(vista.find('button[aria-label^="Editar nivel "]').exists()).toBe(false)
     expect(vista.find('button[aria-label^="Editar sector "]').exists()).toBe(false)
+  })
+
+  describe('culminación de sectores', () => {
+    const estado = (vista: VueWrapper, i: number) =>
+      vista.findAll('tbody tr')[i]!.findAll('td')[4]!.text()
+
+    it('muestra el estado de cada sector y, en el culminado, solo reabrir', async () => {
+      const vista = await montar()
+
+      // Zapatas eje 1-3 viene culminado en los datos de ejemplo.
+      expect(estado(vista, 0)).toBe('Culminado 20/10/2026')
+      expect(estado(vista, 1)).toBe('Abierto')
+      expect(vista.find('button[aria-label="Editar sector Zapatas eje 1-3"]').exists()).toBe(false)
+      expect(vista.find('button[aria-label="Culminar sector Zapatas eje 1-3"]').exists()).toBe(
+        false,
+      )
+      expect(vista.find('button[aria-label="Reabrir sector Zapatas eje 1-3"]').exists()).toBe(true)
+      expect(vista.find('button[aria-label="Editar sector Zapatas eje 4-6"]').exists()).toBe(true)
+      expect(vista.find('button[aria-label="Culminar sector Zapatas eje 4-6"]').exists()).toBe(true)
+    })
+
+    it('culmina un sector con la fecha de hoy por defecto', async () => {
+      vi.setSystemTime(new Date(2026, 10, 9, 10))
+      const vista = await montar()
+      const culminar = vi.spyOn(servicios.niveles!, 'culminarSector')
+
+      await pulsar(vista, 'Culminar sector Zapatas eje 4-6')
+      expect(vista.text()).toContain('Culminar sector · Zapatas eje 4-6')
+      expect(vista.get('[data-nota-culminar]').text()).toContain('cuenta como costo real')
+      await guardar(vista)
+
+      expect(culminar).toHaveBeenCalledWith(5, '2026-11-09')
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: 'Sector culminado correctamente' }),
+      )
+      expect(estado(vista, 1)).toBe('Culminado 09/11/2026')
+    })
+
+    it('muestra bajo la fecha el error de validación del backend', async () => {
+      const vista = await montar()
+      const { errorDeValidacion } = await import('@/services/errores')
+      vi.spyOn(servicios.niveles!, 'culminarSector').mockRejectedValue(
+        errorDeValidacion({
+          fecha_culminacion: [
+            'La fecha de culminación no puede ser anterior al inicio del proyecto ni a la última guía del sector',
+          ],
+        }),
+      )
+
+      await pulsar(vista, 'Culminar sector Zapatas eje 4-6')
+      await guardar(vista)
+
+      expect(vista.text()).toContain('no puede ser anterior al inicio del proyecto')
+      expect(estado(vista, 1)).toBe('Abierto')
+    })
+
+    it('reabre un sector culminado después de confirmar', async () => {
+      const vista = await montar()
+      const reabrir = vi.spyOn(servicios.niveles!, 'reabrirSector')
+
+      await pulsar(vista, 'Reabrir sector Zapatas eje 1-3')
+      expect(confirm.require).toHaveBeenCalledWith(
+        expect.objectContaining({ header: 'Reabrir sector' }),
+      )
+      expect(reabrir).not.toHaveBeenCalled()
+      const [opciones] = confirm.require.mock.calls[confirm.require.mock.calls.length - 1]!
+      await opciones.accept()
+      await asentar()
+
+      expect(reabrir).toHaveBeenCalledWith(4)
+      expect(estado(vista, 0)).toBe('Abierto')
+    })
   })
 })

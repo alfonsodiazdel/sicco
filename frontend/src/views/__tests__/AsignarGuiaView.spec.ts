@@ -135,6 +135,21 @@ describe('AsignarGuiaView (CU09)', () => {
     expect(grupos.map((g) => g.nivel)).toEqual(['Sótano 1', 'Piso 1'])
   })
 
+  it('no deja elegir un sector culminado (CU05)', async () => {
+    const { vista } = await montar()
+
+    const grupos = select(vista, 0).props('options') as {
+      nivel: string
+      sectores: { id: number; etiqueta: string; culminado: boolean }[]
+    }[]
+    // Zapatas eje 1-3 viene culminado en los datos de ejemplo.
+    expect(grupos[0]!.sectores.map((s) => [s.etiqueta, s.culminado])).toEqual([
+      ["Zapatas eje 1-3 · Zapata · f'c 210 kg/cm² (culminado)", true],
+      ["Zapatas eje 4-6 · Zapata · f'c 210 kg/cm²", false],
+    ])
+    expect(select(vista, 0).props('optionDisabled')).toBe('culminado')
+  })
+
   it('reparte la guía en dos sectores y vuelve a la lista', async () => {
     const { vista, router } = await montar()
     const guardarApi = vi.spyOn(servicios.asignaciones!, 'guardar')

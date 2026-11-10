@@ -4,7 +4,10 @@ import { storeToRefs } from 'pinia'
 import { useForm } from 'vee-validate'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
+import DatePicker from 'primevue/datepicker'
+import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
@@ -18,6 +21,7 @@ import { nivelesServicio } from '@/services/niveles'
 import { partidasServicio } from '@/services/partidas'
 import { decimales, volumenDisponible } from '@/services/presupuesto'
 import { esquemaNivel, valoresDeNivel } from '@/validaciones/nivel'
+import { aIso } from '@/validaciones/proyecto'
 import { esquemaSector, valoresDeSector } from '@/validaciones/sector'
 import type { NivelFila, SectorFila } from '@/types/niveles'
 import type { PartidaFila } from '@/types/partidas'
@@ -26,6 +30,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
+const confirm = useConfirm()
 const auth = useAuthStore()
 const proyectoActual = useProyectoActualStore()
 
@@ -67,7 +72,11 @@ const columnas = [
   { campo: 'elemento', encabezado: 'Elemento', secundaria: true },
   { campo: 'volumen_presup_m3', encabezado: 'Volumen presupuestado (m³)', numerica: true },
   { campo: 'volumen_vaciado_m3', encabezado: 'Vaciado (m³)', secundaria: true, numerica: true },
+  { campo: 'fecha_culminacion', encabezado: 'Estado', secundaria: true },
 ]
+
+/** `YYYY-MM-DD` a `dd/mm/aaaa`, sin pasar por Date: la zona horaria no mueve el día. */
+const fechaCorta = (iso: string) => iso.split('-').reverse().join('/')
 
 const filas = computed(() => {
   const texto = busqueda.value.trim().toLowerCase()
@@ -251,10 +260,73 @@ const guardarSector = formSector.handleSubmit(async (valores) => {
     await cargar()
   } catch (error) {
     const campos = erroresDeValidacion(error)
-    if (Object.keys(campos).length) formSector.setErrors(campos)
+    // «sector» no es un campo del formulario: el sector se culminó mientras se editaba.
+    if (campos.sector) avisarError(error)
+    else if (Object.keys(campos).length) formSector.setErrors(campos)
     else avisarError(error)
   }
 })
+
+// CU05: culminar un sector. Su vaciado pasa a costo real en el reporte EAT (CU15) y ya no recibe guías.
+const dialogoCulminar = ref(false)
+const culminando = ref<SectorFila | null>(null)
+const fechaCulminacion = ref<Date | null>(null)
+const errorCulminacion = ref<string | null>(null)
+const guardandoCulminacion = ref(false)
+const hoy = (() => {
+  const ahora = new Date()
+  return new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
+})()
+
+function abrirCulminar(s: SectorFila) {
+  culminando.value = s
+  fechaCulminacion.value = hoy
+  errorCulminacion.value = null
+  dialogoCulminar.value = true
+}
+
+async function guardarCulminacion() {
+  const s = culminando.value
+  if (!s) return
+  if (!fechaCulminacion.value) {
+    errorCulminacion.value = 'Ingrese la fecha de culminación'
+    return
+  }
+  guardandoCulminacion.value = true
+  try {
+    await nivelesServicio.culminarSector(s.id, aIso(fechaCulminacion.value))
+    toast.add({ severity: 'success', summary: 'Sector culminado correctamente', life: 4000 })
+    dialogoCulminar.value = false
+    await cargar()
+  } catch (error) {
+    const campos = erroresDeValidacion(error)
+    if (campos.fecha_culminacion) errorCulminacion.value = campos.fecha_culminacion
+    else avisarError(error)
+  } finally {
+    guardandoCulminacion.value = false
+  }
+}
+
+function reabrir(s: SectorFila) {
+  confirm.require({
+    header: 'Reabrir sector',
+    message:
+      `¿Reabrir el sector ${s.nombre}? Volverá a recibir guías y, en el reporte EAT, ` +
+      'su costo vuelve a proyectarse.',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Reabrir', severity: 'warn' },
+    accept: async () => {
+      try {
+        await nivelesServicio.reabrirSector(s.id)
+        toast.add({ severity: 'success', summary: 'Sector reabierto correctamente', life: 4000 })
+        await cargar()
+      } catch (error) {
+        avisarError(error)
+      }
+    },
+  })
+}
 
 const entero = { locale: 'es-PE', maxFractionDigits: 0, useGrouping: false, min: 1, fluid: true }
 const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, min: 0, fluid: true }
@@ -359,6 +431,9 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           <template #col-nombre="{ fila }">
             <span>{{ fila.nombre }}</span>
             <span class="block text-sm text-surface-500 sm:hidden">{{ fila.elemento }}</span>
+            <span v-if="fila.fecha_culminacion" class="block text-sm text-surface-500 sm:hidden"
+              >Culminado {{ fechaCorta(fila.fecha_culminacion) }}</span
+            >
           </template>
           <template #col-volumen_presup_m3="{ fila }">
             <span>{{ decimales(fila.volumen_presup_m3) }}</span>
@@ -369,15 +444,45 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           <template #col-volumen_vaciado_m3="{ fila }">{{
             decimales(fila.volumen_vaciado_m3)
           }}</template>
-          <template v-if="puedeGestionar" #acciones="{ fila }">
-            <Button
-              icon="pi pi-pencil"
-              text
-              rounded
-              :aria-label="`Editar sector ${fila.nombre}`"
-              :title="`Editar sector ${fila.nombre}`"
-              @click="abrirSector(fila)"
+          <template #col-fecha_culminacion="{ fila }">
+            <Tag
+              v-if="fila.fecha_culminacion"
+              :value="`Culminado ${fechaCorta(fila.fecha_culminacion)}`"
+              severity="secondary"
+              icon="pi pi-lock"
+              data-culminado
             />
+            <Tag v-else value="Abierto" severity="info" />
+          </template>
+          <template v-if="puedeGestionar" #acciones="{ fila }">
+            <template v-if="fila.fecha_culminacion">
+              <Button
+                icon="pi pi-lock-open"
+                text
+                rounded
+                :aria-label="`Reabrir sector ${fila.nombre}`"
+                :title="`Reabrir sector ${fila.nombre}`"
+                @click="reabrir(fila)"
+              />
+            </template>
+            <template v-else>
+              <Button
+                icon="pi pi-pencil"
+                text
+                rounded
+                :aria-label="`Editar sector ${fila.nombre}`"
+                :title="`Editar sector ${fila.nombre}`"
+                @click="abrirSector(fila)"
+              />
+              <Button
+                icon="pi pi-check-circle"
+                text
+                rounded
+                :aria-label="`Culminar sector ${fila.nombre}`"
+                :title="`Culminar sector ${fila.nombre}`"
+                @click="abrirCulminar(fila)"
+              />
+            </template>
           </template>
         </TablaCrud>
       </div>
@@ -549,6 +654,35 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           >
             {{ notaRestante }}
           </span>
+        </p>
+      </DialogoFormulario>
+
+      <DialogoFormulario
+        v-model:visible="dialogoCulminar"
+        :titulo="`Culminar sector · ${culminando?.nombre ?? ''}`"
+        :guardando="guardandoCulminacion"
+        @guardar="guardarCulminacion"
+      >
+        <CampoFormulario
+          etiqueta="Fecha de culminación"
+          para="fecha_culminacion"
+          :error="errorCulminacion ?? undefined"
+          obligatorio
+          ancho="medio"
+        >
+          <DatePicker
+            v-model="fechaCulminacion"
+            input-id="fecha_culminacion"
+            date-format="dd/mm/yy"
+            placeholder="dd/mm/aaaa"
+            :max-date="hoy"
+            :invalid="!!errorCulminacion"
+            fluid
+          />
+        </CampoFormulario>
+        <p class="text-sm text-surface-500 sm:col-span-2" data-nota-culminar>
+          El sector ya no recibirá guías. En el reporte EAT, lo vaciado hasta esta fecha cuenta como
+          costo real y deja de proyectarse. Puede reabrirlo si necesita corregirlo.
         </p>
       </DialogoFormulario>
     </template>
