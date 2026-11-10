@@ -2,7 +2,11 @@
 
 namespace App\Services\Documentos;
 
+use Aws\ResultInterface;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\Each;
 use GuzzleHttp\Psr7\Utils;
+use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Support\Facades\Storage;
 use League\Flysystem\FilesystemException;
 use Throwable;
@@ -25,20 +29,71 @@ class ArmadorZip
     public function medir(iterable $documentos): array
     {
         $disco = Storage::disk();
-        $total = 0;
-        $medidos = [];
-        foreach ($documentos as $documento) {
-            try {
-                $bytes = $documento['ruta'] ? $disco->size($documento['ruta']) : null;
-            } catch (FilesystemException) {
-                // Una ruta con «..» o sin archivo no se lee: se trata como archivo ausente.
-                $bytes = null;
+        if ($disco instanceof AwsS3V3Adapter) {
+            $medidos = $this->medirEnS3($disco, $documentos);
+        } else {
+            $medidos = [];
+            foreach ($documentos as $documento) {
+                try {
+                    $bytes = $documento['ruta'] ? $disco->size($documento['ruta']) : null;
+                } catch (FilesystemException) {
+                    // Una ruta con «..» o sin archivo no se lee: se trata como archivo ausente.
+                    $bytes = null;
+                }
+                $medidos[] = [...$documento, 'bytes' => $bytes];
             }
-            $total += $bytes ?? 0;
-            $medidos[] = [...$documento, 'bytes' => $bytes];
         }
 
-        return ['bytes' => $total, 'documentos' => $medidos];
+        return ['bytes' => array_sum(array_column($medidos, 'bytes')), 'documentos' => $medidos];
+    }
+
+    /**
+     * Lo mismo que el recorrido en serie, pero con hasta 10 HEAD a la vez: en S3 cada uno es un
+     * viaje de ida y vuelta, y en serie un lote grande suma la latencia de todos.
+     *
+     * @param  iterable<array{ruc: string, numero: string, ruta: ?string}>  $documentos
+     * @return list<array{ruc: string, numero: string, ruta: ?string, bytes: ?int}>
+     */
+    private function medirEnS3(AwsS3V3Adapter $disco, iterable $documentos): array
+    {
+        $config = $disco->getConfig();
+        $medidos = [];
+        $heads = function () use ($disco, $config, $documentos, &$medidos) {
+            foreach ($documentos as $documento) {
+                $i = count($medidos);
+                $medidos[] = [...$documento, 'bytes' => null];
+                try {
+                    // path() normaliza y antepone root y prefix como lo hace size(); con «..» falla antes del HEAD.
+                    $clave = $documento['ruta'] ? $disco->path($documento['ruta']) : null;
+                } catch (FilesystemException) {
+                    $clave = null;
+                }
+                if ($clave === null) {
+                    continue;
+                }
+                try {
+                    $head = $disco->getClient()->headObjectAsync(
+                        ['Bucket' => $config['bucket'], 'Key' => $clave] + ($config['options'] ?? []),
+                    );
+                } catch (Throwable $e) {
+                    // El SDK valida los parámetros al crear el comando y puede lanzar sin promesa.
+                    $head = Create::rejectionFor($e);
+                }
+                yield $i => $head;
+            }
+        };
+
+        // ofLimit y no ofLimitAll: un HEAD rechazado (404, 500, red) deja su archivo en null y el resto sigue.
+        Each::ofLimit(
+            $heads(),
+            10,
+            function (ResultInterface $resultado, int $i) use (&$medidos) {
+                $medidos[$i]['bytes'] = isset($resultado['ContentLength']) ? (int) $resultado['ContentLength'] : null;
+            },
+            fn () => null,
+        )->wait();
+
+        return $medidos;
     }
 
     /**
