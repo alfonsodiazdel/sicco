@@ -59,10 +59,6 @@ return [
         'simultaneas' => filter_var(env('EXPORTACIONES_SIMULTANEAS'), FILTER_VALIDATE_INT, [
             'options' => ['min_range' => 1, 'default' => 2],
         ]),
-        // Segundos sin avanzar tras los que vence el cupo de un ZIP, si el proceso murió sin liberarlo.
-        'candado_segundos' => filter_var(env('EXPORTACION_ZIP_LOCK_SEGUNDOS'), FILTER_VALIDATE_INT, [
-            'options' => ['min_range' => 1, 'default' => 300],
-        ]),
     ],
 
     'anthropic' => [

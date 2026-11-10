@@ -9,12 +9,13 @@ use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Services\Documentos\ArmadorZip;
-use Illuminate\Cache\Lock;
+use App\Services\Documentos\CupoExportacion;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -58,7 +59,7 @@ class DocumentoController extends Controller
      * Los topes de cantidad y de peso y el cupo se revisan antes del primer byte: una vez que el
      * ZIP empieza a salir ya no se puede responder con un error.
      */
-    public function zip(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo, ArmadorZip $armador): StreamedResponse
+    public function zip(ExportarDocumentosRequest $request, Proyecto $proyecto, string $tipo, ArmadorZip $armador, CupoExportacion $cupo): StreamedResponse
     {
         $consulta = $this->consulta($request, $proyecto, $tipo);
         $total = $consulta->count();
@@ -81,15 +82,13 @@ class DocumentoController extends Controller
         }
 
         $encabezado = $this->encabezado($request, $proyecto, $tipo, $consulta);
-        $candado = self::tomarCupo();
-        $segundos = config('services.exportaciones.candado_segundos');
+        self::tomarCupo($cupo);
 
-        return response()->stream(function () use ($armador, $medicion, $encabezado, $candado, $segundos) {
+        return response()->stream(function () use ($armador, $medicion, $encabezado, $cupo) {
             try {
-                // Lo que sigue saliendo renueva el plazo, aunque sea a mitad de un archivo: vence solo si el envío deja de avanzar.
-                $armador->transmitir($medicion['documentos'], $encabezado, fn () => $candado->refresh($segundos));
+                $armador->transmitir($medicion['documentos'], $encabezado);
             } finally {
-                $candado->release();
+                $cupo->liberar();
             }
         }, 200, [
             'Content-Type' => 'application/zip',
@@ -99,26 +98,26 @@ class DocumentoController extends Controller
         ]);
     }
 
-    /**
-     * Una de las ranuras de exportación de toda la app. Vence sola si el proceso muere sin
-     * liberarla, y se libera también al terminar la petición si el cliente corta la descarga.
-     */
-    private static function tomarCupo(): Lock
+    /** Se libera también al terminar la petición, si el cliente corta la descarga. */
+    private static function tomarCupo(CupoExportacion $cupo): void
     {
-        $segundos = config('services.exportaciones.candado_segundos');
-        for ($i = 0; $i < config('services.exportaciones.simultaneas'); $i++) {
-            $candado = Cache::lock("exportar-zip:{$i}", $segundos);
-            if ($candado->get()) {
-                register_shutdown_function(fn () => $candado->release());
+        try {
+            $tomado = $cupo->tomar();
+        } catch (RuntimeException $e) {
+            Log::error('No se pudo pedir un cupo de exportación a MySQL.', ['error' => $e->getMessage()]);
 
-                return $candado;
-            }
+            throw new HttpResponseException(response()->json(
+                ['message' => 'No se pudo iniciar la exportación. Intente de nuevo en unos minutos.', 'code' => 'cupo_no_disponible'],
+                Response::HTTP_SERVICE_UNAVAILABLE,
+            ));
         }
-
-        throw new HttpResponseException(response()->json(
-            ['message' => 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.', 'code' => 'sin_cupo'],
-            Response::HTTP_TOO_MANY_REQUESTS,
-        ));
+        if (! $tomado) {
+            throw new HttpResponseException(response()->json(
+                ['message' => 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.', 'code' => 'sin_cupo'],
+                Response::HTTP_TOO_MANY_REQUESTS,
+            ));
+        }
+        register_shutdown_function(fn () => $cupo->liberar());
     }
 
     /** Con `ids`, solo la selección dentro del proyecto; sin ellos, los filtros. */

@@ -9,7 +9,9 @@ use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\User;
 use App\Services\Documentos\ArmadorZip;
-use Illuminate\Support\Facades\Cache;
+use App\Services\Documentos\CupoExportacion;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 
@@ -194,31 +196,6 @@ describe('ZIP de documentos (CU18)', function () {
     });
 });
 
-/** Salida de prueba: cada escritura llama a $alEscribir, que puede adelantar el reloj. */
-class SalidaLentaDePrueba
-{
-    public static Closure $alEscribir;
-
-    public $context;
-
-    public function stream_open(string $ruta, string $modo, int $opciones, ?string &$abierta): bool
-    {
-        return true;
-    }
-
-    public function stream_write(string $datos): int
-    {
-        (self::$alEscribir)();
-
-        return strlen($datos);
-    }
-
-    public function stream_eof(): bool
-    {
-        return false;
-    }
-}
-
 /** Un proyecto con una guía para exportar y la URL de su ZIP. */
 function zipDeUnaGuia(): array
 {
@@ -311,15 +288,15 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
                 'code' => 'demasiado_peso',
             ]);
         // El rechazo no ocupa un cupo.
-        expect(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+        expect(cupoLibre(1))->toBeTrue();
     });
 
     it('responde 429 cuando las 2 exportaciones simultáneas están en curso y deja pasar al liberarse una', function () {
         [$proyecto, $url] = zipDeUnaGuia();
         $usuario = asignadoA($proyecto);
-        $primera = Cache::lock('exportar-zip:0', 300);
-        $segunda = Cache::lock('exportar-zip:1', 300);
-        expect($primera->get())->toBeTrue()->and($segunda->get())->toBeTrue();
+        // Sin leer la respuesta el ZIP no se envía y su cupo sigue tomado.
+        $primera = $this->actingAs($usuario)->get($url)->assertOk();
+        $segunda = $this->actingAs($usuario)->get($url)->assertOk();
 
         $this->actingAs($usuario)->get($url)
             ->assertStatus(429)
@@ -328,15 +305,17 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
                 'code' => 'sin_cupo',
             ]);
 
-        $segunda->release();
+        $segunda->streamedContent();
         $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
+        $primera->streamedContent();
+        expect(cupoLibre(1))->toBeTrue()->and(cupoLibre(2))->toBeTrue();
     });
 
     it('libera el cupo aunque el armado del ZIP falle a la mitad', function () {
         [$proyecto, $url] = zipDeUnaGuia();
         app()->bind(ArmadorZip::class, fn () => new class extends ArmadorZip
         {
-            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            public function transmitir(array $documentos, array $encabezado, $salida = null): void
             {
                 echo 'PK';
                 throw new RuntimeException('se cayó el disco');
@@ -358,77 +337,127 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
         }
 
         expect($error)->toBe('se cayó el disco')
-            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+            ->and(cupoLibre(1))->toBeTrue();
     });
 
-    it('si el proceso muere sin liberar el cupo, este vence a los 300 segundos sin avanzar', function () {
+    it('si el proceso muere, MySQL libera su cupo al cerrarse su conexión', function () {
         [$proyecto, $url] = zipDeUnaGuia();
         $usuario = asignadoA($proyecto);
-        // Sin leer la respuesta el ZIP nunca se envía: es como un proceso que murió con el cupo tomado.
-        $this->actingAs($usuario)->get($url)->assertOk();
-        $this->actingAs($usuario)->get($url)->assertOk();
+        ocuparCuposDesdeOtroProceso();
         $this->actingAs($usuario)->get($url)->assertStatus(429);
 
-        $this->travel(299)->seconds();
-        $this->actingAs($usuario)->get($url)->assertStatus(429);
-        $this->travel(2)->seconds();
+        DB::disconnect('otro_proceso');
         $this->actingAs($usuario)->get($url)->assertOk()->streamedContent();
     });
 
-    it('una descarga lenta conserva el cupo mientras sigue enviando archivos', function () {
+    it('una exportación que pasa más de 300 segundos bloqueada sigue ocupando su cupo y la tercera recibe 429', function () {
+        config(['cache.default' => 'database']);
         [$proyecto, $url] = zipDeUnaGuia();
-        $tomado = new ArrayObject;
         $prueba = $this;
-        app()->bind(ArmadorZip::class, fn () => new class($prueba, $tomado) extends ArmadorZip
+        $estados = new ArrayObject;
+        app()->bind(ArmadorZip::class, fn () => new class($prueba, $url, $estados) extends ArmadorZip
         {
-            public function __construct(private $prueba, private ArrayObject $tomado) {}
+            private static bool $enCurso = false;
 
-            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            public function __construct(private $prueba, private string $url, private ArrayObject $estados) {}
+
+            public function transmitir(array $documentos, array $encabezado, $salida = null): void
             {
-                foreach ([1, 2, 3] as $archivo) {
-                    $this->prueba->travel(200)->seconds();
-                    $alAvanzar();
-                    $this->tomado[] = ! Cache::lock('exportar-zip:0', 1)->get();
+                if (self::$enCurso) {
+                    parent::transmitir($documentos, $encabezado, $salida);
+
+                    return;
                 }
+                self::$enCurso = true;
+                // Como una escritura que el kernel retiene mientras un cliente lento no vacía el socket.
+                $this->prueba->travel(400)->seconds();
+                $segunda = $this->prueba->get($this->url);
+                $tercera = $this->prueba->get($this->url);
+                $this->estados->exchangeArray([$segunda->getStatusCode(), $tercera->getStatusCode()]);
+                $segunda->streamedContent();
+                parent::transmitir($documentos, $encabezado, $salida);
             }
         });
 
         $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
 
-        // 600 s en total, más que los 300 del plazo, y el cupo nunca quedó libre a mitad.
-        expect($tomado->getArrayCopy())->toBe([true, true, true])
-            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+        expect($estados->getArrayCopy())->toBe([200, 429]);
     });
 
-    it('un solo archivo que tarda más que el plazo del candado en salir conserva el cupo hasta el final', function () {
+    it('responde 503 en español y registra el error si MySQL no puede dar el cupo', function () {
         [$proyecto, $url] = zipDeUnaGuia();
-        $tomado = [];
-        SalidaLentaDePrueba::$alEscribir = function () use (&$tomado) {
-            $this->travel(200)->seconds();
-            $sonda = Cache::lock('exportar-zip:0', 1);
-            $tomado[] = ! $sonda->get();
-            if (! end($tomado)) {
-                $sonda->release();
-            }
-        };
-        app()->bind(ArmadorZip::class, fn () => new class extends ArmadorZip
+        app()->bind(CupoExportacion::class, fn () => new class extends CupoExportacion
         {
-            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            protected function pedir(string $nombre): ?int
             {
-                parent::transmitir($documentos, $encabezado, $alAvanzar, fopen('lento://zip', 'wb'));
+                return null;
             }
         });
-        stream_wrapper_register('lento', SalidaLentaDePrueba::class);
+        Log::spy();
+
+        $this->actingAs(asignadoA($proyecto))->get($url)
+            ->assertStatus(503)
+            ->assertExactJson([
+                'message' => 'No se pudo iniciar la exportación. Intente de nuevo en unos minutos.',
+                'code' => 'cupo_no_disponible',
+            ]);
+
+        Log::shouldHaveReceived('error')->once()->with('No se pudo pedir un cupo de exportación a MySQL.', Mockery::any());
+        expect(cupoLibre(1))->toBeTrue();
+    });
+
+    it('avisa en el log si el cupo se perdió antes de terminar la exportación', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        app()->bind(ArmadorZip::class, fn () => new class extends ArmadorZip
+        {
+            public function transmitir(array $documentos, array $encabezado, $salida = null): void
+            {
+                // Como si la conexión con MySQL se hubiera cerrado a mitad del envío.
+                DB::selectOne('SELECT RELEASE_ALL_LOCKS() AS n');
+                parent::transmitir($documentos, $encabezado, $salida);
+            }
+        });
+        Log::spy();
+
+        $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
+
+        Log::shouldHaveReceived('warning')->once()
+            ->with('El cupo de exportación se perdió antes de terminar: se cerró su conexión con MySQL.', ['cupo' => CupoExportacion::nombre(1)]);
+        expect(cupoLibre(1))->toBeTrue();
+    });
+
+    it('al apagarse el proceso, liberar el cupo no lanza aunque el log ya no esté disponible', function () {
+        $cupo = new CupoExportacion;
+        expect($cupo->tomar())->toBeTrue();
+        DB::selectOne('SELECT RELEASE_ALL_LOCKS() AS n');
+        Log::shouldReceive('warning')->andThrow(new RuntimeException('Class "log" does not exist'));
+
+        $cupo->liberar();
+
+        expect(cupoLibre(1))->toBeTrue();
+    });
+
+    it('no usa conexiones persistentes, porque el cupo vive lo que vive la conexión', function () {
+        $conexion = config('database.default');
+
+        expect(config("database.connections.{$conexion}.options")[PDO::ATTR_PERSISTENT] ?? false)->toBeFalse()
+            ->and(DB::connection()->getPdo()->getAttribute(PDO::ATTR_PERSISTENT))->toBeFalse();
+    });
+
+    it('nombra cada cupo con su base y no pasa de los 64 caracteres que acepta MySQL', function () {
+        $base = DB::getDatabaseName();
+        expect(CupoExportacion::nombre(1))->toBe("{$base}-exportar-zip-1");
+
         try {
-            $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
+            DB::connection()->setDatabaseName(str_repeat('b', 60));
+            $largos = [CupoExportacion::nombre(1), CupoExportacion::nombre(2)];
         } finally {
-            stream_wrapper_unregister('lento');
+            DB::connection()->setDatabaseName($base);
         }
 
-        // Ya entre el encabezado y el contenido del único archivo pasan más de 300 s.
-        expect(count($tomado) * 200)->toBeGreaterThan(300)
-            ->and($tomado)->toBe(array_fill(0, count($tomado), true))
-            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+        expect(strlen($largos[0]))->toBeLessThanOrEqual(64)
+            ->and(strlen($largos[1]))->toBeLessThanOrEqual(64)
+            ->and($largos[0])->not->toBe($largos[1]);
     });
 
     it('lista como faltante un archivo que llega incompleto, y el ZIP sigue siendo válido', function () {
@@ -452,8 +481,8 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
             ->toContain("Faltantes (2):\n- 20100000001-T001-2: incompleto (6 de 100 bytes) en 20100000001-T001-2.jpg\n- 20100000001-T001-3: no está en el disco\n");
     });
 
-    it('usa 500 MB, 2 simultáneas y 300 segundos cuando sus variables están vacías o no son números válidos', function (string $valor) {
-        $variables = ['EXPORTACION_ZIP_MAX_MB', 'EXPORTACIONES_SIMULTANEAS', 'EXPORTACION_ZIP_LOCK_SEGUNDOS'];
+    it('usa 500 MB y 2 simultáneas cuando sus variables están vacías o no son números válidos', function (string $valor) {
+        $variables = ['EXPORTACION_ZIP_MAX_MB', 'EXPORTACIONES_SIMULTANEAS'];
         foreach ($variables as $variable) {
             $_ENV[$variable] = $_SERVER[$variable] = $valor;
         }
@@ -465,6 +494,7 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
             }
         }
 
-        expect($exportaciones)->toMatchArray(['max_mb' => 500, 'simultaneas' => 2, 'candado_segundos' => 300]);
+        expect($exportaciones)->toMatchArray(['max_mb' => 500, 'simultaneas' => 2])
+            ->and($exportaciones)->not->toHaveKey('candado_segundos');
     })->with(['vacía' => '', 'texto' => 'cinco', 'cero' => '0']);
 });

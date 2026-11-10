@@ -6,7 +6,7 @@ use App\Enums\Rol;
 use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\User;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -70,8 +70,7 @@ describe('límite de solicitudes de toda la app', function () {
 
     it('el 429 sin cupo de exportaciones simultáneas conserva su propio mensaje', function () {
         [$proyecto, $url] = proyectoConUnaGuiaExportable();
-        $ocupados = collect(range(0, config('services.exportaciones.simultaneas') - 1))
-            ->map(fn (int $i) => tap(Cache::lock("exportar-zip:{$i}", 60))->get());
+        ocuparCuposDesdeOtroProceso();
 
         try {
             $this->actingAs(asignadoA($proyecto))->getJson($url)
@@ -79,7 +78,7 @@ describe('límite de solicitudes de toda la app', function () {
                 ->assertJsonPath('code', 'sin_cupo')
                 ->assertJsonPath('message', 'Hay otras exportaciones en curso. Intente de nuevo en un minuto.');
         } finally {
-            $ocupados->each->release();
+            DB::disconnect('otro_proceso');
         }
     });
 });

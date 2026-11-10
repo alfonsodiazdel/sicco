@@ -5,7 +5,6 @@ namespace App\Services\Documentos;
 use Aws\ResultInterface;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\Each;
-use GuzzleHttp\Psr7\Utils;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Support\Facades\Storage;
 use League\Flysystem\FilesystemException;
@@ -99,19 +98,13 @@ class ArmadorZip
     /**
      * @param  list<array{ruc: string, numero: string, ruta: ?string, bytes: ?int}>  $documentos  Lo que devuelve medir().
      * @param  list<string>  $encabezado  Lo que se pidió, una línea por dato.
-     * @param  ?callable  $alAvanzar  Se llama mientras el ZIP sale, a lo sumo una vez por décima del plazo del candado.
      * @param  resource|null  $salida  Por defecto, la salida de la respuesta.
      */
-    public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+    public function transmitir(array $documentos, array $encabezado, $salida = null): void
     {
         $disco = Storage::disk();
-        $destino = new SalidaConLatido(
-            Utils::streamFor($salida ?? fopen('php://output', 'wb')),
-            $alAvanzar ?? fn () => null,
-            intdiv(config('services.exportaciones.candado_segundos'), 10),
-        );
         $zip = new ZipStream(
-            outputStream: $destino,
+            outputStream: $salida ?? fopen('php://output', 'wb'),
             sendHttpHeaders: false,
             defaultCompressionMethod: CompressionMethod::STORE,
             defaultEnableZeroHeader: true,
@@ -169,8 +162,6 @@ class ArmadorZip
             ...self::lista($faltantes),
         ])."\n");
         $zip->finish();
-        // Si no, al destruirse el envoltorio PSR-7 cerraría también la $salida de quien llama.
-        $destino->detach();
     }
 
     /** Deja solo letras sin tilde, dígitos, punto, guion y guion bajo: «/» o «\» nunca crean carpetas. */
