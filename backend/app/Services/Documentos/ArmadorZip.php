@@ -2,6 +2,7 @@
 
 namespace App\Services\Documentos;
 
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Support\Facades\Storage;
 use League\Flysystem\FilesystemException;
 use Throwable;
@@ -43,14 +44,19 @@ class ArmadorZip
     /**
      * @param  list<array{ruc: string, numero: string, ruta: ?string, bytes: ?int}>  $documentos  Lo que devuelve medir().
      * @param  list<string>  $encabezado  Lo que se pidió, una línea por dato.
-     * @param  ?callable  $alAvanzar  Se llama tras cada archivo enviado.
+     * @param  ?callable  $alAvanzar  Se llama mientras el ZIP sale, a lo sumo una vez por décima del plazo del candado.
      * @param  resource|null  $salida  Por defecto, la salida de la respuesta.
      */
     public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
     {
         $disco = Storage::disk();
+        $destino = new SalidaConLatido(
+            Utils::streamFor($salida ?? fopen('php://output', 'wb')),
+            $alAvanzar ?? fn () => null,
+            intdiv(config('services.exportaciones.candado_segundos'), 10),
+        );
         $zip = new ZipStream(
-            outputStream: $salida,
+            outputStream: $destino,
             sendHttpHeaders: false,
             defaultCompressionMethod: CompressionMethod::STORE,
             defaultEnableZeroHeader: true,
@@ -95,9 +101,6 @@ class ArmadorZip
             } else {
                 $incluidos[] = $nombre;
             }
-            if ($alAvanzar) {
-                $alAvanzar();
-            }
         }
 
         $zip->addFile(fileName: 'manifest.txt', data: implode("\n", [
@@ -111,6 +114,8 @@ class ArmadorZip
             ...self::lista($faltantes),
         ])."\n");
         $zip->finish();
+        // Si no, al destruirse el envoltorio PSR-7 cerraría también la $salida de quien llama.
+        $destino->detach();
     }
 
     /** Deja solo letras sin tilde, dígitos, punto, guion y guion bajo: «/» o «\» nunca crean carpetas. */

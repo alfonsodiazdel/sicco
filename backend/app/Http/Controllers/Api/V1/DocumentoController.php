@@ -9,7 +9,7 @@ use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Services\Documentos\ArmadorZip;
-use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Cache\Lock;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -86,7 +86,7 @@ class DocumentoController extends Controller
 
         return response()->stream(function () use ($armador, $medicion, $encabezado, $candado, $segundos) {
             try {
-                // Cada archivo enviado renueva el plazo: vence solo si el envío deja de avanzar.
+                // Lo que sigue saliendo renueva el plazo, aunque sea a mitad de un archivo: vence solo si el envío deja de avanzar.
                 $armador->transmitir($medicion['documentos'], $encabezado, fn () => $candado->refresh($segundos));
             } finally {
                 $candado->release();

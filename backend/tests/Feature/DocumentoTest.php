@@ -194,6 +194,31 @@ describe('ZIP de documentos (CU18)', function () {
     });
 });
 
+/** Salida de prueba: cada escritura llama a $alEscribir, que puede adelantar el reloj. */
+class SalidaLentaDePrueba
+{
+    public static Closure $alEscribir;
+
+    public $context;
+
+    public function stream_open(string $ruta, string $modo, int $opciones, ?string &$abierta): bool
+    {
+        return true;
+    }
+
+    public function stream_write(string $datos): int
+    {
+        (self::$alEscribir)();
+
+        return strlen($datos);
+    }
+
+    public function stream_eof(): bool
+    {
+        return false;
+    }
+}
+
 /** Un proyecto con una guía para exportar y la URL de su ZIP. */
 function zipDeUnaGuia(): array
 {
@@ -372,6 +397,37 @@ describe('ZIP en streaming, tope de peso y cupo de exportaciones (CU18)', functi
 
         // 600 s en total, más que los 300 del plazo, y el cupo nunca quedó libre a mitad.
         expect($tomado->getArrayCopy())->toBe([true, true, true])
+            ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
+    });
+
+    it('un solo archivo que tarda más que el plazo del candado en salir conserva el cupo hasta el final', function () {
+        [$proyecto, $url] = zipDeUnaGuia();
+        $tomado = [];
+        SalidaLentaDePrueba::$alEscribir = function () use (&$tomado) {
+            $this->travel(200)->seconds();
+            $sonda = Cache::lock('exportar-zip:0', 1);
+            $tomado[] = ! $sonda->get();
+            if (! end($tomado)) {
+                $sonda->release();
+            }
+        };
+        app()->bind(ArmadorZip::class, fn () => new class extends ArmadorZip
+        {
+            public function transmitir(array $documentos, array $encabezado, ?callable $alAvanzar = null, $salida = null): void
+            {
+                parent::transmitir($documentos, $encabezado, $alAvanzar, fopen('lento://zip', 'wb'));
+            }
+        });
+        stream_wrapper_register('lento', SalidaLentaDePrueba::class);
+        try {
+            $this->actingAs(asignadoA($proyecto))->get($url)->assertOk()->streamedContent();
+        } finally {
+            stream_wrapper_unregister('lento');
+        }
+
+        // Ya entre el encabezado y el contenido del único archivo pasan más de 300 s.
+        expect(count($tomado) * 200)->toBeGreaterThan(300)
+            ->and($tomado)->toBe(array_fill(0, count($tomado), true))
             ->and(Cache::lock('exportar-zip:0', 1)->get())->toBeTrue();
     });
 
