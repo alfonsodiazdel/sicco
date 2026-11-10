@@ -30,7 +30,8 @@ class ExportarDocumentosRequest extends FormRequest
             'hasta' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:desde'],
             'proveedor_id' => ['nullable', 'integer'],
             'estado' => ['nullable', Rule::enum(EstadoAsignacion::class)],
-            'ids' => ['nullable', 'array', 'max:'.DocumentoController::TOPE],
+            // `?ids=` llega como null: con `filled` (implícita) se rechaza igual que `ids=[]`.
+            'ids' => ['bail', 'filled', 'array', 'max:'.DocumentoController::TOPE],
             'ids.*' => ['integer'],
         ];
     }
@@ -42,6 +43,7 @@ class ExportarDocumentosRequest extends FormRequest
             'hasta.after_or_equal' => __('sicco.guias.rango_invalido'),
             'proveedor_id.integer' => 'Seleccione un proveedor válido',
             'estado.enum' => 'Seleccione un estado válido',
+            'ids.filled' => 'Seleccione al menos un documento',
             'ids.array' => 'La selección no es válida',
             'ids.max' => 'Se pueden exportar hasta '.DocumentoController::TOPE.' documentos a la vez.',
             'ids.*.integer' => 'La selección no es válida',
