@@ -130,43 +130,7 @@ final readonly class ReporteCorteMesQuery
     /** Desperdicio acumulado al cierre: sectores culminados y abiertos que ya pasaron lo presupuestado. */
     private function desperdicio(): array
     {
-        $vaciado = DB::table('asignaciones as a')
-            ->join('guias_remision as g', 'g.id', '=', 'a.guia_id')
-            ->where('g.proyecto_id', $this->proyecto->id)
-            ->where('g.fecha', '<=', $this->cierre)
-            ->groupBy('a.sector_id')
-            ->select('a.sector_id')
-            ->selectRaw('SUM(a.volumen_m3) AS m3');
-
-        $sectores = DB::table('sectores as s')
-            ->join('partidas as p', 'p.id', '=', 's.presupuesto_id')
-            ->leftJoinSub($vaciado, 'v', 'v.sector_id', '=', 's.id')
-            ->where('p.proyecto_id', $this->proyecto->id)
-            ->where(fn (Builder $q) => $q
-                ->where('s.fecha_culminacion', '<=', $this->cierre)
-                ->orWhereRaw('COALESCE(v.m3, 0) > s.volumen_presup_m3'))
-            ->select(['s.volumen_presup_m3', 'p.factor_desperdicio'])
-            ->selectRaw('COALESCE(v.m3, 0) AS vaciado_m3')
-            ->get();
-
-        $presupuestado = $sectores->sum(fn (object $s) => Volumen::centesimos($s->volumen_presup_m3));
-        $vaciadoTotal = $sectores->sum(fn (object $s) => Volumen::centesimos($s->vaciado_m3));
-        // El mismo límite por sector que CU09, CU13 y CU14: presupuestado × (1 + factor).
-        $limite = $sectores->sum(fn (object $s) => (int) round(
-            Volumen::centesimos($s->volumen_presup_m3) * (100 + (float) $s->factor_desperdicio) / 100));
-
-        return [
-            'sectores' => $sectores->count(),
-            'presupuestado_m3' => $presupuestado / 100,
-            'vaciado_m3' => $vaciadoTotal / 100,
-            'diferencia_m3' => ($vaciadoTotal - $presupuestado) / 100,
-            // Como el CU13: vaciar menos de lo presupuestado no es desperdicio negativo.
-            'desperdicio_pct' => $presupuestado > 0 && $vaciadoTotal > 0
-                ? max(0, round(($vaciadoTotal - $presupuestado) / $presupuestado * 100, 2))
-                : null,
-            'limite_m3' => $limite / 100,
-            'supera_limite' => $vaciadoTotal > $limite,
-        ];
+        return DesperdicioAcumulado::resumir(DesperdicioAcumulado::sectores([$this->proyecto->id], $this->cierre));
     }
 
     private function guias(): Builder
@@ -177,30 +141,7 @@ final readonly class ReporteCorteMesQuery
     /** Precio de una guía: el de su factura; si no, el último facturado al cierre; si no, el presupuestado. */
     private function precioGuia(string $guia): array
     {
-        return self::coalesce(
-            self::sub(DB::table('factura_lineas as pf')
-                ->join('facturas as ff', 'ff.id', '=', 'pf.factura_id')
-                ->whereColumn('pf.factura_id', "{$guia}.factura_id")
-                ->whereColumn('pf.resistencia_id', "{$guia}.resistencia_id")
-                ->where('ff.proyecto_id', $this->proyecto->id)
-                ->orderBy('pf.id')
-                ->limit(1)
-                ->select('pf.precio_unitario')),
-            self::sub(DB::table('factura_lineas as uf')
-                ->join('facturas as fu', 'fu.id', '=', 'uf.factura_id')
-                ->whereColumn('uf.resistencia_id', "{$guia}.resistencia_id")
-                ->where('fu.proyecto_id', $this->proyecto->id)
-                ->where('fu.fecha', '<=', $this->cierre)
-                ->orderByDesc('fu.fecha')->orderByDesc('fu.id')->orderByDesc('uf.id')
-                ->limit(1)
-                ->select('uf.precio_unitario')),
-            // Precio presupuestado de su resistencia, ponderado por metrado.
-            self::sub(DB::table('partidas as pm')
-                ->where('pm.proyecto_id', $this->proyecto->id)
-                ->whereColumn('pm.resistencia_id', "{$guia}.resistencia_id")
-                ->selectRaw('CAST(SUM(pm.metrado_m3 * pm.precio_unitario) AS DECIMAL(30, 12)) / NULLIF(SUM(pm.metrado_m3), 0)')),
-            ['0', []],
-        );
+        return PrecioGuia::expresion($guia, $this->cierre);
     }
 
     /** @param array<array<string, mixed>> $filas */
@@ -212,15 +153,5 @@ final readonly class ReporteCorteMesQuery
     private static function centimos(?string $decimal): int
     {
         return (int) round(((float) $decimal) * 100);
-    }
-
-    private static function sub(Builder $consulta): array
-    {
-        return ['('.$consulta->toSql().')', $consulta->getBindings()];
-    }
-
-    private static function coalesce(array ...$fragmentos): array
-    {
-        return ['COALESCE('.implode(', ', array_column($fragmentos, 0)).')', array_merge(...array_column($fragmentos, 1))];
     }
 }

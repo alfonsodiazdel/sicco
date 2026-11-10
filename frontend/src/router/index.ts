@@ -18,6 +18,7 @@ declare module 'vue-router' {
 
 const implementados = [
   '/',
+  '/dashboard',
   '/usuarios',
   '/proyectos',
   '/partidas',
@@ -69,6 +70,12 @@ const routes: RouteRecordRaw[] = [
         name: 'inicio',
         component: () => import('@/views/InicioView.vue'),
         meta: { titulo: 'Inicio' },
+      },
+      {
+        path: 'dashboard',
+        name: 'dashboard',
+        component: () => import('@/views/DashboardView.vue'),
+        meta: { roles: ['gerencia'], titulo: 'Dashboard' },
       },
       {
         path: 'usuarios',

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AlertaController;
 use App\Http\Controllers\Api\V1\AsignacionController;
 use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SesionController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DesperdicioController;
 use App\Http\Controllers\Api\V1\FacturaController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
@@ -146,6 +147,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('proyectos/{proyecto}/reportes/corte-mes/excel', [ReporteCorteMesController::class, 'excel'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/reportes/corte-mes/pdf', [ReporteCorteMesController::class, 'pdf'])->whereNumber('proyecto');
             });
+
+            // CU17 Dashboard gerencial: Gerencia ve sus proyectos activos; el administrador, todos.
+            Route::get('dashboard', [DashboardController::class, 'show'])->middleware('rol:gerencia,administrador');
 
             // CU02 Gestionar usuarios y roles
             Route::middleware('rol:administrador')->group(function () {
