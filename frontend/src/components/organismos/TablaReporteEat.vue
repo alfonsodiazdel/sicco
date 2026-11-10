@@ -97,7 +97,16 @@ const celda = 'px-3 py-2 text-right font-mono whitespace-nowrap tabular-nums'
           :class="rojo(fila)"
           data-fila-aparte
         >
-          <td class="px-3 py-2">{{ fila.concepto }}</td>
+          <td class="px-3 py-2">
+            <span class="block">{{ fila.concepto }}</span>
+            <small
+              v-if="fila.aviso"
+              class="flex items-center gap-1 text-xs text-amber-700"
+              data-aviso
+            >
+              <i class="pi pi-exclamation-triangle text-xs" aria-hidden="true" />{{ fila.aviso }}
+            </small>
+          </td>
           <td v-for="columna in columnas" :key="columna.campo" :class="celda">
             {{ monto(fila, columna) }}
           </td>
