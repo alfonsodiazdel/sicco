@@ -14,8 +14,11 @@ use App\Models\Sector;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use OpenSpout\Reader\XLSX\Reader;
 use OpenSpout\Writer\XLSX\Writer;
+
+const AVISO_SIN_SECTOR_EAT = 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.';
 
 beforeEach(function () {
     $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));
@@ -185,13 +188,14 @@ describe('cálculo', function () {
             ],
             'filas_aparte' => [
                 // 1 × 310 = 310
-                ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false],
+                ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
                 // Espera es de F2 (11-05): queda fuera.
                 ['tipo' => 'cargo', 'concepto' => 'Bombeo', ...montosEat(0.0, 0.0, null, 150.0, null, -150.0, null, 150.0), 'sobrecosto' => false],
             ],
-            // 6000 + 1300 = 7300; 5410 + 930 + 310 + 150 = 6800; 590 + 370 − 310 − 150 = 500; 6340 + 1550 + 310 + 150 = 8350
-            // m³: 16 + 3 + 1 = 20; 3 + 2 + 0 = 5; 19 + 5 + 1 = 25
-            'total' => [...montosEat(23.0, 7300.0, 20.0, 6800.0, 5.0, 500.0, 25.0, 8350.0), 'sobrecosto' => true],
+            // Las guías sin sector no suman; Bombeo sí.
+            // 6000 + 1300 = 7300; 5410 + 930 + 150 = 6490; 590 + 370 − 150 = 810; 6340 + 1550 + 150 = 8040
+            // m³: 16 + 3 = 19; 3 + 2 = 5; 19 + 5 = 24
+            'total' => [...montosEat(23.0, 7300.0, 19.0, 6490.0, 5.0, 810.0, 24.0, 8040.0), 'sobrecosto' => true],
         ]]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -289,13 +293,13 @@ describe('cálculo', function () {
         // Al 10-08 no hay facturas: promedio de 210 = (10 × 320 + 5 × 260) / 15 = 4500 / 15 = 300; 2 × 300 = 600
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
         expect($r->json('data.filas_aparte'))->toBe([
-            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 600.0, 0.0, -600.0, 2.0, 600.0), 'sobrecosto' => false],
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 600.0, 0.0, -600.0, 2.0, 600.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
         ]);
 
         // Al 10-31: (1 + 2) × 310 = 930
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
         expect($r->json('data.filas_aparte.0'))->toBe(
-            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 3.0, 930.0, 0.0, -930.0, 3.0, 930.0), 'sobrecosto' => false],
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 3.0, 930.0, 0.0, -930.0, 3.0, 930.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
         );
         expect(DB::table('reportes_generados')->count())->toBe(2);
     });
@@ -308,7 +312,7 @@ describe('cálculo', function () {
 
         // 1.5 × 0 = 0
         expect($r->json('data.filas_aparte'))->toBe([
-            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.5, 0.0), 'sobrecosto' => false],
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.5, 0.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
         ]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -370,18 +374,22 @@ describe('cálculo', function () {
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
-    it('muestra las guías sin sector y los cargos de factura en filas aparte que suman al total', function () {
+    it('muestra aparte las guías sin sector con su aviso, sin sumarlas al total, y los cargos de factura sumando', function () {
         $e = escenarioEat();
 
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
 
         expect($r->json('data.filas_aparte'))->toBe([
             // Guía del 10-30 sin sector: 1 × 310 = 310
-            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false],
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
             ['tipo' => 'cargo', 'concepto' => 'Bombeo', ...montosEat(0.0, 0.0, null, 150.0, null, -150.0, null, 150.0), 'sobrecosto' => false],
         ]);
-        // 5410 + 930 + 310 + 150 = 6800
-        expect($r->json('data.total.consumido_soles'))->toBe(6800.0);
+        // Subtotales más Bombeo, sin los 310 de la guía sin sector: 5410 + 930 + 150 = 6490
+        $subtotales = $r->json('data.grupos.0.subtotal.consumido_soles') + $r->json('data.grupos.1.subtotal.consumido_soles');
+        expect($r->json('data.total.consumido_soles'))->toBe($subtotales + 150.0)->toBe(6490.0);
+        // 6340 + 1550 + 150 = 8040; m³ 19 + 5 = 24
+        expect($r->json('data.total.eat_soles'))->toBe(8040.0);
+        expect($r->json('data.total.eat_m3'))->toBe(24.0);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
@@ -438,9 +446,9 @@ describe('permisos', function () {
     it('lo generan Oficina técnica y Gerencia asignadas y el administrador sin asignación', function () {
         $e = escenarioEat();
 
-        reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
-        reporteEat(asignadoA($e['proyecto'], Rol::Gerencia), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
-        reporteEat(conRol(Rol::Administrador), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8350.0);
+        reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8040.0);
+        reporteEat(asignadoA($e['proyecto'], Rol::Gerencia), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8040.0);
+        reporteEat(conRol(Rol::Administrador), $e['proyecto'], '2026-10-31')->assertOk()->assertJsonPath('data.total.eat_soles', 8040.0);
         expect(DB::table('reportes_generados')->count())->toBe(3);
     });
 
@@ -543,13 +551,20 @@ describe('exportación', function () {
             ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0],
             ['Subtotal Losas', 5.0, 1300.0, 3.0, 930.0, 2.0, 370.0, 5.0, 1550.0],
             ['Guías sin sector', 0.0, 0.0, 1.0, 310.0, 0.0, -310.0, 1.0, 310.0],
+            [AVISO_SIN_SECTOR_EAT],
             ['Bombeo', 0.0, 0.0, '—', 150.0, '—', -150.0, '—', 150.0],
-            ['Total', 23.0, 7300.0, 20.0, 6800.0, 5.0, 500.0, 25.0, 8350.0],
+            ['Total', 23.0, 7300.0, 19.0, 6490.0, 5.0, 810.0, 24.0, 8040.0],
         ]);
+        // 8040 > 7300: el EAT S/ del total va en rojo.
+        expect(fuenteExcelEat($r->streamedContent(), 'Total', 'I'))->toBe(['negrita' => true, 'rojo' => true]);
     });
 
     it('descarga el PDF con su tipo y nombre de archivo', function () {
         $e = escenarioEat();
+        $datos = null;
+        View::composer('reportes.eat', function ($vista) use (&$datos) {
+            $datos ??= $vista->getData();
+        });
 
         $r = exportarEat($e['usuario'], $e['proyecto'], 'pdf', '2026-10-31')
             ->assertOk()
@@ -557,6 +572,10 @@ describe('exportación', function () {
             ->assertDownload('reporte-eat-OBR-01-20261031.pdf');
 
         expect(substr($r->getContent(), 0, 5))->toBe('%PDF-');
+        // 8040 > 7300: el EAT S/ del total lleva la clase de sobrecosto.
+        $total = collect(filasHtmlEat(view('reportes.eat', $datos)->render()))->last();
+        expect($total['clase'])->toBe('total');
+        expect(end($total['celdas']))->toBe(['8,040.00', 'monto sobrecosto']);
     });
 
     it('registra cada descarga con su formato', function () {
@@ -650,7 +669,7 @@ describe('precio de la propia factura', function () {
         // Losa: 930 + 1 × 310 = 1240. Sin sector: (1 + 1) × 310 = 620.
         expect($r->json('data.grupos.1.filas.0.consumido_soles'))->toBe(1240.0);
         expect($r->json('data.filas_aparte.0'))->toBe(
-            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 620.0, 0.0, -620.0, 2.0, 620.0), 'sobrecosto' => false],
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 2.0, 620.0, 0.0, -620.0, 2.0, 620.0), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
         );
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -789,5 +808,139 @@ describe('opciones del PDF', function () {
         expect($opciones->getFontDir())->toBe(storage_path('fonts'));
         expect($opciones->getIsRemoteEnabled())->toBeFalse();
         expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+});
+
+/**
+ * Cuatro partidas sin consumo (605 m³ y S/ 229 950), ninguna factura y una guía f'c 210 de 6 m³ sin sector:
+ * el total tiene que quedar en lo presupuestado.
+ */
+function escenarioSoloGuiaSinSector(): array
+{
+    $proyecto = obra(['codigo' => 'SC-01', 'nombre' => 'Obra sin consumo', 'fecha_inicio' => '2026-09-04']);
+    $r210 = resistencia(210);
+    $r280 = resistencia(280);
+    $muros = GrupoPartida::create(['nombre' => 'Muros anclados', 'orden' => 1]);
+    $cimentacion = GrupoPartida::create(['nombre' => 'Cimentación', 'orden' => 2]);
+    $verticales = GrupoPartida::create(['nombre' => 'Verticales sótanos', 'orden' => 3]);
+    partidaEat($proyecto, $muros, '01.01.01', 'Placa', $r280, 210, 385);
+    partidaEat($proyecto, $cimentacion, '02.01.01', 'Zapata', $r210, 180, 375);
+    partidaEat($proyecto, $cimentacion, '02.01.02', 'Cimiento corrido', $r210, 95, 360);
+    partidaEat($proyecto, $verticales, '03.01.01', 'Columna', $r280, 120, 395);
+    guiaEat($proyecto, '2026-06-26', $r210, 6, null);
+
+    return ['proyecto' => $proyecto, 'usuario' => asignadoA($proyecto, Rol::OficinaTecnica)];
+}
+
+/** El nodo como elemento; si la consulta no lo encontró, la prueba falla diciendo qué faltaba. */
+function elementoEat(DOMNode|false|null $nodo, string $que): DOMElement
+{
+    if (! $nodo instanceof DOMElement) {
+        throw new UnexpectedValueException("No se encontró {$que}.");
+    }
+
+    return $nodo;
+}
+
+/** Negrita y rojo de la celda en la columna dada, en la fila cuya primera celda dice $texto. */
+function fuenteExcelEat(string $contenido, string $texto, string $columna): array
+{
+    $archivo = tempnam(sys_get_temp_dir(), 'eat');
+    file_put_contents($archivo, $contenido);
+    $zip = new ZipArchive;
+    $zip->open($archivo);
+    $hoja = new DOMDocument;
+    $hoja->loadXML($zip->getFromName('xl/worksheets/sheet1.xml'));
+    $estilos = new DOMDocument;
+    $estilos->loadXML($zip->getFromName('xl/styles.xml'));
+    $zip->close();
+    unlink($archivo);
+
+    $xh = new DOMXPath($hoja);
+    $xh->registerNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+    $fila = elementoEat($xh->query("//m:row[m:c[1]//m:t[. = '{$texto}']]")->item(0), "la fila «{$texto}»");
+    $celda = elementoEat($xh->query("m:c[@r = '{$columna}{$fila->getAttribute('r')}']", $fila)->item(0), "la celda {$columna} de «{$texto}»");
+
+    $xe = new DOMXPath($estilos);
+    $xe->registerNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+    $xf = elementoEat($xe->query('//m:cellXfs/m:xf')->item((int) $celda->getAttribute('s')), 'el estilo de la celda');
+    $fuente = elementoEat($xe->query('//m:fonts/m:font')->item((int) $xf->getAttribute('fontId')), 'la fuente de la celda');
+    $color = $xe->query('m:color', $fuente)->item(0);
+    $color = $color instanceof DOMElement ? $color->getAttribute('rgb') : '';
+
+    return ['negrita' => $xe->query('m:b', $fuente)->length > 0, 'rojo' => str_ends_with(strtoupper($color), 'FF0000')];
+}
+
+/** Las filas de la tabla del HTML del PDF: la clase de cada fila y, por celda, su texto y su clase. */
+function filasHtmlEat(string $html): array
+{
+    $documento = new DOMDocument;
+    $documento->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR);
+
+    $filas = [];
+    foreach ((new DOMXPath($documento))->query('//tbody/tr') as $tr) {
+        $tr = elementoEat($tr, 'la fila de la tabla');
+        $celdas = [];
+        foreach ($tr->getElementsByTagName('td') as $td) {
+            $celdas[] = [trim($td->textContent), $td->getAttribute('class')];
+        }
+        $filas[] = ['clase' => $tr->getAttribute('class'), 'celdas' => $celdas];
+    }
+
+    return $filas;
+}
+
+describe('guías sin sector en una obra sin consumo', function () {
+    it('el total queda en lo presupuestado y no marca sobrecosto; la guía sin sector sigue aparte con su aviso', function () {
+        $e = escenarioSoloGuiaSinSector();
+
+        $r = reporteEat($e['usuario'], $e['proyecto'], '2026-11-09')->assertOk();
+
+        // Promedio presupuestado de 210: (180 × 375 + 95 × 360) / 275 = 369.8181…; 6 × 369.8181… = 2218.909 → 2218.91
+        expect($r->json('data.filas_aparte'))->toBe([
+            ['tipo' => 'guias_sin_sector', 'concepto' => 'Guías sin sector', ...montosEat(0.0, 0.0, 6.0, 2218.91, 0.0, -2218.91, 6.0, 2218.91), 'sobrecosto' => false, 'aviso' => AVISO_SIN_SECTOR_EAT],
+        ]);
+        // Sin consumo asignado, el EAT es el presupuesto: 605 m³ y S/ 229 950, no 611 m³ y S/ 232 168,91.
+        expect($r->json('data.total'))->toBe([...montosEat(605.0, 229950.0, 0.0, 0.0, 605.0, 229950.0, 605.0, 229950.0), 'sobrecosto' => false]);
+        expect(DB::table('reportes_generados')->count())->toBe(1);
+    });
+
+    it('en el Excel el total no suma la guía sin sector y el aviso va en la fila de abajo, sin rojo ni negrita', function () {
+        $e = escenarioSoloGuiaSinSector();
+
+        $contenido = exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-11-09')->assertOk()->streamedContent();
+
+        expect(array_slice(filasExcelEat($contenido), -3))->toBe([
+            ['Guías sin sector', 0.0, 0.0, 6.0, 2218.91, 0.0, -2218.91, 6.0, 2218.91],
+            [AVISO_SIN_SECTOR_EAT],
+            ['Total', 605.0, 229950.0, 0.0, 0.0, 605.0, 229950.0, 605.0, 229950.0],
+        ]);
+        expect(fuenteExcelEat($contenido, 'Total', 'I'))->toBe(['negrita' => true, 'rojo' => false]);
+        expect(fuenteExcelEat($contenido, AVISO_SIN_SECTOR_EAT, 'A'))->toBe(['negrita' => false, 'rojo' => false]);
+    });
+
+    it('en el PDF el total no marca sobrecosto y el aviso va debajo de la fila sin sector', function () {
+        $e = escenarioSoloGuiaSinSector();
+        $datos = null;
+        View::composer('reportes.eat', function ($vista) use (&$datos) {
+            $datos ??= $vista->getData();
+        });
+
+        $r = exportarEat($e['usuario'], $e['proyecto'], 'pdf', '2026-11-09')->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        expect(substr($r->getContent(), 0, 5))->toBe('%PDF-');
+
+        // El mismo HTML con el que se generó el PDF.
+        $filas = filasHtmlEat(view('reportes.eat', $datos)->render());
+        expect(array_slice($filas, -3))->toBe([
+            ['clase' => 'aparte', 'celdas' => [
+                ['Guías sin sector', ''], ['0.00', 'monto'], ['0.00', 'monto'], ['6.00', 'monto'], ['2,218.91', 'monto'],
+                ['0.00', 'monto'], ['-2,218.91', 'monto'], ['6.00', 'monto'], ['2,218.91', 'monto'],
+            ]],
+            ['clase' => 'aviso', 'celdas' => [[AVISO_SIN_SECTOR_EAT, '']]],
+            ['clase' => 'total', 'celdas' => [
+                ['Total', ''], ['605.00', 'monto'], ['229,950.00', 'monto'], ['0.00', 'monto'], ['0.00', 'monto'],
+                ['605.00', 'monto'], ['229,950.00', 'monto'], ['605.00', 'monto'], ['229,950.00', 'monto'],
+            ]],
+        ]);
     });
 });

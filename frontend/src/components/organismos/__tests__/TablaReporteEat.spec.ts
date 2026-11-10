@@ -53,10 +53,13 @@ const p3 = fila(
   montos([5, 1300, 3, 930], [2, 370, 5, 1550], true),
 )
 
-// g6 sin sector: 1×310. Cargo Bombeo de F1: 150, sin volumen.
+const aviso = 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.'
+
+// g6 sin sector: 1×310, se muestra aparte y no suma al total. Cargo Bombeo de F1: 150, sin volumen.
 const sinSector: FilaAparteEat = {
   tipo: 'guias_sin_sector',
   concepto: 'Guías sin sector',
+  aviso,
   ...montos([0, 0, 1, 310], [0, -310, 1, 310], false),
 }
 const bombeo: FilaAparteEat = {
@@ -91,7 +94,8 @@ const reporte: ReporteEat = {
     },
   ],
   filas_aparte: [sinSector, bombeo],
-  total: montos([23, 7300, 20, 6800], [5, 500, 25, 8350], true),
+  // Grupos + Bombeo, sin la guía sin sector: 6,490 = 5,410 + 930 + 150; 8,040 = 6,340 + 1,550 + 150.
+  total: montos([23, 7300, 19, 6490], [5, 810, 24, 8040], true),
 }
 
 const montar = (r: ReporteEat = reporte) =>
@@ -176,7 +180,10 @@ describe('TablaReporteEat', () => {
   it('muestra las filas aparte y los m³ nulos de los cargos con una raya', () => {
     const aparte = montar().findAll('[data-fila-aparte]')
 
-    expect(aparte.map((f) => f.get('td').text())).toStrictEqual(['Guías sin sector', 'Bombeo'])
+    expect(aparte.map((f) => f.get('td').text())).toStrictEqual([
+      `Guías sin sector${aviso}`,
+      'Bombeo',
+    ])
     expect(montosDe(aparte[0]!)).toStrictEqual([
       '0.00',
       'S/ 0.00',
@@ -199,19 +206,38 @@ describe('TablaReporteEat', () => {
     ])
   })
 
-  it('muestra el total que cuadra con los grupos y las filas aparte', () => {
+  it('la fila de guías sin sector muestra sus m³, sus S/ y el aviso de asignarles sector', () => {
+    const fila = montar().findAll('[data-fila-aparte]')[0]!
+
+    expect(fila.get('[data-aviso]').text()).toBe(aviso)
+    expect(fila.get('[data-aviso] i').classes()).toEqual(
+      expect.arrayContaining(['pi', 'pi-exclamation-triangle']),
+    )
+    expect(fila.findAll('td')).toHaveLength(9)
+    expect(montosDe(fila).slice(2, 4)).toStrictEqual(['1.00', 'S/ 310.00'])
+    expect(montosDe(fila).slice(6)).toStrictEqual(['1.00', 'S/ 310.00'])
+  })
+
+  it('un cargo no muestra aviso', () => {
+    const cargo = montar().findAll('[data-fila-aparte]')[1]!
+
+    expect(cargo.get('td').text()).toBe('Bombeo')
+    expect(cargo.find('[data-aviso]').exists()).toBe(false)
+  })
+
+  it('muestra el total que llega de la API: los grupos y los cargos, sin las guías sin sector', () => {
     const total = montar().get('tfoot tr')
 
     expect(total.get('td').text()).toBe('Total')
     expect(montosDe(total)).toStrictEqual([
       '23.00',
       'S/ 7,300.00',
-      '20.00',
-      'S/ 6,800.00',
+      '19.00',
+      'S/ 6,490.00',
       '5.00',
-      'S/ 500.00',
-      '25.00',
-      'S/ 8,350.00',
+      'S/ 810.00',
+      '24.00',
+      'S/ 8,040.00',
     ])
   })
 

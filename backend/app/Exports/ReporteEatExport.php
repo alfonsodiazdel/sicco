@@ -25,7 +25,8 @@ final class ReporteEatExport
 
     /**
      * El reporte de ReporteEatQuery aplanado en el orden de la tabla: por grupo, su título, sus
-     * partidas y su subtotal; después las filas aparte y el total.
+     * partidas y su subtotal; después las filas aparte, con el aviso de las guías sin sector en una fila
+     * propia debajo de la suya, y el total, que trae ReporteEatQuery ya sin las guías sin sector.
      *
      * @return list<array{tipo: string, elemento: string, montos: list<?float>, sobrecosto: bool}>
      */
@@ -48,6 +49,9 @@ final class ReporteEatExport
         }
         foreach ($reporte['filas_aparte'] as $aparte) {
             $filas[] = $fila('aparte', $aparte['concepto'], $aparte);
+            if (isset($aparte['aviso'])) {
+                $filas[] = $fila('aviso', $aparte['aviso']);
+            }
         }
         $filas[] = $fila('total', 'Total', $reporte['total']);
 

@@ -107,12 +107,13 @@ const e2: ReporteEat = {
     {
       tipo: 'guias_sin_sector',
       concepto: 'Guías sin sector',
+      aviso: 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.',
       ...m([0, 0, 1, 310, 0, -310, 1, 310], false),
     },
     { tipo: 'cargo', concepto: 'Bombeo', ...m([0, 0, null, 150, null, -150, null, 150], false) },
   ],
-  // 6,800 = 5,410 + 930 + 310 + 150; 8,350 = 6,340 + 1,550 + 310 + 150.
-  total: m([23, 7300, 20, 6800, 5, 500, 25, 8350], true),
+  // La guía sin sector no suma: 6,490 = 5,410 + 930 + 150; 8,040 = 6,340 + 1,550 + 150.
+  total: m([23, 7300, 19, 6490, 5, 810, 24, 8040], true),
 }
 
 const sinDatos = { reporte: null, mensaje: 'No hay información para la fecha seleccionada' }
@@ -204,7 +205,7 @@ describe('ReporteEatView (CU15)', () => {
     expect(servicios.reportes.eat).toHaveBeenLastCalledWith(1, '2026-10-31')
   })
 
-  it('muestra los grupos, los subtotales, las filas aparte y el total en m³ y en S/', async () => {
+  it('muestra los grupos, los subtotales, las filas aparte con su aviso y el total en m³ y en S/', async () => {
     const vista = await montar()
     await generar(vista, new Date(2026, 9, 31))
 
@@ -263,7 +264,7 @@ describe('ReporteEatView (CU15)', () => {
     ])
     expect(celdas(vista, '[data-fila-aparte]')).toEqual([
       [
-        'Guías sin sector',
+        'Guías sin sectorAsigne un sector a estas guías: mientras no lo tengan, no suman al total.',
         '0.00',
         'S/ 0.00',
         '1.00',
@@ -275,17 +276,21 @@ describe('ReporteEatView (CU15)', () => {
       ],
       ['Bombeo', '0.00', 'S/ 0.00', '—', 'S/ 150.00', '—', 'S/ -150.00', '—', 'S/ 150.00'],
     ])
+    expect(vista.findAll('[data-aviso]').map((a) => a.text())).toEqual([
+      'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.',
+    ])
+    // El total es el de la API, sin la guía sin sector.
     expect(celdas(vista, 'tfoot tr')).toEqual([
       [
         'Total',
         '23.00',
         'S/ 7,300.00',
-        '20.00',
-        'S/ 6,800.00',
+        '19.00',
+        'S/ 6,490.00',
         '5.00',
-        'S/ 500.00',
-        '25.00',
-        'S/ 8,350.00',
+        'S/ 810.00',
+        '24.00',
+        'S/ 8,040.00',
       ],
     ])
   })

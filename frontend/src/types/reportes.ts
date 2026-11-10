@@ -26,10 +26,15 @@ export interface GrupoEat {
   subtotal: MontosEat
 }
 
-/** Montos que no son de ningún elemento: guías sin sector y cargos de factura. */
+/**
+ * Montos que no son de ningún elemento: guías sin sector y cargos de factura.
+ * Las guías sin sector se muestran aparte y no suman al total.
+ */
 export interface FilaAparteEat extends Omit<MontosEat, 'consumido_m3' | 'saldo_m3' | 'eat_m3'> {
   tipo: 'guias_sin_sector' | 'cargo'
   concepto: string
+  /** Solo en las guías sin sector: pide asignarles su sector. */
+  aviso?: string
   /** Nulos en los cargos, que no tienen volumen. */
   consumido_m3: number | null
   saldo_m3: number | null
