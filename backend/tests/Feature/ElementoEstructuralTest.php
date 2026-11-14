@@ -10,7 +10,7 @@ const ELEMENTOS_INICIALES = [
     'Zapata', 'Cimiento corrido', 'Columna', 'Placa', 'Viga', 'Losa aligerada', 'Losa maciza', 'Escalera',
 ];
 
-function oficina(): User
+function oficinaDeElementos(): User
 {
     return conRol(Rol::OficinaTecnica);
 }
@@ -25,7 +25,7 @@ describe('catálogo inicial y listado', function () {
         $p = obra();
         $p->partidas()->create(datosPartida(['elemento' => 'Zapata']));
 
-        $r = $this->actingAs(oficina())->getJson('/api/v1/elementos-estructurales/todos')->assertOk();
+        $r = $this->actingAs(oficinaDeElementos())->getJson('/api/v1/elementos-estructurales/todos')->assertOk();
 
         expect($r->json())->toHaveCount(8);
         $zapata = collect($r->json())->firstWhere('nombre', 'Zapata');
@@ -47,23 +47,23 @@ describe('catálogo inicial y listado', function () {
 
 describe('crear y renombrar', function () {
     it('crea un elemento activo', function () {
-        $this->actingAs(oficina())->postJson('/api/v1/elementos-estructurales', ['nombre' => 'Muro de contención'])
+        $this->actingAs(oficinaDeElementos())->postJson('/api/v1/elementos-estructurales', ['nombre' => 'Muro de contención'])
             ->assertCreated()
             ->assertJsonPath('nombre', 'Muro de contención')
             ->assertJsonPath('activo', true);
     });
 
     it('exige nombre, de 30 caracteres como máximo', function () {
-        $this->actingAs(oficina())->postJson('/api/v1/elementos-estructurales', ['nombre' => ''])
+        $this->actingAs(oficinaDeElementos())->postJson('/api/v1/elementos-estructurales', ['nombre' => ''])
             ->assertUnprocessable()->assertJsonValidationErrors(['nombre' => 'Este dato es requerido']);
-        $this->actingAs(oficina())->postJson('/api/v1/elementos-estructurales', ['nombre' => str_repeat('a', 31)])
+        $this->actingAs(oficinaDeElementos())->postJson('/api/v1/elementos-estructurales', ['nombre' => str_repeat('a', 31)])
             ->assertUnprocessable()->assertJsonValidationErrors(['nombre' => 'Debe tener como máximo 30 caracteres']);
-        $this->actingAs(oficina())->postJson('/api/v1/elementos-estructurales', ['nombre' => str_repeat('a', 30)])
+        $this->actingAs(oficinaDeElementos())->postJson('/api/v1/elementos-estructurales', ['nombre' => str_repeat('a', 30)])
             ->assertCreated();
     });
 
     it('rechaza un nombre repetido sin importar mayúsculas', function (string $nombre) {
-        $this->actingAs(oficina())->postJson('/api/v1/elementos-estructurales', ['nombre' => $nombre])
+        $this->actingAs(oficinaDeElementos())->postJson('/api/v1/elementos-estructurales', ['nombre' => $nombre])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['nombre' => 'El elemento ya existe']);
     })->with(['zapata', 'ZAPATA']);
@@ -71,14 +71,14 @@ describe('crear y renombrar', function () {
     it('renombra uno que no está en uso', function () {
         $viga = ElementoEstructural::where('nombre', 'Viga')->sole();
 
-        $this->actingAs(oficina())->putJson("/api/v1/elementos-estructurales/{$viga->id}", ['nombre' => 'Viga peraltada'])
+        $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$viga->id}", ['nombre' => 'Viga peraltada'])
             ->assertOk()->assertJsonPath('nombre', 'Viga peraltada');
     });
 
     it('permite guardar el mismo nombre de la fila al editarla', function () {
         $viga = ElementoEstructural::where('nombre', 'Viga')->sole();
 
-        $this->actingAs(oficina())->putJson("/api/v1/elementos-estructurales/{$viga->id}", ['nombre' => 'Viga'])
+        $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$viga->id}", ['nombre' => 'Viga'])
             ->assertOk();
     });
 
@@ -86,7 +86,7 @@ describe('crear y renombrar', function () {
         obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
-        $this->actingAs(oficina())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata aislada'])
+        $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata aislada'])
             ->assertStatus(409)
             ->assertJsonPath('message', 'Este elemento está en uso en partidas: solo se puede desactivar.')
             ->assertJsonPath('code', 'elemento_en_uso');
@@ -99,11 +99,11 @@ describe('activar y desactivar', function () {
         $partida = obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
-        $this->actingAs(oficina())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata', 'activo' => false])
+        $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata', 'activo' => false])
             ->assertOk()->assertJsonPath('activo', false);
         expect($partida->fresh()->elemento)->toBe('Zapata');
 
-        $this->actingAs(oficina())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata', 'activo' => true])
+        $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata', 'activo' => true])
             ->assertOk()->assertJsonPath('activo', true);
     });
 });
@@ -112,7 +112,7 @@ describe('eliminar', function () {
     it('elimina uno que no está en uso', function () {
         $viga = ElementoEstructural::where('nombre', 'Viga')->sole();
 
-        $this->actingAs(oficina())->deleteJson("/api/v1/elementos-estructurales/{$viga->id}")->assertNoContent();
+        $this->actingAs(oficinaDeElementos())->deleteJson("/api/v1/elementos-estructurales/{$viga->id}")->assertNoContent();
         $this->assertModelMissing($viga);
     });
 
@@ -120,7 +120,7 @@ describe('eliminar', function () {
         obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
-        $this->actingAs(oficina())->deleteJson("/api/v1/elementos-estructurales/{$zapata->id}")
+        $this->actingAs(oficinaDeElementos())->deleteJson("/api/v1/elementos-estructurales/{$zapata->id}")
             ->assertStatus(409)
             ->assertJsonPath('message', 'Este elemento está en uso en partidas: solo se puede desactivar.')
             ->assertJsonPath('code', 'elemento_en_uso');

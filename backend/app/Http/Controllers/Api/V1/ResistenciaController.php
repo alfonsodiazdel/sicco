@@ -27,7 +27,7 @@ class ResistenciaController extends Controller
 
     public function store(ResistenciaRequest $request): JsonResponse
     {
-        return ResistenciaMantenedorResource::make(Resistencia::create($request->validated()))
+        return ResistenciaMantenedorResource::make(Resistencia::create($request->validated())->refresh())
             ->response()
             ->setStatusCode(201);
     }

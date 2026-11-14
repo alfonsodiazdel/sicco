@@ -27,7 +27,7 @@ class ElementoEstructuralController extends Controller
 
     public function store(ElementoEstructuralRequest $request): JsonResponse
     {
-        return ElementoEstructuralResource::make(ElementoEstructural::create($request->validated()))
+        return ElementoEstructuralResource::make(ElementoEstructural::create($request->validated())->refresh())
             ->response()
             ->setStatusCode(201);
     }
