@@ -8,6 +8,7 @@ import InputText from 'primevue/inputtext'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
 import type { GruposServicio } from '@/services/grupos'
+import type { ElementosServicio } from '@/services/elementos'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import PartidasView from '@/views/PartidasView.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +22,7 @@ const { toast, confirm, servicios } = vi.hoisted(() => ({
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
     grupos: null as GruposServicio | null,
+    elementos: null as ElementosServicio | null,
     asignados: [] as number[],
   },
 }))
@@ -45,6 +47,16 @@ vi.mock('@/services/grupos', async (importOriginal) => {
     ...real,
     get gruposServicio() {
       return servicios.grupos
+    },
+  }
+})
+
+vi.mock('@/services/elementos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/elementos')>()
+  return {
+    ...real,
+    get elementosServicio() {
+      return servicios.elementos
     },
   }
 })
@@ -75,6 +87,7 @@ async function montar(
   servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria(async () => niveles)
   servicios.grupos = (await import('@/services/grupos')).crearGruposEnMemoria()
+  servicios.elementos = (await import('@/services/elementos')).crearElementosEnMemoria()
   await preparar?.(servicios.proyectos)
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -467,5 +480,51 @@ describe('PartidasView', () => {
     expect(filas(vista).length).toBeGreaterThan(0)
     expect(vista.find('button[aria-label="Agregar partida"]').exists()).toBe(false)
     expect(vista.find('button[aria-label^="Editar partida "]').exists()).toBe(false)
+  })
+
+  describe('catálogos con valores inactivos', () => {
+    const opciones = (vista: VueWrapper, id: string) =>
+      vista
+        .findAllComponents(Select)
+        .find((s) => s.props('labelId') === id)!
+        .props('options') as { id: number; fc_kg_cm2: number }[]
+
+    it('ofrece solo los elementos y resistencias activos al registrar una partida', async () => {
+      const vista = await montar(async () => {
+        const viga = (await servicios.elementos!.todos()).find((e) => e.nombre === 'Viga')!
+        await servicios.elementos!.actualizar(viga.id, { nombre: 'Viga', activo: false })
+        const { resistenciasServicio } = await import('@/services/resistencias')
+        await resistenciasServicio.actualizar(1, {
+          fc_kg_cm2: 175,
+          nombre: "f'c 175 kg/cm²",
+          activo: false,
+        })
+      })
+      await abrirNuevo(vista)
+
+      expect(opciones(vista, 'elemento')).not.toContain('Viga')
+      expect(opciones(vista, 'elemento')).toContain('Columna')
+      expect(
+        opciones(vista, 'resistencia_id').map((r: { fc_kg_cm2: number }) => r.fc_kg_cm2),
+      ).toEqual([210, 280, 350])
+    })
+
+    it('al editar sigue mostrando el elemento y la resistencia inactivos de la partida', async () => {
+      const vista = await montar(async () => {
+        const zapata = (await servicios.elementos!.todos()).find((e) => e.nombre === 'Zapata')!
+        await servicios.elementos!.actualizar(zapata.id, { nombre: 'Zapata', activo: false })
+        const { resistenciasServicio } = await import('@/services/resistencias')
+        await resistenciasServicio.actualizar(2, {
+          fc_kg_cm2: 210,
+          nombre: "f'c 210 kg/cm²",
+          activo: false,
+        })
+      })
+      await vista.get(editarZapata).trigger('click')
+      await asentar()
+
+      expect(opciones(vista, 'elemento')).toContain('Zapata')
+      expect(opciones(vista, 'resistencia_id').map((r: { id: number }) => r.id)).toContain(2)
+    })
   })
 })

@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { elementosEstructurales } from '@/catalogos/partidas'
 import type { PartidaFila } from '@/types/partidas'
 import { requerido, texto } from '@/validaciones/usuario'
 
@@ -7,9 +6,6 @@ const mayorACero = 'Ingrese un valor mayor a cero'
 
 // InputNumber devuelve null al quedar vacío; también cuenta como vacío.
 const cantidad = () => z.number({ required_error: requerido, invalid_type_error: requerido })
-
-const lista = <T extends readonly [string, ...string[]]>(opciones: T) =>
-  z.enum(opciones, { errorMap: () => ({ message: requerido }) })
 
 // PC e ítem son opcionales: vacíos se guardan como null.
 const codigo = z
@@ -24,7 +20,7 @@ export const esquemaPartida = z.object({
   grupo_id: z.number({ required_error: requerido, invalid_type_error: requerido }),
   item: codigo,
   descripcion: texto(200),
-  elemento: lista(elementosEstructurales),
+  elemento: texto(30),
   resistencia_id: z.number({ required_error: requerido, invalid_type_error: requerido }),
   metrado_m3: cantidad().positive(mayorACero),
   factor_desperdicio: cantidad().min(0, 'Ingrese un valor mayor o igual a cero'),
