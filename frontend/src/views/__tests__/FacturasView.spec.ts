@@ -196,16 +196,16 @@ describe('FacturasView (CU11)', () => {
   it('avisa los m³ que faltan por vincular en la lista y en el detalle, y el aviso desaparece al vincularlos', async () => {
     // La F001-2803 factura 14.5 m³ de f'c 350 y solo tiene la guía 2 (7.5 m³).
     const { vista } = await montar('oficina_tecnica', (f) => f.actualizarGuias(1, [2], true))
-    const aviso = 'Faltan 7.00 m³ por vincular (facturado 14.50 m³, en guías 7.50 m³)'
+    const aviso = 'Faltan 7 m³ por vincular (facturado 14.50 m³, en guías 7.50 m³)'
     // La F001-2790 factura 9 m³ y su guía trae 8.5 m³.
-    const otra = 'Faltan 0.50 m³ por vincular (facturado 9.00 m³, en guías 8.50 m³)'
+    const otra = 'Faltan 0.50 m³ por vincular (facturado 9 m³, en guías 8.50 m³)'
     expect(vista.findAll('[data-pendiente-lista]').map((a) => a.text())).toEqual([aviso, otra])
 
     await vista.get('button[aria-label="Ver detalle de la factura F001-00002803"]').trigger('click')
     await asentar()
     const detalle = vista.get('[data-pendiente]').text()
     expect(detalle).toContain(aviso)
-    expect(detalle).toContain('faltan 7.00 m³ (facturado 14.50 m³, en guías 7.50 m³)')
+    expect(detalle).toContain('faltan 7 m³ (facturado 14.50 m³, en guías 7.50 m³)')
 
     await vista.get('[data-vincular]').trigger('click')
     await asentar()

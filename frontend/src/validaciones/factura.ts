@@ -192,6 +192,9 @@ export function sugerirGuias<
   return ordenadas.filter((g) => sugeridas.includes(g.id)).map((g) => g.id)
 }
 
+/** m³ para el aviso: sin decimales si el número es entero, con dos si no. */
+export const m3Aviso = (v: number) => `${Number.isInteger(v) ? v : decimales(v)} m³`
+
 /** Aviso de las guías que faltan por vincular; null si el volumen de las guías cubre la factura. */
 export function avisoPendiente(factura: {
   volumen_m3: number
@@ -200,6 +203,6 @@ export function avisoPendiente(factura: {
 }): string | null {
   const faltan = factura.volumen_pendiente_m3 ?? 0
   if (faltan <= 0) return null
-  const m3 = (v: number) => `${decimales(v)} m³`
+  const m3 = m3Aviso
   return `Faltan ${m3(faltan)} por vincular (facturado ${m3(factura.volumen_m3)}, en guías ${m3(factura.volumen_guias_m3 ?? 0)})`
 }

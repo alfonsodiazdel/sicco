@@ -13,7 +13,7 @@ import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoVincularGuias from '@/components/organismos/DialogoVincularGuias.vue'
 import { facturasServicio, urlArchivoFactura } from '@/services/facturas'
 import { decimales, soles } from '@/services/presupuesto'
-import { avisoPendiente, sumar } from '@/validaciones/factura'
+import { avisoPendiente, m3Aviso, sumar } from '@/validaciones/factura'
 import type { FacturaDetalle, FacturaFila } from '@/types/facturas'
 import type { GuiaFila } from '@/types/guias'
 import { esErrorApi, mensajeDeError } from '@/api/http'
@@ -360,8 +360,8 @@ onMounted(async () => {
           {{ avisoPendiente(detalle) }}
           <ul v-if="detalle.pendiente_por_resistencia?.length" class="mt-1 list-disc pl-5">
             <li v-for="r in detalle.pendiente_por_resistencia" :key="r.resistencia.id">
-              {{ r.resistencia.nombre }}: faltan {{ decimales(r.faltan_m3) }} m³ (facturado
-              {{ decimales(r.facturado_m3) }} m³, en guías {{ decimales(r.en_guias_m3) }} m³)
+              {{ r.resistencia.nombre }}: faltan {{ m3Aviso(r.faltan_m3) }} (facturado
+              {{ m3Aviso(r.facturado_m3) }}, en guías {{ m3Aviso(r.en_guias_m3) }})
             </li>
           </ul>
         </Message>
