@@ -3,6 +3,8 @@ import { http } from './http'
 
 export interface FiltrosProveedores {
   buscar?: string
+  /** 1 = solo activos (para los combos de guías y facturas). */
+  activo?: 1
   page?: number
   per_page?: number
 }
