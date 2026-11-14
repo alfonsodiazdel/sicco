@@ -3,6 +3,7 @@
 use App\Enums\Rol;
 use App\Models\ElementoEstructural;
 use App\Models\Partida;
+use App\Models\Resistencia;
 use App\Models\User;
 
 const ELEMENTOS_INICIALES = [
@@ -177,7 +178,7 @@ describe('la partida usa los elementos de la tabla', function () {
         $p = obra();
         $partida = $p->partidas()->create(datosPartida());
         $otra = resistencia(280);
-        \App\Models\Resistencia::whereIn('id', [$partida->resistencia_id, $otra->id])->update(['activo' => false]);
+        Resistencia::whereIn('id', [$partida->resistencia_id, $otra->id])->update(['activo' => false]);
         $u = asignadoA($p);
 
         $this->actingAs($u)->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['resistencia_id' => $partida->resistencia_id, 'descripcion' => 'Editada']))
