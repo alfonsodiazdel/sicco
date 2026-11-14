@@ -51,6 +51,7 @@ return [
         'registrada' => 'Factura registrada correctamente',
         'duplicada' => 'La factura ya fue registrada',
         'volumen_no_coincide' => 'El volumen facturado no coincide con las guías',
+        'guias_vinculadas' => 'Guías vinculadas correctamente',
         'sin_guias' => 'Vincule al menos una guía',
         'sin_pendientes' => 'No hay guías pendientes del proveedor',
         'guia_no_disponible' => 'La guía :numero ya está facturada o no es del proveedor y proyecto',

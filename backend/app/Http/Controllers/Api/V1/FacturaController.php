@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Facturas\GuiasPorFacturarRequest;
 use App\Http\Requests\Facturas\LeerFacturaRequest;
 use App\Http\Requests\Facturas\StoreFacturaRequest;
+use App\Http\Requests\Facturas\VincularGuiasRequest;
 use App\Http\Resources\FacturaResource;
 use App\Http\Resources\GuiaResource;
 use App\Models\Factura;
@@ -52,7 +53,7 @@ class FacturaController extends Controller
         $this->autorizarProyecto($request, $proyecto);
 
         return FacturaResource::collection(
-            $proyecto->facturas()->with('proveedor')->withCount('guias')
+            $proyecto->facturas()->with('proveedor')->withCount('guias')->withSum('guias', 'volumen_m3')
                 ->orderByDesc('fecha')->orderByDesc('id')->get(),
         );
     }
@@ -232,6 +233,39 @@ class FacturaController extends Controller
             'data' => FacturaResource::make($factura->load('proveedor')->loadCount('guias')),
             'message' => __('sicco.facturas.registrada'),
         ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Suma guías a una factura ya registrada. Las que ya estaban se mantienen; el volumen se
+     * compara con el de la factura entera, y si no coincide se pide confirmar como al registrarla.
+     */
+    public function vincularGuias(VincularGuiasRequest $request, Factura $factura): JsonResponse
+    {
+        $this->autorizarProyecto($request, $factura->proyecto);
+
+        DB::transaction(function () use ($request, $factura) {
+            $factura = Factura::whereKey($factura->id)->lockForUpdate()->firstOrFail();
+            $nuevas = $this->guiasDisponibles($request->validated('guia_ids'), $factura->proyecto_id, $factura->proveedor_id);
+
+            $lineas = $factura->lineas->map(fn ($l) => [
+                'resistencia_id' => (int) $l->resistencia_id,
+                'volumen' => Volumen::centesimos($l->volumen_m3),
+            ]);
+            if (self::hayDiferencia($lineas, $factura->guias()->get()->merge($nuevas)) && ! $request->boolean('confirmado')) {
+                throw new HttpResponseException(response()->json([
+                    'message' => __('sicco.facturas.volumen_no_coincide'),
+                    'code' => 'requiere_confirmacion',
+                    'errors' => ['guia_ids' => [__('sicco.facturas.volumen_no_coincide')]],
+                ], Response::HTTP_UNPROCESSABLE_ENTITY));
+            }
+
+            GuiaRemision::whereKey($nuevas->modelKeys())->update(['factura_id' => $factura->id]);
+        });
+
+        return response()->json([
+            'data' => FacturaResource::make($factura->load(['proveedor', 'lineas.resistencia', 'guias'])->loadCount('guias')),
+            'message' => __('sicco.facturas.guias_vinculadas'),
+        ]);
     }
 
     /**

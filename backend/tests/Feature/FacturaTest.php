@@ -358,6 +358,129 @@ describe('acceso', function () {
     });
 });
 
+/** Caso de Test: 26 m³ facturados (17 de f'c 210 y 9 de f'c 280) y una sola guía de 6 m³ vinculada. */
+function facturaConGuiaFaltante(): array
+{
+    [$p, $proveedor, $oficina] = obraConOficina();
+    $primera = guiaPorFacturar($p, $proveedor, 6, 210);
+    test()->actingAs($oficina);
+    $id = registrarFactura(datosFactura($p, $proveedor, [$primera], [
+        'numero' => 'F012-00182543',
+        'lineas' => [
+            ['resistencia_id' => resistencia(210)->id, 'volumen_m3' => 17, 'precio_unitario' => 300],
+            ['resistencia_id' => resistencia(280)->id, 'volumen_m3' => 9, 'precio_unitario' => 320],
+        ],
+        'confirmado' => '1',
+    ]))->assertCreated()->json('data.id');
+
+    return [$p, $proveedor, $oficina, $id, $primera];
+}
+
+/** Una guía que ya cobra otra factura del mismo proyecto y proveedor. */
+function guiaFacturadaEnOtra(Proyecto $proyecto, Proveedor $proveedor): GuiaRemision
+{
+    $guia = guiaPorFacturar($proyecto, $proveedor, 11, 210);
+    registrarFactura(datosFactura($proyecto, $proveedor, [$guia], [
+        'numero' => 'F012-00000001',
+        'lineas' => [['resistencia_id' => resistencia(210)->id, 'volumen_m3' => 11, 'precio_unitario' => 300]],
+    ]))->assertCreated();
+
+    return $guia->refresh();
+}
+
+function vincularGuias(int $factura, array $guias, array $cambios = [])
+{
+    return test()->postJson("/api/v1/facturas/{$factura}/guias", [
+        'guia_ids' => array_map(fn (GuiaRemision $g) => $g->id, $guias),
+        ...$cambios,
+    ]);
+}
+
+describe('vincular guías después de registrar la factura', function () {
+    it('avisa lo que falta por vincular en el detalle y en la lista', function () {
+        [$p, , , $id] = facturaConGuiaFaltante();
+
+        $this->getJson("/api/v1/facturas/{$id}")
+            ->assertJsonPath('volumen_m3', 26)
+            ->assertJsonPath('volumen_guias_m3', 6)
+            ->assertJsonPath('volumen_pendiente_m3', 20)
+            ->assertJsonCount(2, 'pendiente_por_resistencia')
+            ->assertJsonPath('pendiente_por_resistencia.0.faltan_m3', 11)
+            ->assertJsonPath('pendiente_por_resistencia.1.faltan_m3', 9);
+        $this->getJson("/api/v1/proyectos/{$p->id}/facturas")
+            ->assertJsonPath('0.volumen_pendiente_m3', 20)
+            ->assertJsonPath('0.volumen_guias_m3', 6);
+    });
+
+    it('suma las guías que faltan y el aviso desaparece cuando el volumen coincide', function () {
+        [$p, $proveedor, , $id, $primera] = facturaConGuiaFaltante();
+        $faltan = [guiaPorFacturar($p, $proveedor, 11, 210), guiaPorFacturar($p, $proveedor, 9, 280)];
+
+        vincularGuias($id, $faltan)
+            ->assertOk()
+            ->assertJsonPath('data.guias_count', 3)
+            ->assertJsonPath('data.volumen_pendiente_m3', 0)
+            ->assertJsonPath('data.pendiente_por_resistencia', []);
+
+        $factura = Factura::findOrFail($id);
+        expect($factura->guias->modelKeys())->toEqualCanonicalizing([$primera->id, ...array_map(fn ($g) => $g->id, $faltan)])
+            ->and((float) $factura->volumen_m3)->toBe(26.0);
+    });
+
+    it('pide confirmar con el mismo mensaje si sigue sin coincidir, y guarda con la confirmación', function () {
+        [$p, $proveedor, , $id, $primera] = facturaConGuiaFaltante();
+        $parcial = [guiaPorFacturar($p, $proveedor, 5, 210)];
+
+        vincularGuias($id, $parcial)
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'requiere_confirmacion')
+            ->assertJsonValidationErrors(['guia_ids' => 'El volumen facturado no coincide con las guías']);
+        expect(Factura::findOrFail($id)->guias)->toHaveCount(1);
+
+        vincularGuias($id, $parcial, ['confirmado' => '1'])
+            ->assertOk()
+            ->assertJsonPath('data.volumen_pendiente_m3', 15)
+            ->assertJsonPath('data.guias_count', 2);
+    });
+
+    it('no vincula guías ya facturadas, de otro proveedor ni de otro proyecto', function (string $caso) {
+        [$p, $proveedor, , $id, $primera] = facturaConGuiaFaltante();
+        $guia = match ($caso) {
+            'ya facturada' => guiaFacturadaEnOtra($p, $proveedor),
+            'de la misma factura' => $primera,
+            'otro proveedor' => guiaPorFacturar($p, Proveedor::factory()->create(), 11, 210),
+            'otro proyecto' => guiaPorFacturar(obra(['codigo' => 'PRY-009']), $proveedor, 11, 210),
+        };
+
+        vincularGuias($id, [$guia], ['confirmado' => '1'])->assertUnprocessable()->assertJsonValidationErrors(['guia_ids.0']);
+        expect(Factura::findOrFail($id)->guias)->toHaveCount(1);
+    })->with(['ya facturada', 'de la misma factura', 'otro proveedor', 'otro proyecto']);
+
+    it('solo vincula Oficina técnica y en sus proyectos', function () {
+        [$p, $proveedor, , $id] = facturaConGuiaFaltante();
+        $guia = guiaPorFacturar($p, $proveedor, 11, 210);
+
+        $this->actingAs(asignadoA($p, Rol::Almacenero));
+        vincularGuias($id, [$guia], ['confirmado' => '1'])->assertForbidden();
+        $this->actingAs(asignadoA($p, Rol::Administrador));
+        vincularGuias($id, [$guia], ['confirmado' => '1'])->assertForbidden();
+        $this->actingAs(asignadoA(obra(['codigo' => 'PRY-010']), Rol::OficinaTecnica));
+        vincularGuias($id, [$guia], ['confirmado' => '1'])->assertForbidden();
+        expect(Factura::findOrFail($id)->guias)->toHaveCount(1);
+    });
+
+    it('registrar una factura con sus guías sigue igual', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+
+        $this->actingAs($oficina);
+        registrarFactura(datosFactura($p, $proveedor, $guias))
+            ->assertCreated()
+            ->assertJsonPath('data.guias_count', 3)
+            ->assertJsonPath('data.diferencia_confirmada', false);
+    });
+});
+
 /** OCR que devuelve la factura dada, o falla si es null. */
 function ocrDeFactura(?array $datos): void
 {

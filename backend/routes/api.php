@@ -120,6 +120,7 @@ Route::prefix('v1')->group(function () {
                 // Lectura de la factura con OCR: cada una cuesta en la API de IA.
                 Route::post('facturas/lecturas', [FacturaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('facturas', [FacturaController::class, 'store']);
+                Route::post('facturas/{factura}/guias', [FacturaController::class, 'vincularGuias'])->whereNumber('factura');
             });
 
             // CU18 Exportar documentos: Oficina técnica y el administrador descargan en ZIP las fotos
