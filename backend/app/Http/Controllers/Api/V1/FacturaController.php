@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Contracts\OcrServiceInterface;
 use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Facturas\ActualizarGuiasFacturaRequest;
 use App\Http\Requests\Facturas\GuiasPorFacturarRequest;
 use App\Http\Requests\Facturas\LeerFacturaRequest;
 use App\Http\Requests\Facturas\StoreFacturaRequest;
@@ -235,6 +236,49 @@ class FacturaController extends Controller
     }
 
     /**
+     * CU12 después del registro: cambia las guías que cobra la factura, para las que llegaron
+     * tarde, se olvidaron o se marcaron por error. Recibe la lista completa: las que salen vuelven a
+     * quedar por facturar y las nuevas quedan «Facturadas». El volumen se compara de nuevo con el
+     * detalle de la factura, como al registrarla.
+     */
+    public function actualizarGuias(ActualizarGuiasFacturaRequest $request, Factura $factura): FacturaResource
+    {
+        $this->autorizarProyecto($request, $factura->proyecto);
+        $ids = $request->validated('guia_ids');
+
+        DB::transaction(function () use ($request, $factura, $ids) {
+            // Dos cambios a la vez sobre la misma factura: el segundo espera al primero.
+            $factura = Factura::whereKey($factura->id)->lockForUpdate()->firstOrFail();
+
+            $guias = $this->guiasDisponibles($ids, $factura->proyecto_id, $factura->proveedor_id, $factura->id);
+            $lineas = $factura->lineas()->get()->map(fn ($l) => [
+                'resistencia_id' => (int) $l->resistencia_id,
+                'volumen' => Volumen::centesimos($l->volumen_m3),
+            ]);
+
+            $diferencia = self::hayDiferencia($lineas, $guias);
+            if ($diferencia && ! $request->boolean('confirmado')) {
+                throw new HttpResponseException(response()->json([
+                    'message' => __('sicco.facturas.volumen_no_coincide'),
+                    'code' => 'requiere_confirmacion',
+                    'errors' => ['guia_ids' => [__('sicco.facturas.volumen_no_coincide')]],
+                ], Response::HTTP_UNPROCESSABLE_ENTITY));
+            }
+
+            GuiaRemision::where('factura_id', $factura->id)->whereKeyNot($guias->modelKeys())->update(['factura_id' => null]);
+            GuiaRemision::whereKey($guias->modelKeys())->update(['factura_id' => $factura->id]);
+            $factura->update(['diferencia_confirmada' => $diferencia]);
+        });
+
+        return FacturaResource::make($factura->refresh()->load([
+            'proveedor',
+            'lineas.resistencia',
+            'cargos',
+            'guias' => fn ($q) => $q->with(['proveedor', 'resistencia', 'producto'])->orderBy('fecha')->orderBy('id'),
+        ])->loadCount('guias'))->additional(['message' => __('sicco.facturas.guias_actualizadas')]);
+    }
+
+    /**
      * Lo leído, listo para el formulario: cada dato de cabecera con su confianza y si debe
      * revisarse; el proveedor, si su RUC está registrado; las líneas de concreto con la resistencia
      * del catálogo (resuelta con los productos de la concretera, como en las guías); los otros
@@ -363,18 +407,20 @@ class FacturaController extends Controller
 
     /**
      * Las guías elegidas, bloqueadas hasta terminar. Cada una debe ser del proyecto y proveedor de
-     * la factura y no estar facturada (CU12 requerimiento especial: una sola factura por guía).
+     * la factura y no estar facturada (CU12 requerimiento especial: una sola factura por guía). Al
+     * cambiar las guías de una factura, las que ya cobra esa misma factura siguen disponibles.
      *
      * @param  array<int, int|string>  $ids
      * @return \Illuminate\Database\Eloquent\Collection<int, GuiaRemision>
      */
-    private function guiasDisponibles(array $ids, int $proyectoId, int $proveedorId): \Illuminate\Database\Eloquent\Collection
+    private function guiasDisponibles(array $ids, int $proyectoId, int $proveedorId, ?int $facturaId = null): \Illuminate\Database\Eloquent\Collection
     {
         $guias = GuiaRemision::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
 
         foreach ($ids as $i => $id) {
             $guia = $guias->find($id);
-            if (! $guia || (int) $guia->proyecto_id !== $proyectoId || (int) $guia->proveedor_id !== $proveedorId || $guia->factura_id) {
+            $deOtraFactura = $guia?->factura_id && (int) $guia->factura_id !== $facturaId;
+            if (! $guia || (int) $guia->proyecto_id !== $proyectoId || (int) $guia->proveedor_id !== $proveedorId || $deOtraFactura) {
                 throw ValidationException::withMessages([
                     "guia_ids.{$i}" => __('sicco.facturas.guia_no_disponible', ['numero' => $guia->numero ?? "#{$id}"]),
                 ]);

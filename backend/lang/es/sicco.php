@@ -49,6 +49,7 @@ return [
     ],
     'facturas' => [
         'registrada' => 'Factura registrada correctamente',
+        'guias_actualizadas' => 'Guías de la factura actualizadas correctamente',
         'duplicada' => 'La factura ya fue registrada',
         'volumen_no_coincide' => 'El volumen facturado no coincide con las guías',
         'sin_guias' => 'Vincule al menos una guía',

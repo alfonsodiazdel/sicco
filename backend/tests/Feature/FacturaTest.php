@@ -312,6 +312,118 @@ describe('registro de la factura (CU11)', function () {
     });
 });
 
+function actualizarGuias(int $facturaId, array $guias, array $cambios = [])
+{
+    return test()->putJson("/api/v1/facturas/{$facturaId}/guias", [
+        'guia_ids' => array_map(fn (GuiaRemision $g) => $g->id, $guias),
+        ...$cambios,
+    ]);
+}
+
+describe('guías de una factura ya registrada (CU12)', function () {
+    it('agrega una guía que llegó después y deja de pedir confirmación', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        [$a, $b, $tardia] = guiasDelEjemplo($p, $proveedor);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, [$a, $b], ['confirmado' => '1']))
+            ->assertJsonPath('data.diferencia_confirmada', true)
+            ->json('data.id');
+
+        actualizarGuias($id, [$a, $b, $tardia])
+            ->assertOk()
+            ->assertJsonPath('message', 'Guías de la factura actualizadas correctamente')
+            ->assertJsonPath('data.diferencia_confirmada', false)
+            ->assertJsonPath('data.guias_count', 3)
+            ->assertJsonPath('data.guias.2.id', $tardia->id)
+            ->assertJsonPath('data.guias.2.importe', 2303);
+
+        expect($tardia->refresh()->factura_id)->toBe($id);
+        $this->getJson("/api/v1/proyectos/{$p->id}/guias/por-facturar?proveedor_id={$proveedor->id}")
+            ->assertJsonCount(0);
+    });
+
+    it('quita una guía equivocada, que vuelve a quedar por facturar', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $equivocada = guiaPorFacturar($p, $proveedor, 6, 280);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, [...$guias, $equivocada], ['confirmado' => '1']))->json('data.id');
+
+        actualizarGuias($id, $guias)
+            ->assertOk()
+            ->assertJsonPath('data.diferencia_confirmada', false)
+            ->assertJsonPath('data.guias_count', 3);
+
+        expect($equivocada->refresh()->factura_id)->toBeNull();
+        $this->getJson("/api/v1/proyectos/{$p->id}/guias/por-facturar?proveedor_id={$proveedor->id}")
+            ->assertJsonPath('*.id', [$equivocada->id]);
+    });
+
+    it('pide confirmar si el volumen no coincide y no cambia nada hasta confirmar', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, $guias))->json('data.id');
+
+        actualizarGuias($id, array_slice($guias, 0, 2))
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'requiere_confirmacion');
+        expect($guias[2]->refresh()->factura_id)->toBe($id);
+
+        actualizarGuias($id, array_slice($guias, 0, 2), ['confirmado' => true])
+            ->assertOk()
+            ->assertJsonPath('data.diferencia_confirmada', true);
+        expect($guias[2]->refresh()->factura_id)->toBeNull();
+    });
+
+    it('no toma una guía de otra factura, de otro proveedor o de otro proyecto', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $otraGuia = guiaPorFacturar($p, $proveedor, 6);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, $guias))->json('data.id');
+        registrarFactura(datosFactura($p, $proveedor, [$otraGuia], [
+            'numero' => 'F001-9',
+            'lineas' => [['resistencia_id' => resistencia(280)->id, 'volumen_m3' => 6, 'precio_unitario' => 291]],
+            'igv' => 314.28,
+        ]))->assertCreated();
+
+        $ajenas = [
+            $otraGuia,
+            guiaPorFacturar($p, Proveedor::factory()->create(), 6),
+            guiaPorFacturar(obra(['codigo' => 'PRY-002']), $proveedor, 6),
+        ];
+        foreach ($ajenas as $ajena) {
+            actualizarGuias($id, [...$guias, $ajena], ['confirmado' => true])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['guia_ids.3']);
+        }
+        expect($otraGuia->refresh()->factura->numero)->toBe('F001-00000009');
+    });
+
+    it('exige al menos una guía', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, guiasDelEjemplo($p, $proveedor)))->json('data.id');
+
+        actualizarGuias($id, [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['guia_ids' => 'Vincule al menos una guía']);
+    });
+
+    it('solo las cambia Oficina técnica de un proyecto asignado', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $id = $this->actingAs($oficina)->post('/api/v1/facturas', datosFactura($p, $proveedor, $guias), ['Accept' => 'application/json'])
+            ->json('data.id');
+
+        $this->actingAs(conRol(Rol::Administrador));
+        actualizarGuias($id, $guias)->assertForbidden();
+        $this->actingAs(asignadoA(obra(['codigo' => 'PRY-003'])));
+        actualizarGuias($id, $guias)->assertForbidden();
+    });
+});
+
 describe('acceso', function () {
     it('solo registra Oficina técnica', function (Rol $rol) {
         [$p, $proveedor] = obraConOficina();

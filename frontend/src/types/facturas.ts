@@ -77,6 +77,12 @@ export interface RespuestaRegistroFactura {
   message: string
 }
 
+/** CU12 después del registro: la factura con sus guías ya actualizadas. */
+export interface RespuestaGuiasFactura {
+  data: FacturaDetalle
+  message: string
+}
+
 /** Datos de cabecera que lee el OCR. */
 export type CampoLecturaFactura =
   'numero' | 'fecha' | 'proveedor' | 'ruc' | 'subtotal' | 'igv' | 'total'
