@@ -21,4 +21,12 @@ class Resistencia extends Model
     {
         return $fc ? self::where('fc_kg_cm2', $fc)->where('activo', true)->first() : null;
     }
+
+    /** Si alguna partida, guía o línea de factura la usa (por `resistencia_id`). */
+    public function enUso(): bool
+    {
+        return Partida::where('resistencia_id', $this->id)->exists()
+            || GuiaRemision::where('resistencia_id', $this->id)->exists()
+            || FacturaLinea::where('resistencia_id', $this->id)->exists();
+    }
 }

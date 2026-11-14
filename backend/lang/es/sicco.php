@@ -18,6 +18,14 @@ return [
         'duplicado' => 'El grupo ya existe',
         'en_uso' => 'El grupo tiene partidas registradas; reasígnelas antes de eliminarlo.',
     ],
+    'elementos' => [
+        'duplicado' => 'El elemento ya existe',
+        'en_uso' => 'Este elemento está en uso en partidas: solo se puede desactivar.',
+    ],
+    'resistencias' => [
+        'duplicada' => 'La resistencia ya existe',
+        'en_uso' => 'Esta resistencia está en uso: solo se puede desactivar.',
+    ],
     'proyectos' => [
         'sin_acceso' => 'No tiene acceso a este proyecto.',
     ],
