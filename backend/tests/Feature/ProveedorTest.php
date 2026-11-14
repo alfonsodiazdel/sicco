@@ -94,3 +94,105 @@ it('solo Oficina técnica gestiona proveedores', function (Rol $rol) {
         ->assertForbidden();
     $this->deleteJson("/api/v1/proveedores/{$proveedor->id}")->assertForbidden();
 })->with([Rol::Administrador, Rol::Almacenero, Rol::IngenieroProduccion, Rol::Gerencia]);
+
+function datosProveedorCompleto(array $cambios = []): array
+{
+    return [
+        'ruc' => '20100030595',
+        'razon_social' => 'UNICON S.A.',
+        'contacto_nombre' => 'Rosa Quispe',
+        'contacto_telefono' => '987654321',
+        'contacto_correo' => 'rosa@unicon.pe',
+        'correo_facturacion' => 'facturacion@unicon.pe',
+        'condicion_pago' => '30',
+        'direccion_fiscal' => 'Av. Industrial 123, Lima',
+        'planta_despacho' => 'Planta Ate',
+        ...$cambios,
+    ];
+}
+
+describe('datos de contacto y condiciones comerciales', function () {
+    it('registra un proveedor solo con RUC y razón social, activo por defecto', function () {
+        $this->actingAs(oficinaTecnica())
+            ->postJson('/api/v1/proveedores', ['ruc' => '20100030595', 'razon_social' => 'UNICON S.A.'])
+            ->assertCreated()
+            ->assertJsonPath('ruc', '20100030595')
+            ->assertJsonPath('contacto_nombre', null)
+            ->assertJsonPath('condicion_pago', null)
+            ->assertJsonPath('activo', true);
+    });
+
+    it('guarda y devuelve los campos nuevos', function () {
+        $this->actingAs(oficinaTecnica())
+            ->postJson('/api/v1/proveedores', datosProveedorCompleto())
+            ->assertCreated()
+            ->assertJsonPath('contacto_telefono', '987654321')
+            ->assertJsonPath('correo_facturacion', 'facturacion@unicon.pe')
+            ->assertJsonPath('condicion_pago', '30')
+            ->assertJsonPath('planta_despacho', 'Planta Ate');
+
+        $this->assertDatabaseHas('proveedores', ['ruc' => '20100030595', 'contacto_nombre' => 'Rosa Quispe', 'activo' => true]);
+    });
+
+    it('valida los campos nuevos con mensajes en español', function (array $cambios, string $campo, string $mensaje) {
+        $this->actingAs(oficinaTecnica())
+            ->postJson('/api/v1/proveedores', datosProveedorCompleto($cambios))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([$campo => $mensaje]);
+    })->with([
+        'teléfono de 8 dígitos' => [['contacto_telefono' => '98765432'], 'contacto_telefono', 'El teléfono debe tener 9 dígitos y empezar con 9.'],
+        'teléfono que no empieza con 9' => [['contacto_telefono' => '887654321'], 'contacto_telefono', 'El teléfono debe tener 9 dígitos y empezar con 9.'],
+        'correo de contacto inválido' => [['contacto_correo' => 'rosa'], 'contacto_correo', 'Ingrese un correo válido.'],
+        'correo de facturación inválido' => [['correo_facturacion' => 'a@'], 'correo_facturacion', 'Ingrese un correo válido.'],
+        'condición de pago fuera de la lista' => [['condicion_pago' => '45'], 'condicion_pago', 'La condición de pago debe ser contado o crédito a 30, 60 o 90 días.'],
+        'nombre de contacto de 151 caracteres' => [['contacto_nombre' => str_repeat('a', 151)], 'contacto_nombre', 'El nombre del contacto no puede superar los 150 caracteres.'],
+        'dirección fiscal de 251 caracteres' => [['direccion_fiscal' => str_repeat('a', 251)], 'direccion_fiscal', 'La dirección fiscal no puede superar los 250 caracteres.'],
+        'planta de despacho de 151 caracteres' => [['planta_despacho' => str_repeat('a', 151)], 'planta_despacho', 'La planta de despacho no puede superar los 150 caracteres.'],
+    ]);
+
+    it('acepta contado y crédito a 60 y 90 días', function (string $condicion) {
+        $this->actingAs(oficinaTecnica())
+            ->postJson('/api/v1/proveedores', datosProveedorCompleto(['condicion_pago' => $condicion]))
+            ->assertCreated()
+            ->assertJsonPath('condicion_pago', $condicion);
+    })->with(['contado', '60', '90']);
+
+    it('desactiva y reactiva un proveedor', function () {
+        $proveedor = Proveedor::factory()->create();
+        $this->actingAs(oficinaTecnica());
+
+        $this->putJson("/api/v1/proveedores/{$proveedor->id}", ['ruc' => $proveedor->ruc, 'razon_social' => $proveedor->razon_social, 'activo' => false])
+            ->assertOk()->assertJsonPath('activo', false);
+        $this->putJson("/api/v1/proveedores/{$proveedor->id}", ['ruc' => $proveedor->ruc, 'razon_social' => $proveedor->razon_social, 'activo' => true])
+            ->assertOk()->assertJsonPath('activo', true);
+    });
+
+    it('filtra por activos para los combos', function () {
+        Proveedor::factory()->create(['activo' => true]);
+        Proveedor::factory()->create(['activo' => false]);
+
+        $this->actingAs(oficinaTecnica())->getJson('/api/v1/proveedores')->assertJsonCount(2, 'data');
+        $this->getJson('/api/v1/proveedores?activo=1')->assertJsonCount(1, 'data')->assertJsonPath('data.0.activo', true);
+    });
+
+    it('no expone el contacto a los roles sin permiso de proveedores', function (Rol $rol) {
+        $proveedor = Proveedor::factory()->create(datosProveedorCompleto(['ruc' => '20100030595']));
+        $this->actingAs(User::factory()->rol($rol)->create());
+
+        foreach (['/api/v1/proveedores', "/api/v1/proveedores/{$proveedor->id}"] as $url) {
+            $cuerpo = $this->getJson($url)->assertOk()->json();
+            $fila = $cuerpo['data'][0] ?? $cuerpo;
+            expect($fila)->toHaveKeys(['id', 'ruc', 'razon_social'])
+                ->not->toHaveKeys(['contacto_nombre', 'contacto_telefono', 'contacto_correo', 'correo_facturacion', 'condicion_pago', 'direccion_fiscal', 'planta_despacho']);
+        }
+    })->with([Rol::Almacenero, Rol::IngenieroProduccion, Rol::Gerencia]);
+
+    it('Oficina técnica y el administrador sí ven el contacto', function (Rol $rol) {
+        $proveedor = Proveedor::factory()->create(datosProveedorCompleto());
+
+        $this->actingAs(User::factory()->rol($rol)->create())
+            ->getJson("/api/v1/proveedores/{$proveedor->id}")
+            ->assertOk()
+            ->assertJsonPath('contacto_correo', 'rosa@unicon.pe');
+    })->with([Rol::OficinaTecnica, Rol::Administrador]);
+});

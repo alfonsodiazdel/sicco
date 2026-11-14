@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Guias;
 
 use App\Http\Controllers\Api\V1\GuiaController;
+use App\Rules\ProveedorActivo;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -38,7 +39,7 @@ class StoreGuiaRequest extends FormRequest
             'proyecto_id' => ['required', 'integer', 'exists:proyectos,id'],
             'foto' => ['required_without:foto_temporal', 'nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
             'foto_temporal' => ['required_without:foto', 'nullable', 'string', 'regex:'.GuiaController::PATRON_FOTO_TEMPORAL],
-            'proveedor_id' => ['required_without:proveedor_ruc', 'nullable', 'integer', 'exists:proveedores,id'],
+            'proveedor_id' => ['required_without:proveedor_ruc', 'nullable', 'integer', 'exists:proveedores,id', new ProveedorActivo],
             'proveedor_ruc' => ['required_without:proveedor_id', 'nullable', 'string', 'regex:/^(10|15|16|17|20)\d{9}$/'],
             'proveedor_razon_social' => ['required_with:proveedor_ruc', 'nullable', 'string', 'max:200'],
             'numero' => ['required', 'string', 'max:20'],

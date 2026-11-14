@@ -13,6 +13,13 @@ return [
     'proveedores' => [
         'ruc_invalido' => 'El RUC debe tener 11 dígitos y empezar con 10, 15, 16, 17 o 20.',
         'ruc_duplicado' => 'Ya existe un proveedor con este RUC.',
+        'contacto_nombre_max' => 'El nombre del contacto no puede superar los 150 caracteres.',
+        'telefono_invalido' => 'El teléfono debe tener 9 dígitos y empezar con 9.',
+        'correo_invalido' => 'Ingrese un correo válido.',
+        'condicion_pago_invalida' => 'La condición de pago debe ser contado o crédito a 30, 60 o 90 días.',
+        'direccion_fiscal_max' => 'La dirección fiscal no puede superar los 250 caracteres.',
+        'planta_despacho_max' => 'La planta de despacho no puede superar los 150 caracteres.',
+        'inactivo' => 'Este proveedor está inactivo.',
     ],
     'grupos' => [
         'duplicado' => 'El grupo ya existe',

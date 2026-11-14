@@ -589,3 +589,13 @@ describe('lectura con OCR', function () {
             ]);
     });
 });
+
+it('no deja registrar una factura con un proveedor inactivo', function () {
+    [$p, $proveedor, $oficina] = obraConOficina();
+    $proveedor->update(['activo' => false]);
+
+    $this->actingAs($oficina);
+    registrarFactura(datosFactura($p, $proveedor, []))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['proveedor_id' => 'Este proveedor está inactivo.']);
+});

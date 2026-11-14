@@ -97,6 +97,10 @@ class GuiaController extends Controller
                         ['razon_social' => $request->validated('proveedor_razon_social')],
                     );
 
+                if ($proveedor->activo === false) {
+                    throw ValidationException::withMessages(['proveedor_ruc' => __('sicco.proveedores.inactivo')]);
+                }
+
                 if (GuiaRemision::where('proveedor_id', $proveedor->id)->where('numero', $request->validated('numero'))->exists()) {
                     throw ValidationException::withMessages(['numero' => __('sicco.guias.duplicada')]);
                 }

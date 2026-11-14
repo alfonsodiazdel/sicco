@@ -8,13 +8,21 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['ruc', 'razon_social'])]
+#[Fillable([
+    'ruc', 'razon_social', 'contacto_nombre', 'contacto_telefono', 'contacto_correo',
+    'correo_facturacion', 'condicion_pago', 'direccion_fiscal', 'planta_despacho', 'activo',
+])]
 class Proveedor extends Model
 {
     /** @use HasFactory<ProveedorFactory> */
     use HasFactory;
 
     protected $table = 'proveedores';
+
+    protected function casts(): array
+    {
+        return ['activo' => 'boolean'];
+    }
 
     public function productos(): HasMany
     {

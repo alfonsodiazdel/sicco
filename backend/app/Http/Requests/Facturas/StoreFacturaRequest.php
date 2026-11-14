@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Facturas;
 
 use App\Http\Controllers\Api\V1\FacturaController;
+use App\Rules\ProveedorActivo;
 use App\Support\NumeroComprobante;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,7 +29,7 @@ class StoreFacturaRequest extends FormRequest
     {
         return [
             'proyecto_id' => ['required', 'integer', 'exists:proyectos,id'],
-            'proveedor_id' => ['required', 'integer', 'exists:proveedores,id'],
+            'proveedor_id' => ['required', 'integer', 'exists:proveedores,id', new ProveedorActivo],
             'numero' => ['required', 'string', 'max:20'],
             'fecha' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'archivo' => ['required_without:archivo_temporal', 'nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:10240'],
