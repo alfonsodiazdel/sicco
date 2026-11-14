@@ -148,9 +148,36 @@ export function crearFacturasEnMemoria(
   let siguiente = 1
 
   const copia = (f: FacturaDetalle): FacturaFila => {
-    const { lineas: _l, cargos: _c, guias: _g, ...fila } = f
-    return { ...fila, proveedor: { ...fila.proveedor } }
+    const { lineas: _l, cargos: _c, guias: _g, pendiente_por_resistencia: _p, ...fila } = f
+    return { ...fila, ...pendiente(f), proveedor: { ...fila.proveedor } }
   }
+
+  /** Lo mismo que calcula FacturaResource: el facturado menos el de las guías vinculadas. */
+  const pendiente = (f: FacturaDetalle) => {
+    const enGuias = sumar(...f.guias.map((g) => g.volumen_m3))
+    return {
+      volumen_guias_m3: enGuias,
+      volumen_pendiente_m3: Math.max(0, sumar(f.volumen_m3, -enGuias)),
+    }
+  }
+
+  const detalle = (f: FacturaDetalle): FacturaDetalle => ({
+    ...structuredClone(f),
+    ...pendiente(f),
+    pendiente_por_resistencia: f.lineas
+      .map((l) => {
+        const enGuias = sumar(
+          ...f.guias.filter((g) => g.resistencia.id === l.resistencia.id).map((g) => g.volumen_m3),
+        )
+        return {
+          resistencia: { ...l.resistencia },
+          facturado_m3: l.volumen_m3,
+          en_guias_m3: enGuias,
+          faltan_m3: Math.max(0, sumar(l.volumen_m3, -enGuias)),
+        }
+      })
+      .filter((r) => r.faltan_m3 > 0),
+  })
 
   return {
     async listar(proyectoId) {
@@ -162,7 +189,7 @@ export function crearFacturasEnMemoria(
     async obtener(id) {
       const factura = facturas.find((f) => f.id === id)
       if (!factura) throw new Error('Factura no encontrada.')
-      return structuredClone(factura)
+      return detalle(factura)
     },
     async leer() {
       const leida = lectura()
@@ -265,7 +292,7 @@ export function crearFacturasEnMemoria(
         })
         .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id)
       return {
-        data: structuredClone(factura),
+        data: detalle(factura),
         message: 'Guías de la factura actualizadas correctamente',
       }
     },
