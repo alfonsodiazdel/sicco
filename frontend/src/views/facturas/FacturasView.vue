@@ -6,13 +6,14 @@ import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoVincularGuias from '@/components/organismos/DialogoVincularGuias.vue'
 import { facturasServicio, urlArchivoFactura } from '@/services/facturas'
 import { decimales, soles } from '@/services/presupuesto'
-import { sumar } from '@/validaciones/factura'
+import { avisoPendiente, m3Aviso, sumar } from '@/validaciones/factura'
 import type { FacturaDetalle, FacturaFila } from '@/types/facturas'
 import type { GuiaFila } from '@/types/guias'
 import { esErrorApi, mensajeDeError } from '@/api/http'
@@ -155,6 +156,8 @@ async function guardarGuias(ids: number[], confirmado = false): Promise<void> {
     if (fila) {
       fila.guias_count = respuesta.data.guias.length
       fila.diferencia_confirmada = respuesta.data.diferencia_confirmada
+      fila.volumen_guias_m3 = respuesta.data.volumen_guias_m3
+      fila.volumen_pendiente_m3 = respuesta.data.volumen_pendiente_m3
     }
     toast.add({ severity: 'success', summary: respuesta.message, life: 3000 })
   } catch (error) {
@@ -252,6 +255,10 @@ onMounted(async () => {
         <span class="block text-sm text-surface-500 sm:hidden">{{
           fila.proveedor.razon_social
         }}</span>
+        <span v-if="avisoPendiente(fila)" class="block text-sm text-amber-700" data-pendiente-lista>
+          <i class="pi pi-exclamation-triangle text-xs" aria-hidden="true" />
+          {{ avisoPendiente(fila) }}
+        </span>
       </template>
       <template #col-fecha="{ fila }">{{ formatoFecha(fila.fecha) }}</template>
       <template #col-proveedor="{ fila }">{{ fila.proveedor.razon_social }}</template>
@@ -343,6 +350,21 @@ onMounted(async () => {
       </section>
 
       <section>
+        <Message
+          v-if="avisoPendiente(detalle)"
+          severity="warn"
+          icon="pi pi-exclamation-triangle"
+          class="mb-2"
+          data-pendiente
+        >
+          {{ avisoPendiente(detalle) }}
+          <ul v-if="detalle.pendiente_por_resistencia?.length" class="mt-1 list-disc pl-5">
+            <li v-for="r in detalle.pendiente_por_resistencia" :key="r.resistencia.id">
+              {{ r.resistencia.nombre }}: faltan {{ m3Aviso(r.faltan_m3) }} (facturado
+              {{ m3Aviso(r.facturado_m3) }}, en guías {{ m3Aviso(r.en_guias_m3) }})
+            </li>
+          </ul>
+        </Message>
         <div class="mb-1 flex items-center justify-between gap-2">
           <h3 class="font-semibold">Guías vinculadas</h3>
           <Button

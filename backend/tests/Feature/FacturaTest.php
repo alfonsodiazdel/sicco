@@ -424,6 +424,45 @@ describe('guías de una factura ya registrada (CU12)', function () {
     });
 });
 
+describe('aviso de lo que falta por vincular', function () {
+    it('26 m³ facturados con 6 vinculados: faltan 20, y desaparece al vincular el resto', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $primera = guiaPorFacturar($p, $proveedor, 6, 210);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, [$primera], [
+            'lineas' => [
+                ['resistencia_id' => resistencia(210)->id, 'volumen_m3' => 17, 'precio_unitario' => 300],
+                ['resistencia_id' => resistencia(280)->id, 'volumen_m3' => 9, 'precio_unitario' => 320],
+            ],
+            'igv' => 1436.4,
+            'confirmado' => '1',
+        ]))->assertCreated()
+            ->assertJsonPath('data.volumen_pendiente_m3', 20)
+            ->json('data.id');
+
+        $this->getJson("/api/v1/facturas/{$id}")
+            ->assertJsonPath('volumen_m3', 26)
+            ->assertJsonPath('volumen_guias_m3', 6)
+            ->assertJsonPath('volumen_pendiente_m3', 20)
+            ->assertJsonCount(2, 'pendiente_por_resistencia')
+            ->assertJsonPath('pendiente_por_resistencia.0.resistencia.fc_kg_cm2', 210)
+            ->assertJsonPath('pendiente_por_resistencia.0.faltan_m3', 11)
+            ->assertJsonPath('pendiente_por_resistencia.1.resistencia.fc_kg_cm2', 280)
+            ->assertJsonPath('pendiente_por_resistencia.1.faltan_m3', 9);
+        $this->getJson("/api/v1/proyectos/{$p->id}/facturas")
+            ->assertJsonPath('0.volumen_guias_m3', 6)
+            ->assertJsonPath('0.volumen_pendiente_m3', 20)
+            ->assertJsonPath('0.guias_count', 1);
+
+        actualizarGuias($id, [$primera, guiaPorFacturar($p, $proveedor, 11, 210), guiaPorFacturar($p, $proveedor, 9, 280)])
+            ->assertOk()
+            ->assertJsonPath('data.volumen_guias_m3', 26)
+            ->assertJsonPath('data.volumen_pendiente_m3', 0)
+            ->assertJsonPath('data.pendiente_por_resistencia', []);
+        $this->getJson("/api/v1/proyectos/{$p->id}/facturas")->assertJsonPath('0.volumen_pendiente_m3', 0);
+    });
+});
+
 describe('acceso', function () {
     it('solo registra Oficina técnica', function (Rol $rol) {
         [$p, $proveedor] = obraConOficina();

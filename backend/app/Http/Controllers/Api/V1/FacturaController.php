@@ -53,7 +53,7 @@ class FacturaController extends Controller
         $this->autorizarProyecto($request, $proyecto);
 
         return FacturaResource::collection(
-            $proyecto->facturas()->with('proveedor')->withCount('guias')
+            $proyecto->facturas()->with('proveedor')->withCount('guias')->withSum('guias', 'volumen_m3')
                 ->orderByDesc('fecha')->orderByDesc('id')->get(),
         );
     }
@@ -230,7 +230,7 @@ class FacturaController extends Controller
         }
 
         return response()->json([
-            'data' => FacturaResource::make($factura->load('proveedor')->loadCount('guias')),
+            'data' => FacturaResource::make($factura->load('proveedor')->loadCount('guias')->loadSum('guias', 'volumen_m3')),
             'message' => __('sicco.facturas.registrada'),
         ], Response::HTTP_CREATED);
     }
