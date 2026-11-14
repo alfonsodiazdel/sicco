@@ -13,7 +13,8 @@ import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaPresupuesto from '@/components/organismos/TablaPresupuesto.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
-import { elementosEstructurales } from '@/catalogos/partidas'
+import { fcEnKg } from '@/catalogos/partidas'
+import { elementosServicio } from '@/services/elementos'
 import { gruposServicio } from '@/services/grupos'
 import { partidasServicio } from '@/services/partidas'
 import { decimales } from '@/services/presupuesto'
@@ -39,6 +40,7 @@ const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const grupos = ref<GrupoFila[]>([])
 const resistencias = ref<Resistencia[]>([])
+const elementos = ref<string[]>([])
 const cargando = ref(true)
 
 function avisarError(error: unknown) {
@@ -68,13 +70,15 @@ watch(() => proyectoActual.cargado && proyectoId.value, cargarPartidas, { immedi
 onMounted(async () => {
   try {
     // Los catálogos de grupos y resistencias son los mismos para todos los proyectos: se piden una vez.
-    const [lista, fc] = await Promise.all([
+    const [lista, fc, activos] = await Promise.all([
       gruposServicio.listar(),
       resistenciasServicio.listar(),
+      elementosServicio.listar(),
       proyectoActual.cargar(),
     ])
     grupos.value = lista
     resistencias.value = fc
+    elementos.value = activos.map((e) => e.nombre)
   } catch (error) {
     avisarError(error)
     cargando.value = false
@@ -83,6 +87,27 @@ onMounted(async () => {
 
 const dialogo = ref(false)
 const editando = ref<PartidaFila | null>(null)
+
+// Solo los activos; una partida que ya tiene un valor inactivo lo sigue mostrando al editarla.
+const opcionesElemento = computed(() => {
+  const actual = editando.value?.elemento
+  return actual && !elementos.value.includes(actual)
+    ? [...elementos.value, actual]
+    : elementos.value
+})
+const opcionesResistencia = computed(() => {
+  const actual = editando.value
+  return actual && !resistencias.value.some((r) => r.id === actual.resistencia_id)
+    ? [
+        ...resistencias.value,
+        {
+          id: actual.resistencia_id,
+          fc_kg_cm2: fcEnKg(actual.resistencia_fc),
+          nombre: actual.resistencia_fc,
+        },
+      ]
+    : resistencias.value
+})
 
 const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } = useForm({
   validationSchema: toTypedSchema(esquemaPartida),
@@ -254,7 +279,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             v-model="elemento"
             v-bind="elementoAttrs"
             label-id="elemento"
-            :options="[...elementosEstructurales]"
+            :options="opcionesElemento"
             placeholder="Seleccione"
             :invalid="!!errors.elemento"
             :pt="{ label: { 'aria-describedby': idError } }"
@@ -274,7 +299,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             v-model="resistenciaId"
             v-bind="resistenciaIdAttrs"
             label-id="resistencia_id"
-            :options="resistencias"
+            :options="opcionesResistencia"
             option-label="nombre"
             option-value="id"
             placeholder="Seleccione"

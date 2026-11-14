@@ -1,7 +1,3 @@
-import type { elementosEstructurales } from '@/catalogos/partidas'
-
-export type ElementoEstructural = (typeof elementosEstructurales)[number]
-
 export interface PartidaDatos {
   /** Id del grupo del catálogo (`GRUPO_PARTIDA`): ordena y subtotaliza el presupuesto. */
   grupo_id: number
@@ -9,7 +5,8 @@ export interface PartidaDatos {
   item: string | null
   descripcion: string
   /** Lo usan los sectores (CU05) para repartir el volumen. */
-  elemento: ElementoEstructural
+  /** Nombre de un elemento del catálogo, guardado como texto. */
+  elemento: string
   /** Id del catálogo de resistencias (`RESISTENCIA`). */
   resistencia_id: number
   metrado_m3: number

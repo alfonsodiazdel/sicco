@@ -22,7 +22,7 @@ const implementados = [
   '/usuarios',
   '/proyectos',
   '/partidas',
-  '/grupos',
+  '/catalogos',
   '/niveles',
   '/guias/registrar',
   '/guias/sin-sector',
@@ -97,11 +97,13 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['oficina_tecnica'], titulo: 'Presupuesto', porProyecto: true },
       },
       {
-        path: 'grupos',
-        name: 'grupos',
-        component: () => import('@/views/GruposView.vue'),
-        meta: { roles: ['oficina_tecnica'], titulo: 'Grupos de partidas' },
+        path: 'catalogos',
+        name: 'catalogos',
+        component: () => import('@/views/CatalogosView.vue'),
+        meta: { roles: ['oficina_tecnica'], titulo: 'Catálogos' },
       },
+      // La ruta anterior de «Grupos de partidas».
+      { path: 'grupos', redirect: '/catalogos' },
       {
         path: 'niveles',
         name: 'niveles',
