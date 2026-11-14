@@ -64,12 +64,30 @@ export interface FacturaFila {
   diferencia_confirmada: boolean
   origen: 'ocr' | 'manual'
   guias_count?: number
+  /** Volumen de las guías vinculadas; con `volumen_pendiente_m3` da lo que falta por vincular. */
+  volumen_guias_m3?: number
+  volumen_pendiente_m3?: number
+}
+
+/** Lo que falta vincular de una resistencia: el facturado menos el de sus guías. */
+export interface PendienteResistencia {
+  resistencia: Resistencia
+  facturado_m3: number
+  en_guias_m3: number
+  faltan_m3: number
 }
 
 export interface FacturaDetalle extends FacturaFila {
   lineas: LineaFactura[]
   cargos: CargoFactura[]
   guias: GuiaFacturada[]
+  /** Solo las resistencias a las que aún les faltan guías. */
+  pendiente_por_resistencia?: PendienteResistencia[]
+}
+
+export interface RespuestaVincularGuias {
+  data: FacturaFila
+  message: string
 }
 
 export interface RespuestaRegistroFactura {

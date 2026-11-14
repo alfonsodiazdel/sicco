@@ -3,20 +3,25 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
+import DialogoVincularGuias from '@/components/organismos/DialogoVincularGuias.vue'
 import { facturasServicio, urlArchivoFactura } from '@/services/facturas'
 import { decimales, soles } from '@/services/presupuesto'
-import { sumar } from '@/validaciones/factura'
+import { avisoPendiente, sumar } from '@/validaciones/factura'
 import type { FacturaDetalle, FacturaFila } from '@/types/facturas'
-import { mensajeDeError } from '@/api/http'
+import type { GuiaFila } from '@/types/guias'
+import { esErrorApi, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
+const confirm = useConfirm()
 const router = useRouter()
 const auth = useAuthStore()
 const proyectoActual = useProyectoActualStore()
@@ -29,6 +34,9 @@ const facturas = ref<FacturaFila[]>([])
 const cargando = ref(true)
 const detalle = ref<FacturaDetalle | null>(null)
 const verDetalle = ref(false)
+const verVincular = ref(false)
+const cargandoGuias = ref(false)
+const guiasPendientes = ref<GuiaFila[]>([])
 
 // CU11 postcondición: el costo real del proyecto es la suma de las facturas, sin IGV.
 const costoReal = computed(() => sumar(...facturas.value.map((f) => f.subtotal)))
@@ -74,6 +82,69 @@ async function abrirDetalle(factura: FacturaFila) {
     detalle.value = await facturasServicio.obtener(factura.id)
     verDetalle.value = true
   } catch (error) {
+    avisarError(error)
+  }
+}
+
+/** El precio de cada resistencia de la factura: con él el diálogo da el importe de cada guía. */
+const precios = computed(
+  () => new Map(detalle.value?.lineas.map((l) => [l.resistencia.id, l.precio_unitario]) ?? []),
+)
+
+/** Abre el mismo diálogo de CU12 con las guías por facturar del proyecto y proveedor de la factura. */
+async function abrirVincular() {
+  const factura = detalle.value
+  if (!factura) return
+  guiasPendientes.value = []
+  cargandoGuias.value = true
+  verVincular.value = true
+  try {
+    guiasPendientes.value = await facturasServicio.guiasPorFacturar(
+      factura.proyecto_id,
+      factura.proveedor.id,
+    )
+  } catch (error) {
+    verVincular.value = false
+    avisarError(error)
+  } finally {
+    cargandoGuias.value = false
+  }
+}
+
+const confirmarDiferencia = () =>
+  new Promise<boolean>((resolver) =>
+    confirm.require({
+      header: 'Confirmar guías',
+      message:
+        'El volumen facturado no coincide con las guías. ¿Vincular las guías de todas formas?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Vincular',
+      rejectLabel: 'Revisar',
+      accept: () => resolver(true),
+      reject: () => resolver(false),
+      onHide: () => resolver(false),
+    }),
+  )
+
+/** Suma las guías elegidas a las ya vinculadas; si el volumen no coincide, pide confirmar. */
+async function vincular(ids: number[], confirmado = false) {
+  const factura = detalle.value
+  if (!factura || !ids.length) return
+  try {
+    const respuesta = await facturasServicio.vincularGuias(factura.id, ids, confirmado)
+    toast.add({ severity: 'success', summary: respuesta.message, life: 4000 })
+    detalle.value = await facturasServicio.obtener(factura.id)
+    await cargar()
+  } catch (error) {
+    if (
+      !confirmado &&
+      esErrorApi(error) &&
+      error.response?.status === 422 &&
+      error.response.data?.code === 'requiere_confirmacion'
+    ) {
+      if (await confirmarDiferencia()) await vincular(ids, true)
+      return
+    }
     avisarError(error)
   }
 }
@@ -161,6 +232,10 @@ onMounted(async () => {
         <span class="block text-sm text-surface-500 sm:hidden">{{
           fila.proveedor.razon_social
         }}</span>
+        <span v-if="avisoPendiente(fila)" class="block text-sm text-amber-700" data-pendiente-lista>
+          <i class="pi pi-exclamation-triangle text-xs" aria-hidden="true" />
+          {{ avisoPendiente(fila) }}
+        </span>
       </template>
       <template #col-fecha="{ fila }">{{ formatoFecha(fila.fecha) }}</template>
       <template #col-proveedor="{ fila }">{{ fila.proveedor.razon_social }}</template>
@@ -252,7 +327,32 @@ onMounted(async () => {
       </section>
 
       <section>
-        <h3 class="mb-1 font-semibold">Guías vinculadas</h3>
+        <Message
+          v-if="avisoPendiente(detalle)"
+          severity="warn"
+          icon="pi pi-exclamation-triangle"
+          data-pendiente
+        >
+          {{ avisoPendiente(detalle) }}
+          <ul v-if="detalle.pendiente_por_resistencia?.length" class="mt-1 list-disc pl-5">
+            <li v-for="r in detalle.pendiente_por_resistencia" :key="r.resistencia.id">
+              {{ r.resistencia.nombre }}: faltan {{ decimales(r.faltan_m3) }} m³ (facturado
+              {{ decimales(r.facturado_m3) }} m³, en guías {{ decimales(r.en_guias_m3) }} m³)
+            </li>
+          </ul>
+        </Message>
+        <div class="mb-1 flex items-center justify-between gap-2">
+          <h3 class="font-semibold">Guías vinculadas</h3>
+          <Button
+            v-if="puedeRegistrar"
+            label="Vincular guías"
+            icon="pi pi-link"
+            size="small"
+            severity="secondary"
+            data-vincular
+            @click="abrirVincular"
+          />
+        </div>
         <table class="w-full" aria-label="Guías vinculadas">
           <thead>
             <tr class="border-b border-surface-200 text-left text-surface-600">
@@ -288,4 +388,14 @@ onMounted(async () => {
       >
     </template>
   </Dialog>
+
+  <DialogoVincularGuias
+    v-model:visible="verVincular"
+    :guias="guiasPendientes"
+    :seleccion="[]"
+    :precios="precios"
+    :numero-factura="detalle?.numero"
+    :cargando="cargandoGuias"
+    @confirmar="vincular"
+  />
 </template>

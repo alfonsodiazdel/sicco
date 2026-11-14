@@ -10,6 +10,7 @@ import type {
   RegistroFactura,
   RespuestaLecturaFactura,
   RespuestaRegistroFactura,
+  RespuestaVincularGuias,
 } from '@/types/facturas'
 import type { GuiaFila } from '@/types/guias'
 import type { Proveedor } from '@/types/proveedor'
@@ -28,6 +29,15 @@ export interface FacturasServicio {
    * con `requiere_confirmacion` (flujo alternativo 1).
    */
   registrar(datos: RegistroFactura): Promise<RespuestaRegistroFactura>
+  /**
+   * Suma guías a una factura ya registrada. Sin `confirmado`, si el volumen sigue sin coincidir la
+   * API responde 422 con `requiere_confirmacion`, como al registrar.
+   */
+  vincularGuias(
+    id: number,
+    guiaIds: number[],
+    confirmado?: boolean,
+  ): Promise<RespuestaVincularGuias>
   /** Las concreteras registradas, para elegir el proveedor de la factura. */
   proveedores(): Promise<Proveedor[]>
 }
@@ -79,6 +89,10 @@ export function crearFacturasApi(): FacturasServicio {
     async registrar(datos) {
       return (await http.post<RespuestaRegistroFactura>('/facturas', formulario(datos))).data
     },
+    async vincularGuias(id, guiaIds, confirmado = false) {
+      const cuerpo = { guia_ids: guiaIds, confirmado: confirmado ? '1' : '0' }
+      return (await http.post<RespuestaVincularGuias>(`/facturas/${id}/guias`, cuerpo)).data
+    },
     async proveedores() {
       // Las concreteras de una empresa son pocas; se traen todas para el selector.
       return (await proveedoresApi.listar({ per_page: 200 })).data
@@ -122,20 +136,30 @@ const guiasEjemplo = (): GuiaFila[] => [
 
 /**
  * Para las pruebas de las vistas: valida lo mismo que el backend con datos en memoria.
- * `lectura` decide qué devuelve el OCR (null: no pudo leer).
+ * `lectura` decide qué devuelve el OCR (null: no pudo leer); `guiasExtra` suma guías por facturar.
  */
 export function crearFacturasEnMemoria(
   lectura: () => LecturaFactura | null = () => null,
+  guiasExtra: GuiaFila[] = [],
 ): FacturasServicio {
-  const guias = guiasEjemplo()
+  const guias = [...guiasEjemplo(), ...guiasExtra]
   const facturas: FacturaDetalle[] = []
   /** Guía → factura que la cobra. */
   const vinculadas = new Map<number, number>()
   let siguiente = 1
 
   const copia = (f: FacturaDetalle): FacturaFila => {
-    const { lineas: _l, cargos: _c, guias: _g, ...fila } = f
-    return { ...fila, proveedor: { ...fila.proveedor } }
+    const { lineas: _l, cargos: _c, guias: _g, pendiente_por_resistencia: _p, ...fila } = f
+    return { ...fila, ...pendiente(f), proveedor: { ...fila.proveedor } }
+  }
+
+  /** El volumen de las guías vinculadas y lo que falta, como lo calcula la API. */
+  const pendiente = (f: FacturaDetalle) => {
+    const enGuias = sumar(...f.guias.map((g) => g.volumen_m3))
+    return {
+      volumen_guias_m3: enGuias,
+      volumen_pendiente_m3: Math.max(0, Math.round((f.volumen_m3 - enGuias) * 100) / 100),
+    }
   }
 
   return {
@@ -148,7 +172,26 @@ export function crearFacturasEnMemoria(
     async obtener(id) {
       const factura = facturas.find((f) => f.id === id)
       if (!factura) throw new Error('Factura no encontrada.')
-      return structuredClone(factura)
+      const porResistencia = factura.lineas
+        .map((l) => {
+          const enGuias = sumar(
+            ...factura.guias
+              .filter((g) => g.resistencia.id === l.resistencia.id)
+              .map((g) => g.volumen_m3),
+          )
+          return {
+            resistencia: { ...l.resistencia },
+            facturado_m3: l.volumen_m3,
+            en_guias_m3: enGuias,
+            faltan_m3: Math.max(0, Math.round((l.volumen_m3 - enGuias) * 100) / 100),
+          }
+        })
+        .filter((r) => r.faltan_m3 > 0)
+      return structuredClone({
+        ...factura,
+        ...pendiente(factura),
+        pendiente_por_resistencia: porResistencia,
+      })
     },
     async leer() {
       const leida = lectura()
@@ -210,6 +253,43 @@ export function crearFacturasEnMemoria(
       facturas.push(factura)
       for (const g of elegidas) vinculadas.set(g.id, factura.id)
       return { data: copia(factura), message: 'Factura registrada correctamente' }
+    },
+    async vincularGuias(id, guiaIds, confirmado = false) {
+      const factura = facturas.find((f) => f.id === id)
+      if (!factura) throw new Error('Factura no encontrada.')
+      const nuevas = guiaIds.map((gid) => guias.find((g) => g.id === gid))
+      nuevas.forEach((g, i) => {
+        if (
+          !g ||
+          g.proyecto_id !== factura.proyecto_id ||
+          g.proveedor.id !== factura.proveedor.id ||
+          vinculadas.has(g.id)
+        ) {
+          throw errorDeValidacion({
+            [`guia_ids.${i}`]: [
+              `La guía ${g?.numero ?? `#${guiaIds[i]}`} ya está facturada o no es del proveedor y proyecto`,
+            ],
+          })
+        }
+      })
+      const todas = [...factura.guias, ...(nuevas as GuiaFila[])]
+      const filas = factura.lineas.map((l) => ({ ...l, resistencia_id: l.resistencia.id }))
+      if (!volumenesCoinciden(compararVolumenes(filas, todas)) && !confirmado) {
+        throw errorDeValidacion(
+          { guia_ids: ['El volumen facturado no coincide con las guías'] },
+          'requiere_confirmacion',
+        )
+      }
+      for (const g of nuevas as GuiaFila[]) {
+        const linea = factura.lineas.find((l) => l.resistencia.id === g.resistencia.id)
+        factura.guias.push({
+          ...g,
+          importe: linea ? importe(g.volumen_m3, linea.precio_unitario) : null,
+        })
+        vinculadas.set(g.id, factura.id)
+      }
+      factura.guias_count = factura.guias.length
+      return { data: copia(factura), message: 'Guías vinculadas correctamente' }
     },
     async proveedores() {
       return proveedoresEjemplo.map((p) => ({ ...p }))
