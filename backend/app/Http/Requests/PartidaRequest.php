@@ -24,7 +24,7 @@ class PartidaRequest extends FormRequest
         // Al editar se acepta el valor actual de la partida aunque ese elemento ya esté inactivo.
         $partida = $this->route('partida');
         $actual = $partida instanceof Partida ? $partida->elemento : null;
-        $resistenciaActual = $partida instanceof Partida ? $partida->resistencia_id : null;
+        $resistenciaActual = $partida instanceof Partida ? $partida->concreto->resistencia_id : null;
         $importe = ['required', 'numeric', 'decimal:0,2'];
 
         return [
@@ -40,6 +40,8 @@ class PartidaRequest extends FormRequest
             'precio_unitario' => [...$importe, 'gt:0', 'max:9999999999.99'],
             // Confirmación del desperdicio mayor a 15 % (la pide el frontend antes de enviar).
             'confirmado' => ['sometimes', 'boolean'],
+            // Confirmación de un precio nuevo para un concreto que usan otras partidas del proyecto.
+            'confirmado_precio' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -64,9 +66,9 @@ class PartidaRequest extends FormRequest
         ];
     }
 
-    /** Los datos a guardar, sin la confirmación. */
+    /** Los datos de la partida; la resistencia y el precio van a su concreto. */
     public function datos(): array
     {
-        return $this->safe()->except('confirmado');
+        return $this->safe()->except(['confirmado', 'confirmado_precio', 'resistencia_id', 'precio_unitario']);
     }
 }

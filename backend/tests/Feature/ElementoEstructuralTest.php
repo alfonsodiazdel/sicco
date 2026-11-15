@@ -23,7 +23,7 @@ describe('catálogo inicial y listado', function () {
 
     it('lista id, nombre, activo y si está en uso, para Oficina técnica y administrador', function () {
         $p = obra();
-        $p->partidas()->create(datosPartida(['elemento' => 'Zapata']));
+        partida($p, datosPartida(['elemento' => 'Zapata']));
 
         $r = $this->actingAs(oficinaDeElementos())->getJson('/api/v1/elementos-estructurales/todos')->assertOk();
 
@@ -83,7 +83,7 @@ describe('crear y renombrar', function () {
     });
 
     it('no renombra uno en uso: solo se desactiva', function () {
-        obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
+        partida(obra(), datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
         $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata aislada'])
@@ -96,7 +96,7 @@ describe('crear y renombrar', function () {
 
 describe('activar y desactivar', function () {
     it('desactiva y reactiva también uno en uso, sin tocar las partidas', function () {
-        $partida = obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
+        $partida = partida(obra(), datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
         $this->actingAs(oficinaDeElementos())->putJson("/api/v1/elementos-estructurales/{$zapata->id}", ['nombre' => 'Zapata', 'activo' => false])
@@ -117,7 +117,7 @@ describe('eliminar', function () {
     });
 
     it('no elimina uno en uso: solo se desactiva', function () {
-        obra()->partidas()->create(datosPartida(['elemento' => 'Zapata']));
+        partida(obra(), datosPartida(['elemento' => 'Zapata']));
         $zapata = ElementoEstructural::where('nombre', 'Zapata')->sole();
 
         $this->actingAs(oficinaDeElementos())->deleteJson("/api/v1/elementos-estructurales/{$zapata->id}")
@@ -164,7 +164,7 @@ describe('la partida usa los elementos de la tabla', function () {
 
     it('al editar acepta el valor actual aunque el elemento esté inactivo, pero no otro inactivo', function () {
         $p = obra();
-        $partida = $p->partidas()->create(datosPartida(['elemento' => 'Viga']));
+        $partida = partida($p, datosPartida(['elemento' => 'Viga']));
         ElementoEstructural::whereIn('nombre', ['Viga', 'Placa'])->update(['activo' => false]);
         $u = asignadoA($p);
 
@@ -176,12 +176,12 @@ describe('la partida usa los elementos de la tabla', function () {
 
     it('al editar acepta la resistencia actual aunque esté inactiva, pero no otra inactiva', function () {
         $p = obra();
-        $partida = $p->partidas()->create(datosPartida());
+        $partida = partida($p, datosPartida());
         $otra = resistencia(280);
-        Resistencia::whereIn('id', [$partida->resistencia_id, $otra->id])->update(['activo' => false]);
+        Resistencia::whereIn('id', [$partida->concreto->resistencia_id, $otra->id])->update(['activo' => false]);
         $u = asignadoA($p);
 
-        $this->actingAs($u)->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['resistencia_id' => $partida->resistencia_id, 'descripcion' => 'Editada']))
+        $this->actingAs($u)->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['resistencia_id' => $partida->concreto->resistencia_id, 'descripcion' => 'Editada']))
             ->assertOk();
         $this->actingAs($u)->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['resistencia_id' => $otra->id]))
             ->assertUnprocessable()->assertJsonValidationErrors(['resistencia_id']);

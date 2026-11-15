@@ -32,6 +32,8 @@ return [
     'partidas' => [
         'metrado_repartido' => 'El metrado es menor al volumen ya repartido en sectores (:repartido m³)',
         'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
+        'confirmar_precio' => '{1} El precio de :resistencia (S/ :anterior) lo usa otra partida del proyecto; al guardar se actualizará también en ella.'
+            .'|[2,*] El precio de :resistencia (S/ :anterior) lo usan otras :cantidad partidas del proyecto; al guardar se actualizará en todas.',
     ],
     'niveles' => [
         'duplicado' => 'El nivel ya existe en el proyecto',

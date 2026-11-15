@@ -15,7 +15,7 @@ use App\Models\User;
 function obraConSectores(): array
 {
     $proyecto = obra();
-    $partida = $proyecto->partidas()->create(datosPartida([
+    $partida = partida($proyecto, datosPartida([
         'descripcion' => "CONCRETO F'C=210 kg/cm2 - LOSAS",
         'elemento' => 'Losa',
         'metrado_m3' => 200,
@@ -302,7 +302,7 @@ describe('asignación a sectores (CU09)', function () {
     it('no acepta sectores de otro proyecto', function () {
         [$p, , , $ingeniero] = obraConSectores();
         $ajeno = obra(['codigo' => 'PRY-002']);
-        $partida = $ajeno->partidas()->create(datosPartida());
+        $partida = partida($ajeno, datosPartida());
         $otro = sectorDeVaciado($partida, $ajeno->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1])->id, 'Sector X');
 
         $this->actingAs($ingeniero);

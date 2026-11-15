@@ -4,9 +4,11 @@ use App\Enums\EstadoAsignacion;
 use App\Enums\OrigenGuia;
 use App\Enums\Rol;
 use App\Models\Asignacion;
+use App\Models\Concreto;
 use App\Models\Factura;
 use App\Models\GrupoPartida;
 use App\Models\GuiaRemision;
+use App\Models\Partida;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
 use App\Models\Resistencia;
@@ -63,6 +65,18 @@ function datosPartida(array $cambios = []): array
         'precio_unitario' => 385,
         ...$cambios,
     ];
+}
+
+/**
+ * Crea la partida en el proyecto como lo hace la API: `resistencia_id` y `precio_unitario` van a
+ * su concreto (si ya existe, se le cambia el precio).
+ */
+function partida(Proyecto $proyecto, array $datos): Partida
+{
+    $concreto = Concreto::fijar($proyecto->id, $datos['resistencia_id'], $datos['precio_unitario']);
+    unset($datos['resistencia_id'], $datos['precio_unitario'], $datos['proyecto_id']);
+
+    return $proyecto->partidas()->create([...$datos, 'concreto_id' => $concreto->id]);
 }
 
 /** La resistencia del catálogo con ese f'c (en producción la carga ResistenciaSeeder). */

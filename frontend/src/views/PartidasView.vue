@@ -122,6 +122,37 @@ const [metrado, metradoAttrs] = defineField('metrado_m3')
 const [desperdicio, desperdicioAttrs] = defineField('factor_desperdicio')
 const [precio, precioAttrs] = defineField('precio_unitario')
 
+// Las otras partidas del proyecto con el mismo concreto (hoy, la misma resistencia): comparten el
+// precio unitario, así que el precio se llena con el suyo y cambiarlo las afecta a todas.
+const mismoConcreto = computed(() =>
+  resistenciaId.value == null
+    ? []
+    : partidas.value.filter(
+        (p) => p.resistencia_id === resistenciaId.value && p.id !== editando.value?.id,
+      ),
+)
+const precioDelConcreto = computed(() => mismoConcreto.value[0]?.precio_unitario)
+
+watch(resistenciaId, () => {
+  if (precioDelConcreto.value !== undefined) precio.value = precioDelConcreto.value
+})
+
+const centimos = (valor: number) => Math.round(valor * 100)
+
+/** El aviso de que el precio nuevo llega a las demás partidas del concreto; sin cambio, nada. */
+function avisoDePrecio(nuevo: number | null | undefined) {
+  const otras = mismoConcreto.value.length
+  const anterior = precioDelConcreto.value
+  if (!otras || anterior === undefined || nuevo == null || centimos(nuevo) === centimos(anterior))
+    return undefined
+  const resistencia = opcionesResistencia.value.find((r) => r.id === resistenciaId.value)?.nombre
+  const de = `El precio de ${resistencia} (S/ ${decimales(anterior)})`
+  return otras === 1
+    ? `${de} lo usa otra partida del proyecto; al guardar se actualizará también en ella.`
+    : `${de} lo usan otras ${otras} partidas del proyecto; al guardar se actualizará en todas.`
+}
+const avisoPrecio = computed(() => avisoDePrecio(precio.value))
+
 function abrir(partida: PartidaFila | null = null) {
   editando.value = partida
   resetForm({ values: partida ? valoresDePartida(partida) : {} }, { force: true })
@@ -141,12 +172,29 @@ const confirmarDesperdicio = (valor: number) =>
     }),
   )
 
+const confirmarPrecio = (mensaje: string) =>
+  new Promise<boolean>((resolver) =>
+    confirm.require({
+      header: 'Confirmar precio',
+      message: mensaje,
+      acceptLabel: 'Actualizar en todas',
+      rejectLabel: 'Cancelar',
+      accept: () => resolver(true),
+      reject: () => resolver(false),
+      onHide: () => resolver(false),
+    }),
+  )
+
 const guardar = handleSubmit(async (valores) => {
   const confirmado = valores.factor_desperdicio > 15
   if (confirmado && !(await confirmarDesperdicio(valores.factor_desperdicio))) return
+  const aviso = avisoDePrecio(valores.precio_unitario)
+  const confirmadoPrecio = !!aviso
+  if (aviso && !(await confirmarPrecio(aviso))) return
   try {
-    if (editando.value) await partidasServicio.actualizar(editando.value.id, valores, confirmado)
-    else await partidasServicio.crear(proyectoId.value!, valores, confirmado)
+    if (editando.value)
+      await partidasServicio.actualizar(editando.value.id, valores, confirmado, confirmadoPrecio)
+    else await partidasServicio.crear(proyectoId.value!, valores, confirmado, confirmadoPrecio)
     toast.add({
       severity: 'success',
       summary: editando.value ? 'Cambios guardados.' : 'Partida registrada',
@@ -350,6 +398,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           etiqueta="Precio unitario sin IGV (S/ por m³)"
           para="precio_unitario"
           :error="errors.precio_unitario"
+          :aviso="avisoPrecio"
           obligatorio
         >
           <InputNumber

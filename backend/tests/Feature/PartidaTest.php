@@ -1,11 +1,12 @@
 <?php
 
 use App\Enums\Rol;
+use App\Models\Concreto;
 use App\Models\Partida;
 use App\Models\User;
 
 const CAMPOS_PARTIDA = [
-    'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'resistencia_id',
+    'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'concreto_id', 'resistencia_id',
     'resistencia_fc',
     'metrado_m3', 'factor_desperdicio', 'precio_unitario',
 ];
@@ -14,8 +15,8 @@ describe('listar', function () {
     it('devuelve solo las partidas del proyecto, con números y no texto', function () {
         $p = obra();
         $otro = obra(['codigo' => 'PRY-002']);
-        $zapata = $p->partidas()->create(datosPartida(['metrado_m3' => 180.5]));
-        $otro->partidas()->create(datosPartida());
+        $zapata = partida($p, datosPartida(['metrado_m3' => 180.5]));
+        partida($otro, datosPartida());
 
         $respuesta = $this->actingAs(asignadoA($p))->getJson("/api/v1/proyectos/{$p->id}/partidas")->assertOk();
 
@@ -155,7 +156,7 @@ describe('registrar', function () {
 describe('editar', function () {
     it('actualiza la partida sin cambiarla de proyecto', function () {
         $p = obra();
-        $partida = $p->partidas()->create(datosPartida());
+        $partida = partida($p, datosPartida());
         $otro = obra(['codigo' => 'PRY-002']);
 
         $this->actingAs(asignadoA($p))
@@ -166,11 +167,97 @@ describe('editar', function () {
     });
 
     it('prohíbe editar la partida de un proyecto no asignado', function () {
-        $partida = obra()->partidas()->create(datosPartida());
+        $partida = partida(obra(), datosPartida());
 
         $this->actingAs(conRol(Rol::OficinaTecnica))->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['metrado_m3' => 1]))
             ->assertForbidden();
 
         expect((float) $partida->fresh()->metrado_m3)->toBe(320.0);
+    });
+});
+
+describe('precio del concreto', function () {
+    it('las partidas con la misma resistencia en el proyecto comparten un concreto y su precio', function () {
+        $p = obra();
+        $u = asignadoA($p);
+
+        $primera = $this->actingAs($u)->postJson("/api/v1/proyectos/{$p->id}/partidas", datosPartida(['precio_unitario' => 250]))
+            ->assertCreated();
+        $segunda = $this->actingAs($u)->postJson("/api/v1/proyectos/{$p->id}/partidas", datosPartida(['elemento' => 'Viga', 'precio_unitario' => 250]))
+            ->assertCreated()
+            ->assertJsonPath('precio_unitario', 250);
+
+        expect($segunda->json('concreto_id'))->toBe($primera->json('concreto_id'));
+        expect(Concreto::count())->toBe(1);
+    });
+
+    it('pide confirmar un precio nuevo si otras partidas usan el concreto, y sin confirmar no guarda nada', function () {
+        $p = obra();
+        partida($p, datosPartida(['precio_unitario' => 250]));
+        partida($p, datosPartida(['elemento' => 'Viga', 'precio_unitario' => 250]));
+
+        $this->actingAs(asignadoA($p))->postJson("/api/v1/proyectos/{$p->id}/partidas", datosPartida(['elemento' => 'Placa', 'precio_unitario' => 260]))
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'requiere_confirmacion_precio')
+            ->assertJsonPath('message', "El precio de f'c 210 kg/cm² (S/ 250.00) lo usan otras 2 partidas del proyecto; al guardar se actualizará en todas.")
+            ->assertJsonValidationErrors(['precio_unitario']);
+
+        expect(Partida::count())->toBe(2);
+        expect((float) Concreto::sole()->precio_unitario)->toBe(250.0);
+    });
+
+    it('con la confirmación cambia el precio en todas las partidas del concreto', function () {
+        $p = obra();
+        $zapata = partida($p, datosPartida(['precio_unitario' => 250]));
+        $viga = partida($p, datosPartida(['elemento' => 'Viga', 'precio_unitario' => 250]));
+        $u = asignadoA($p);
+
+        $this->actingAs($u)->putJson("/api/v1/partidas/{$viga->id}", datosPartida(['elemento' => 'Viga', 'precio_unitario' => 270]))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', "El precio de f'c 210 kg/cm² (S/ 250.00) lo usa otra partida del proyecto; al guardar se actualizará también en ella.");
+
+        $this->actingAs($u)->putJson("/api/v1/partidas/{$viga->id}", datosPartida(['elemento' => 'Viga', 'precio_unitario' => 270, 'confirmado_precio' => true]))
+            ->assertOk()
+            ->assertJsonPath('precio_unitario', 270);
+
+        $this->actingAs($u)->getJson("/api/v1/proyectos/{$p->id}/partidas")
+            ->assertJsonPath('0.id', $zapata->id)
+            ->assertJsonPath('0.precio_unitario', 270)
+            ->assertJsonPath('1.precio_unitario', 270);
+    });
+
+    it('cambia sin confirmar el precio de un concreto que solo usa la partida editada', function () {
+        $p = obra();
+        $partida = partida($p, datosPartida(['precio_unitario' => 250]));
+
+        $this->actingAs(asignadoA($p))->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['precio_unitario' => 275]))
+            ->assertOk()
+            ->assertJsonPath('precio_unitario', 275);
+    });
+
+    it('al cambiar la resistencia la partida pasa al concreto de esa resistencia, con su precio', function () {
+        $p = obra();
+        $partida = partida($p, datosPartida(['precio_unitario' => 250]));
+        $r280 = resistencia(280);
+
+        $this->actingAs(asignadoA($p))->putJson("/api/v1/partidas/{$partida->id}", datosPartida(['resistencia_id' => $r280->id, 'precio_unitario' => 300]))
+            ->assertOk()
+            ->assertJsonPath('resistencia_id', $r280->id)
+            ->assertJsonPath('resistencia_fc', "f'c 280 kg/cm²")
+            ->assertJsonPath('precio_unitario', 300);
+
+        expect($partida->fresh()->concreto->resistencia_id)->toBe($r280->id);
+    });
+
+    it('cada proyecto tiene su propio precio para la misma resistencia', function () {
+        $p = obra();
+        $otro = obra(['codigo' => 'PRY-002']);
+        partida($otro, datosPartida(['precio_unitario' => 250]));
+
+        $this->actingAs(asignadoA($p))->postJson("/api/v1/proyectos/{$p->id}/partidas", datosPartida(['precio_unitario' => 400]))
+            ->assertCreated()
+            ->assertJsonPath('precio_unitario', 400);
+
+        expect((float) $otro->concretos()->sole()->precio_unitario)->toBe(250.0);
     });
 });

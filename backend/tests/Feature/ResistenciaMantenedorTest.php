@@ -17,7 +17,7 @@ function resistenciaUsadaPor(string $donde, int $fc = 210): Resistencia
     $r = resistencia($fc);
     $p = obra();
     match ($donde) {
-        'partida' => $p->partidas()->create(datosPartida(['resistencia_id' => $r->id])),
+        'partida' => partida($p, datosPartida(['resistencia_id' => $r->id])),
         'guia' => guiaCorte($p, 'T001-1', '2026-11-02', $r, 6, null),
         'factura' => facturaCorte($p, 'F001-1', '2026-11-02', [[$r, 400]], 10, 4000),
     };

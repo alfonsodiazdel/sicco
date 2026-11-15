@@ -19,6 +19,11 @@ export interface PartidaDatos {
 export interface PartidaFila extends PartidaDatos {
   id: number
   proyecto_id: number
+  /**
+   * Concreto del proyecto (hoy, su resistencia): las partidas con el mismo concreto comparten el
+   * precio unitario, y cambiarlo en una lo cambia en todas.
+   */
+  concreto_id: number
   /** El nombre de la resistencia, para mostrarlo: «f'c 280 kg/cm²». */
   resistencia_fc: string
 }

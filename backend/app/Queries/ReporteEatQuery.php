@@ -81,12 +81,13 @@ final readonly class ReporteEatQuery
         $conDesperdicio = fn (string $m3) => "{$m3} * (100 + p.factor_desperdicio) / 100";
         $proyectado = 'ROUND('.$conDesperdicio('GREATEST(p.metrado_m3 - COALESCE(c.neto_culminado, 0), 0)').', 2)'
             .' + COALESCE(c.exceso_abiertos, 0)';
-        [$precio, $bPrecio] = $this->precioPartida('p');
-        [$vigente, $bVigente] = $this->precioVigente('p');
+        [$precio, $bPrecio] = $this->precioPartida('cp');
+        [$vigente, $bVigente] = $this->precioVigente('cp');
 
         return DB::table('partidas as p')
             ->join('grupos_partida as gp', 'gp.id', '=', 'p.grupo_id')
-            ->join('resistencias as r', 'r.id', '=', 'p.resistencia_id')
+            ->join('concretos as cp', 'cp.id', '=', 'p.concreto_id')
+            ->join('resistencias as r', 'r.id', '=', 'cp.resistencia_id')
             ->leftJoinSub($this->consumoPorPartida(), 'c', 'c.presupuesto_id', '=', 'p.id')
             ->where('p.proyecto_id', $this->proyecto->id)
             ->select(['p.id', 'p.item', 'p.elemento', 'r.nombre as resistencia', 'gp.id as grupo_id', 'gp.nombre as grupo'])
@@ -130,12 +131,13 @@ final readonly class ReporteEatQuery
     /** Asignaciones de guías hasta el corte, por sector (las asignaciones no tienen fecha propia). */
     private function vaciadoPorSector(): Builder
     {
-        [$precio, $bindings] = $this->precioGuia('g', $this->precioPartida('pc'));
+        [$precio, $bindings] = $this->precioGuia('g', $this->precioPartida('cc'));
 
         return DB::table('asignaciones as a')
             ->join('guias_remision as g', 'g.id', '=', 'a.guia_id')
             ->join('sectores as sv', 'sv.id', '=', 'a.sector_id')
             ->join('partidas as pc', 'pc.id', '=', 'sv.presupuesto_id')
+            ->join('concretos as cc', 'cc.id', '=', 'pc.concreto_id')
             ->where('g.proyecto_id', $this->proyecto->id)
             ->where('g.fecha', '<=', $this->fechaCorte)
             ->groupBy('a.sector_id')
@@ -147,7 +149,7 @@ final readonly class ReporteEatQuery
     /** Volumen aún sin sector, con el mismo criterio que la lista de guías sin sector. */
     private function filaGuiasSinSector(): array
     {
-        [$precio, $bindings] = $this->precioGuia('g', $this->precioPromedioPresupuestado('g'));
+        [$precio, $bindings] = $this->precioGuia('g', $this->precioPresupuestado('g'));
         $pendientes = DB::table('guias_remision as g')
             ->where('g.proyecto_id', $this->proyecto->id)
             ->where('g.fecha', '<=', $this->fechaCorte)
@@ -237,28 +239,26 @@ final readonly class ReporteEatQuery
             ->select('uf.precio_unitario'));
     }
 
-    /** Para lo que falta ejecutar: el último precio facturado o, si no hay, el de la partida. */
-    private function precioVigente(string $partida): array
+    /** Para lo que falta ejecutar: el último precio facturado o, si no hay, el del concreto de la partida. */
+    private function precioVigente(string $concreto): array
     {
-        return self::coalesce($this->ultimoPrecioFacturado("{$partida}.resistencia_id"), $this->precioPartida($partida));
+        return self::coalesce($this->ultimoPrecioFacturado("{$concreto}.resistencia_id"), $this->precioPartida($concreto));
     }
 
-    /** Respaldo de una guía sin sector: precio presupuestado de su resistencia ponderado por metrado; 0 si no está en el presupuesto. */
-    private function precioPromedioPresupuestado(string $guia): array
+    /** Respaldo de una guía sin sector: precio del concreto de su resistencia en el presupuesto; 0 si no está en el presupuesto. */
+    private function precioPresupuestado(string $guia): array
     {
-        [$precio, $bindings] = $this->precioPartida('pm');
-
-        // Escala alta: la división no es exacta y el promedio se multiplica antes de redondear.
-        return self::coalesce(self::sub(DB::table('partidas as pm')
-            ->where('pm.proyecto_id', $this->proyecto->id)
-            ->whereColumn('pm.resistencia_id', "{$guia}.resistencia_id")
-            ->selectRaw("CAST(SUM(pm.metrado_m3 * {$precio}) AS DECIMAL(30, 12)) / NULLIF(SUM(pm.metrado_m3), 0)", $bindings)), ['0', []]);
+        return self::coalesce(self::sub(DB::table('concretos as cm')
+            ->where('cm.proyecto_id', $this->proyecto->id)
+            ->whereColumn('cm.resistencia_id', "{$guia}.resistencia_id")
+            ->whereExists(fn ($q) => $q->from('partidas as pm')->whereColumn('pm.concreto_id', 'cm.id'))
+            ->select('cm.precio_unitario')), ['0', []]);
     }
 
-    /** El precio unitario de la partida, que el presupuesto guarda sin IGV. */
-    private function precioPartida(string $partida): array
+    /** El precio unitario de la partida: el de su concreto, que el presupuesto guarda sin IGV. */
+    private function precioPartida(string $concreto): array
     {
-        return ["{$partida}.precio_unitario", []];
+        return ["{$concreto}.precio_unitario", []];
     }
 
     private function filaPartida(object $p): array

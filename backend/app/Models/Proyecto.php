@@ -38,6 +38,12 @@ class Proyecto extends Model
         return $this->hasMany(Partida::class);
     }
 
+    /** Concretos que usa su presupuesto, cada uno con su precio unitario. */
+    public function concretos(): HasMany
+    {
+        return $this->hasMany(Concreto::class);
+    }
+
     /** Niveles (pisos) donde se reparte el presupuesto en sectores (CU05). */
     public function niveles(): HasMany
     {

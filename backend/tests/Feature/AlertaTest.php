@@ -284,7 +284,7 @@ describe('pantalla de alertas (CU14 pasos 4–5)', function () {
 /** Un sector en otro proyecto, para comprobar que no se mezclan. */
 function obraConSectoresEn(Proyecto $proyecto): array
 {
-    $partida = $proyecto->partidas()->create(datosPartida());
+    $partida = partida($proyecto, datosPartida());
     $nivel = $proyecto->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1]);
 
     return [sectorDeVaciado($partida, $nivel->id, 'Sector X')];
