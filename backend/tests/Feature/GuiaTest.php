@@ -284,6 +284,26 @@ describe('registro (CU06 y CU08)', function () {
         Storage::assertExists(GuiaRemision::sole()->foto_ruta);
     });
 
+    it('registra como manual la guía cuya lectura descartó el almacenero', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $unicon = Proveedor::factory()->create(['ruc' => '20100030595']);
+        ocrQueLee(lecturaUnicon());
+        $temporal = $this->actingAs($almacenero)
+            ->post('/api/v1/guias/lecturas', ['proyecto_id' => $p->id, 'foto' => foto()], ['Accept' => 'application/json'])
+            ->json('foto_temporal');
+
+        // Como llega del formulario multipart.
+        $this->post('/api/v1/guias', datosGuia($p, ['proveedor_id' => $unicon->id, 'foto_temporal' => $temporal, 'manual' => 'true']), ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('origen', 'manual');
+
+        $guia = GuiaRemision::sole();
+        expect($guia->ocr_payload)->toBeNull()
+            ->and($guia->ocr_confianza)->toBeNull()
+            ->and($guia->foto_ruta)->toBe("guias/{$p->id}/{$temporal}");
+        Storage::assertExists($guia->foto_ruta);
+    });
+
     it('registra el proveedor nuevo leído de la guía', function () {
         [$p, $almacenero] = obraConAlmacenero();
 

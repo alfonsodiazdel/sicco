@@ -84,8 +84,11 @@ class GuiaController extends Controller
         if ($temporal && ! $foto && ! Storage::exists(self::carpetaTemporal($usuarioId).'/'.$temporal)) {
             throw ValidationException::withMessages(['foto' => __('sicco.guias.foto_vencida')]);
         }
-        // Con foto nueva, la lectura anterior no corresponde a esta foto.
-        $lectura = $temporal && ! $foto ? Cache::get(self::claveLectura($usuarioId, $temporal)) : null;
+        // Con foto nueva, la lectura anterior no corresponde a esta foto; y si el almacenero la
+        // descartó para registrar a mano, la guía no es del OCR.
+        $lectura = $temporal && ! $foto && ! $request->validated('manual')
+            ? Cache::get(self::claveLectura($usuarioId, $temporal))
+            : null;
 
         try {
             $guia = DB::transaction(function () use ($request, $proyecto, $usuarioId, $temporal, $foto, $lectura) {

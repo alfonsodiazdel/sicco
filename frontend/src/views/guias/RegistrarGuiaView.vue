@@ -214,16 +214,35 @@ function proveedorDeGuia(id: number): ProveedorGuia {
     : { proveedor_id: id }
 }
 
+/** El código como lo guarda el servidor: en mayúsculas y sin espacios. */
+const normalizarCodigo = (codigo: string | null | undefined) =>
+  (codigo ?? '').replace(/\s/g, '').toUpperCase()
+
+/**
+ * La descripción leída acompaña solo al código leído, para registrar el producto si es nuevo. Un
+ * código digitado o corregido a mano puede ser de otro producto, y la descripción no se ve en el
+ * formulario para revisarla.
+ */
+function descripcionLeida(codigo: string | null | undefined) {
+  const campos = lectura.value?.campos
+  if (!campos?.descripcion_producto.valor || campos.codigo_producto.valor === null) return undefined
+  const digitado = normalizarCodigo(codigo)
+  return digitado && digitado === normalizarCodigo(String(campos.codigo_producto.valor))
+    ? String(campos.descripcion_producto.valor)
+    : undefined
+}
+
 async function enviar(valores: ValoresGuia) {
   const { proveedor_id, ...datos } = valores
-  // La descripción leída acompaña al código leído, para registrar el producto si es nuevo.
-  const descripcion = lectura.value?.campos.descripcion_producto.valor
+  const descripcion = descripcionLeida(datos.codigo_producto)
   const registro: RegistroGuia = {
     ...datos,
-    ...(datos.codigo_producto && descripcion ? { descripcion_producto: String(descripcion) } : {}),
+    ...(descripcion ? { descripcion_producto: descripcion } : {}),
     proyecto_id: proyectoId.value!,
     ...proveedorDeGuia(proveedor_id),
     ...(fotoTemporal.value ? { foto_temporal: fotoTemporal.value } : { foto: foto.value! }),
+    // Con la foto de una lectura que el almacenero descartó, la guía no es del OCR.
+    ...(fotoTemporal.value && !lectura.value ? { manual: true as const } : {}),
   }
   try {
     await guiasServicio.registrar(registro)

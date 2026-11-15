@@ -54,8 +54,11 @@ export interface GuiaDatos {
 export type ProveedorGuia =
   { proveedor_id: number } | { proveedor_ruc: string; proveedor_razon_social: string }
 
-/** La foto como archivo o la referencia que devolvió la lectura. */
-export type FotoGuia = { foto: Blob } | { foto_temporal: string }
+/**
+ * La foto como archivo o la referencia que devolvió la lectura. `manual` indica que el almacenero
+ * descartó la lectura de esa foto y digitó los datos (CU08).
+ */
+export type FotoGuia = { foto: Blob } | { foto_temporal: string; manual?: true }
 
 export type RegistroGuia = GuiaDatos & ProveedorGuia & FotoGuia & { proyecto_id: number }
 

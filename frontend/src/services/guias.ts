@@ -97,7 +97,7 @@ export function crearGuiasEnMemoria(
         volumen_m3: datos.volumen_m3,
         placa: datos.placa || null,
         estado_asignacion: 'sin_sector',
-        origen: 'foto_temporal' in datos ? 'ocr' : 'manual',
+        origen: 'foto_temporal' in datos && !datos.manual ? 'ocr' : 'manual',
       }
       guias.push(guia)
       return { ...guia }

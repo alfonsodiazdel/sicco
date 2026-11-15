@@ -252,6 +252,52 @@ describe('RegistrarGuiaView', () => {
     })
   })
 
+  it('no envía la descripción leída con un código digitado o corregido a mano', async () => {
+    // El OCR leyó la descripción, pero no el código: el almacenero lo digita.
+    const vista = await montar()
+    await tomarFoto(vista)
+    await pulsar(vista, 'Leer guía')
+    await vista.get('#codigo_producto').setValue('70280NB5746')
+    await select(vista, 'resistencia_id').setValue(4)
+    await guardar(vista)
+
+    expect(registrados[0]).toMatchObject({ codigo_producto: '70280NB5746' })
+    expect(registrados[0]).not.toHaveProperty('descripcion_producto')
+  })
+
+  it('envía la descripción leída si el código es el leído, aunque cambie la forma de escribirlo', async () => {
+    servicios.lectura = lecturaUnicon({
+      codigo_producto: campo('70245NB5746'),
+      descripcion_producto: campo('HOLCIM CLASICO'),
+    })
+    const vista = await montar()
+    await tomarFoto(vista)
+    await pulsar(vista, 'Leer guía')
+    await vista.get('#codigo_producto').setValue('70245nb 5746')
+    await guardar(vista)
+
+    expect(registrados[0]).toMatchObject({ descripcion_producto: 'HOLCIM CLASICO' })
+  })
+
+  it('registra como manual la guía cuya lectura se descartó, sin volver a subir la foto', async () => {
+    const vista = await montar()
+    await tomarFoto(vista)
+    await pulsar(vista, 'Leer guía')
+    await pulsar(vista, 'Volver a la foto')
+    await vista.get('[data-registrar-manual]').trigger('click')
+    await asentar()
+    await vista.get('#numero').setValue('T001-00000777')
+    await select(vista).setValue(2)
+    await select(vista, 'resistencia_id').setValue(3)
+    await volumen(vista).setValue(7)
+    await vista.get('#codigo_producto').setValue('22259')
+    await guardar(vista)
+
+    expect(registrados[0]).toMatchObject({ foto_temporal: expect.any(String), manual: true })
+    expect(registrados[0]).not.toHaveProperty('foto')
+    expect(registrados[0]).not.toHaveProperty('descripcion_producto')
+  })
+
   it('deja vacíos los datos no identificados y pide completarlos', async () => {
     servicios.lectura = lecturaUnicon({ volumen_m3: campo(null, true) })
     const vista = await montar()

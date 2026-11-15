@@ -12,6 +12,7 @@ use Illuminate\Validation\Rule;
  * (registro manual sin lectura) o como la referencia que devolvió la lectura, para no subirla dos
  * veces desde la obra. El proveedor es uno registrado o, si el OCR leyó un RUC nuevo, se registra
  * con la guía. El número repetido se valida en el controlador, una vez resuelto el proveedor.
+ * «manual» indica que el almacenero descartó la lectura de esa foto y digitó los datos (CU08).
  */
 class StoreGuiaRequest extends FormRequest
 {
@@ -30,6 +31,8 @@ class StoreGuiaRequest extends FormRequest
             'placa' => $texto('placa', true) ?: null,
             'proveedor_ruc' => $texto('proveedor_ruc'),
             'proveedor_razon_social' => $texto('proveedor_razon_social'),
+            // Llega como texto en el formulario multipart («true», «1»…).
+            'manual' => $this->boolean('manual'),
         ]);
     }
 
@@ -51,6 +54,7 @@ class StoreGuiaRequest extends FormRequest
             // Un mixer lleva unos 8 a 12 m³; el tope solo evita errores de digitación grandes.
             'volumen_m3' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:99.99'],
             'placa' => ['nullable', 'string', 'max:10'],
+            'manual' => ['boolean'],
         ];
     }
 
