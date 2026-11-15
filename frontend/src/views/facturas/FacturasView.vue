@@ -3,20 +3,25 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
+import DialogoVincularGuias from '@/components/organismos/DialogoVincularGuias.vue'
 import { facturasServicio, urlArchivoFactura } from '@/services/facturas'
 import { decimales, soles } from '@/services/presupuesto'
-import { sumar } from '@/validaciones/factura'
+import { avisoPendiente, m3Aviso, sumar } from '@/validaciones/factura'
 import type { FacturaDetalle, FacturaFila } from '@/types/facturas'
-import { mensajeDeError } from '@/api/http'
+import type { GuiaFila } from '@/types/guias'
+import { esErrorApi, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
+const confirm = useConfirm()
 const router = useRouter()
 const auth = useAuthStore()
 const proyectoActual = useProyectoActualStore()
@@ -75,6 +80,95 @@ async function abrirDetalle(factura: FacturaFila) {
     verDetalle.value = true
   } catch (error) {
     avisarError(error)
+  }
+}
+
+// CU12 después del registro: agregar las guías que quedaron pendientes o quitar las equivocadas.
+const dialogoGuias = ref(false)
+const cargandoGuias = ref(false)
+const guardandoGuias = ref(false)
+const candidatas = ref<GuiaFila[]>([])
+const precios = computed(
+  () => new Map((detalle.value?.lineas ?? []).map((l) => [l.resistencia.id, l.precio_unitario])),
+)
+const lineasDetalle = computed(() =>
+  (detalle.value?.lineas ?? []).map((l) => ({
+    resistencia_id: l.resistencia.id,
+    volumen_m3: l.volumen_m3,
+    precio_unitario: l.precio_unitario,
+  })),
+)
+
+/** Las guías ya vinculadas y las pendientes del proveedor, de la más antigua a la más reciente. */
+async function abrirVincular() {
+  const factura = detalle.value
+  if (!factura) return
+  dialogoGuias.value = true
+  cargandoGuias.value = true
+  try {
+    const pendientes = await facturasServicio.guiasPorFacturar(
+      factura.proyecto_id,
+      factura.proveedor.id,
+    )
+    candidatas.value = [...factura.guias, ...pendientes].sort(
+      (a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id,
+    )
+  } catch (error) {
+    dialogoGuias.value = false
+    avisarError(error)
+  } finally {
+    cargandoGuias.value = false
+  }
+}
+
+const confirmarDiferencia = () =>
+  new Promise<boolean>((resolver) =>
+    confirm.require({
+      header: 'Confirmar guías',
+      message:
+        'El volumen facturado no coincide con las guías. ¿Guardar las guías de todas formas?',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Guardar',
+      rejectLabel: 'Revisar',
+      accept: () => resolver(true),
+      reject: () => resolver(false),
+      onHide: () => resolver(false),
+    }),
+  )
+
+const requiereConfirmacion = (error: unknown) =>
+  esErrorApi(error) &&
+  error.response?.status === 422 &&
+  error.response.data?.code === 'requiere_confirmacion'
+
+async function guardarGuias(ids: number[], confirmado = false): Promise<void> {
+  const factura = detalle.value
+  if (!factura) return
+  if (!ids.length) {
+    toast.add({ severity: 'warn', summary: 'Vincule al menos una guía', life: 5000 })
+    return
+  }
+  guardandoGuias.value = true
+  try {
+    const respuesta = await facturasServicio.actualizarGuias(factura.id, ids, confirmado)
+    detalle.value = respuesta.data
+    const fila = facturas.value.find((f) => f.id === factura.id)
+    if (fila) {
+      fila.guias_count = respuesta.data.guias.length
+      fila.diferencia_confirmada = respuesta.data.diferencia_confirmada
+      fila.volumen_guias_m3 = respuesta.data.volumen_guias_m3
+      fila.volumen_pendiente_m3 = respuesta.data.volumen_pendiente_m3
+    }
+    toast.add({ severity: 'success', summary: respuesta.message, life: 3000 })
+  } catch (error) {
+    if (!confirmado && requiereConfirmacion(error)) {
+      guardandoGuias.value = false
+      if (await confirmarDiferencia()) return guardarGuias(ids, true)
+      return
+    }
+    avisarError(error)
+  } finally {
+    guardandoGuias.value = false
   }
 }
 
@@ -161,6 +255,10 @@ onMounted(async () => {
         <span class="block text-sm text-surface-500 sm:hidden">{{
           fila.proveedor.razon_social
         }}</span>
+        <span v-if="avisoPendiente(fila)" class="block text-sm text-amber-700" data-pendiente-lista>
+          <i class="pi pi-exclamation-triangle text-xs" aria-hidden="true" />
+          {{ avisoPendiente(fila) }}
+        </span>
       </template>
       <template #col-fecha="{ fila }">{{ formatoFecha(fila.fecha) }}</template>
       <template #col-proveedor="{ fila }">{{ fila.proveedor.razon_social }}</template>
@@ -252,7 +350,35 @@ onMounted(async () => {
       </section>
 
       <section>
-        <h3 class="mb-1 font-semibold">Guías vinculadas</h3>
+        <Message
+          v-if="avisoPendiente(detalle)"
+          severity="warn"
+          icon="pi pi-exclamation-triangle"
+          class="mb-2"
+          data-pendiente
+        >
+          {{ avisoPendiente(detalle) }}
+          <ul v-if="detalle.pendiente_por_resistencia?.length" class="mt-1 list-disc pl-5">
+            <li v-for="r in detalle.pendiente_por_resistencia" :key="r.resistencia.id">
+              {{ r.resistencia.nombre }}: faltan {{ m3Aviso(r.faltan_m3) }} (facturado
+              {{ m3Aviso(r.facturado_m3) }}, en guías {{ m3Aviso(r.en_guias_m3) }})
+            </li>
+          </ul>
+        </Message>
+        <div class="mb-1 flex items-center justify-between gap-2">
+          <h3 class="font-semibold">Guías vinculadas</h3>
+          <Button
+            v-if="puedeRegistrar"
+            label="Vincular guías"
+            icon="pi pi-link"
+            size="small"
+            text
+            :loading="guardandoGuias"
+            title="Agregar las guías pendientes del proveedor o quitar las equivocadas"
+            data-vincular
+            @click="abrirVincular"
+          />
+        </div>
         <table class="w-full" aria-label="Guías vinculadas">
           <thead>
             <tr class="border-b border-surface-200 text-left text-surface-600">
@@ -288,4 +414,16 @@ onMounted(async () => {
       >
     </template>
   </Dialog>
+
+  <DialogoVincularGuias
+    v-if="detalle"
+    v-model:visible="dialogoGuias"
+    :guias="candidatas"
+    :seleccion="detalle.guias.map((g) => g.id)"
+    :precios="precios"
+    :lineas="lineasDetalle"
+    :numero-factura="detalle.numero"
+    :cargando="cargandoGuias"
+    @confirmar="guardarGuias"
+  />
 </template>

@@ -13,7 +13,8 @@ import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaPresupuesto from '@/components/organismos/TablaPresupuesto.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
-import { elementosEstructurales } from '@/catalogos/partidas'
+import { fcEnKg } from '@/catalogos/partidas'
+import { elementosServicio } from '@/services/elementos'
 import { gruposServicio } from '@/services/grupos'
 import { partidasServicio } from '@/services/partidas'
 import { decimales } from '@/services/presupuesto'
@@ -39,6 +40,7 @@ const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const grupos = ref<GrupoFila[]>([])
 const resistencias = ref<Resistencia[]>([])
+const elementos = ref<string[]>([])
 const cargando = ref(true)
 
 function avisarError(error: unknown) {
@@ -68,13 +70,15 @@ watch(() => proyectoActual.cargado && proyectoId.value, cargarPartidas, { immedi
 onMounted(async () => {
   try {
     // Los catálogos de grupos y resistencias son los mismos para todos los proyectos: se piden una vez.
-    const [lista, fc] = await Promise.all([
+    const [lista, fc, activos] = await Promise.all([
       gruposServicio.listar(),
       resistenciasServicio.listar(),
+      elementosServicio.listar(),
       proyectoActual.cargar(),
     ])
     grupos.value = lista
     resistencias.value = fc
+    elementos.value = activos.map((e) => e.nombre)
   } catch (error) {
     avisarError(error)
     cargando.value = false
@@ -83,6 +87,27 @@ onMounted(async () => {
 
 const dialogo = ref(false)
 const editando = ref<PartidaFila | null>(null)
+
+// Solo los activos; una partida que ya tiene un valor inactivo lo sigue mostrando al editarla.
+const opcionesElemento = computed(() => {
+  const actual = editando.value?.elemento
+  return actual && !elementos.value.includes(actual)
+    ? [...elementos.value, actual]
+    : elementos.value
+})
+const opcionesResistencia = computed(() => {
+  const actual = editando.value
+  return actual && !resistencias.value.some((r) => r.id === actual.resistencia_id)
+    ? [
+        ...resistencias.value,
+        {
+          id: actual.resistencia_id,
+          fc_kg_cm2: fcEnKg(actual.resistencia_fc),
+          nombre: actual.resistencia_fc,
+        },
+      ]
+    : resistencias.value
+})
 
 const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } = useForm({
   validationSchema: toTypedSchema(esquemaPartida),
@@ -96,6 +121,37 @@ const [resistenciaId, resistenciaIdAttrs] = defineField('resistencia_id')
 const [metrado, metradoAttrs] = defineField('metrado_m3')
 const [desperdicio, desperdicioAttrs] = defineField('factor_desperdicio')
 const [precio, precioAttrs] = defineField('precio_unitario')
+
+// Las otras partidas del proyecto con el mismo concreto (hoy, la misma resistencia): comparten el
+// precio unitario, así que el precio se llena con el suyo y cambiarlo las afecta a todas.
+const mismoConcreto = computed(() =>
+  resistenciaId.value == null
+    ? []
+    : partidas.value.filter(
+        (p) => p.resistencia_id === resistenciaId.value && p.id !== editando.value?.id,
+      ),
+)
+const precioDelConcreto = computed(() => mismoConcreto.value[0]?.precio_unitario)
+
+watch(resistenciaId, () => {
+  if (precioDelConcreto.value !== undefined) precio.value = precioDelConcreto.value
+})
+
+const centimos = (valor: number) => Math.round(valor * 100)
+
+/** El aviso de que el precio nuevo llega a las demás partidas del concreto; sin cambio, nada. */
+function avisoDePrecio(nuevo: number | null | undefined) {
+  const otras = mismoConcreto.value.length
+  const anterior = precioDelConcreto.value
+  if (!otras || anterior === undefined || nuevo == null || centimos(nuevo) === centimos(anterior))
+    return undefined
+  const resistencia = opcionesResistencia.value.find((r) => r.id === resistenciaId.value)?.nombre
+  const de = `El precio de ${resistencia} (S/ ${decimales(anterior)})`
+  return otras === 1
+    ? `${de} lo usa otra partida del proyecto; al guardar se actualizará también en ella.`
+    : `${de} lo usan otras ${otras} partidas del proyecto; al guardar se actualizará en todas.`
+}
+const avisoPrecio = computed(() => avisoDePrecio(precio.value))
 
 function abrir(partida: PartidaFila | null = null) {
   editando.value = partida
@@ -116,12 +172,29 @@ const confirmarDesperdicio = (valor: number) =>
     }),
   )
 
+const confirmarPrecio = (mensaje: string) =>
+  new Promise<boolean>((resolver) =>
+    confirm.require({
+      header: 'Confirmar precio',
+      message: mensaje,
+      acceptLabel: 'Actualizar en todas',
+      rejectLabel: 'Cancelar',
+      accept: () => resolver(true),
+      reject: () => resolver(false),
+      onHide: () => resolver(false),
+    }),
+  )
+
 const guardar = handleSubmit(async (valores) => {
   const confirmado = valores.factor_desperdicio > 15
   if (confirmado && !(await confirmarDesperdicio(valores.factor_desperdicio))) return
+  const aviso = avisoDePrecio(valores.precio_unitario)
+  const confirmadoPrecio = !!aviso
+  if (aviso && !(await confirmarPrecio(aviso))) return
   try {
-    if (editando.value) await partidasServicio.actualizar(editando.value.id, valores, confirmado)
-    else await partidasServicio.crear(proyectoId.value!, valores, confirmado)
+    if (editando.value)
+      await partidasServicio.actualizar(editando.value.id, valores, confirmado, confirmadoPrecio)
+    else await partidasServicio.crear(proyectoId.value!, valores, confirmado, confirmadoPrecio)
     toast.add({
       severity: 'success',
       summary: editando.value ? 'Cambios guardados.' : 'Partida registrada',
@@ -254,7 +327,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             v-model="elemento"
             v-bind="elementoAttrs"
             label-id="elemento"
-            :options="[...elementosEstructurales]"
+            :options="opcionesElemento"
             placeholder="Seleccione"
             :invalid="!!errors.elemento"
             :pt="{ label: { 'aria-describedby': idError } }"
@@ -274,7 +347,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
             v-model="resistenciaId"
             v-bind="resistenciaIdAttrs"
             label-id="resistencia_id"
-            :options="resistencias"
+            :options="opcionesResistencia"
             option-label="nombre"
             option-value="id"
             placeholder="Seleccione"
@@ -325,6 +398,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           etiqueta="Precio unitario sin IGV (S/ por m³)"
           para="precio_unitario"
           :error="errors.precio_unitario"
+          :aviso="avisoPrecio"
           obligatorio
         >
           <InputNumber

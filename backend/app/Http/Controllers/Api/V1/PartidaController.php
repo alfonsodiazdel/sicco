@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PartidaRequest;
 use App\Http\Resources\PartidaResource;
+use App\Models\Concreto;
 use App\Models\Partida;
 use App\Models\Proyecto;
 use App\Support\Volumen;
@@ -26,7 +27,7 @@ class PartidaController extends Controller
     {
         $this->autorizarProyecto($request, $proyecto);
 
-        return PartidaResource::collection($proyecto->partidas()->with('resistencia')->orderBy('id')->get());
+        return PartidaResource::collection($proyecto->partidas()->with('concreto.resistencia')->orderBy('id')->get());
     }
 
     public function store(PartidaRequest $request, Proyecto $proyecto): JsonResponse
@@ -34,9 +35,13 @@ class PartidaController extends Controller
         $this->autorizarProyecto($request, $proyecto);
         $this->exigirConfirmacion($request);
 
-        $partida = $proyecto->partidas()->create($request->datos());
+        $partida = DB::transaction(function () use ($request, $proyecto) {
+            $concreto = $this->fijarPrecio($request, $proyecto->id);
 
-        return PartidaResource::make($partida->load('resistencia'))->response()->setStatusCode(201);
+            return $proyecto->partidas()->create([...$request->datos(), 'concreto_id' => $concreto->id]);
+        });
+
+        return PartidaResource::make($partida->load('concreto.resistencia'))->response()->setStatusCode(201);
     }
 
     public function update(PartidaRequest $request, Partida $partida): PartidaResource
@@ -56,10 +61,45 @@ class PartidaController extends Controller
                 ])]);
             }
 
-            $partida->update($request->datos());
+            $concreto = $this->fijarPrecio($request, $partida->proyecto_id, $partida);
+            $partida->update([...$request->datos(), 'concreto_id' => $concreto->id]);
         });
 
-        return PartidaResource::make($partida->load('resistencia'));
+        return PartidaResource::make($partida->load('concreto.resistencia'));
+    }
+
+    /**
+     * El concreto del proyecto con la resistencia de la partida, con el precio enviado. Si otras
+     * partidas usan ese concreto, el precio nuevo les llega a todas: se acepta solo si se confirma.
+     */
+    private function fijarPrecio(PartidaRequest $request, int $proyectoId, ?Partida $partida = null): Concreto
+    {
+        $resistenciaId = (int) $request->validated('resistencia_id');
+        $precio = Volumen::centesimos($request->validated('precio_unitario'));
+
+        $concreto = Concreto::where('proyecto_id', $proyectoId)
+            ->where('resistencia_id', $resistenciaId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($concreto && Volumen::centesimos($concreto->precio_unitario) !== $precio && ! $request->boolean('confirmado_precio')) {
+            $otras = $concreto->partidas()->when($partida, fn ($q) => $q->whereKeyNot($partida->id))->count();
+            if ($otras > 0) {
+                $mensaje = trans_choice('sicco.partidas.confirmar_precio', $otras, [
+                    'cantidad' => $otras,
+                    'resistencia' => $concreto->resistencia->nombre,
+                    'anterior' => number_format((float) $concreto->precio_unitario, 2),
+                ]);
+
+                throw new HttpResponseException(response()->json([
+                    'message' => $mensaje,
+                    'code' => 'requiere_confirmacion_precio',
+                    'errors' => ['precio_unitario' => [$mensaje]],
+                ], Response::HTTP_UNPROCESSABLE_ENTITY));
+            }
+        }
+
+        return Concreto::fijar($proyectoId, $resistenciaId, $request->validated('precio_unitario'));
     }
 
     /** Confirmación «blanda» de CU04: el desperdicio mayor a 15 % se acepta solo si se confirma. */

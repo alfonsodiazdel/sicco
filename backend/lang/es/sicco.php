@@ -25,12 +25,22 @@ return [
         'duplicado' => 'El grupo ya existe',
         'en_uso' => 'El grupo tiene partidas registradas; reasígnelas antes de eliminarlo.',
     ],
+    'elementos' => [
+        'duplicado' => 'El elemento ya existe',
+        'en_uso' => 'Este elemento está en uso en partidas: solo se puede desactivar.',
+    ],
+    'resistencias' => [
+        'duplicada' => 'La resistencia ya existe',
+        'en_uso' => 'Esta resistencia está en uso: solo se puede desactivar.',
+    ],
     'proyectos' => [
         'sin_acceso' => 'No tiene acceso a este proyecto.',
     ],
     'partidas' => [
         'metrado_repartido' => 'El metrado es menor al volumen ya repartido en sectores (:repartido m³)',
         'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
+        'confirmar_precio' => '{1} El precio de :resistencia (S/ :anterior) lo usa otra partida del proyecto; al guardar se actualizará también en ella.'
+            .'|[2,*] El precio de :resistencia (S/ :anterior) lo usan otras :cantidad partidas del proyecto; al guardar se actualizará en todas.',
     ],
     'niveles' => [
         'duplicado' => 'El nivel ya existe en el proyecto',
@@ -56,6 +66,7 @@ return [
     ],
     'facturas' => [
         'registrada' => 'Factura registrada correctamente',
+        'guias_actualizadas' => 'Guías de la factura actualizadas correctamente',
         'duplicada' => 'La factura ya fue registrada',
         'volumen_no_coincide' => 'El volumen facturado no coincide con las guías',
         'sin_guias' => 'Vincule al menos una guía',

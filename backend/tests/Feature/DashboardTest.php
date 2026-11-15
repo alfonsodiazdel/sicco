@@ -20,7 +20,7 @@ function obraDashboard(string $codigo, float $precio, float $factor, array $atri
 {
     $proyecto = obra(['codigo' => $codigo, 'nombre' => "Obra {$codigo}", 'fecha_inicio' => '2026-09-01', ...$atributos]);
     $grupo = GrupoPartida::firstOrCreate(['nombre' => 'Estructuras'], ['orden' => 1]);
-    $partida = $proyecto->partidas()->create(datosPartida([
+    $partida = partida($proyecto, datosPartida([
         'grupo_id' => $grupo->id, 'elemento' => 'Columnas', 'resistencia_id' => resistencia(210)->id,
         'metrado_m3' => 20, 'precio_unitario' => $precio, 'factor_desperdicio' => $factor,
     ]));

@@ -76,8 +76,8 @@ it('usa el mismo límite que la asignación (CU09), con el medio centésimo haci
 
 it('distingue con un id las filas de igual nombre', function () {
     [$p, $partida, $ing] = obraConColumnas();
-    $otra = $p->partidas()->create(datosPartida([
-        'item' => '03.02.01', 'elemento' => 'Columna', 'resistencia_id' => $partida->resistencia_id, 'metrado_m3' => 50,
+    $otra = partida($p, datosPartida([
+        'item' => '03.02.01', 'elemento' => 'Columna', 'resistencia_id' => $partida->concreto->resistencia_id, 'metrado_m3' => 50,
     ]));
     sector(nivel($p, 'Piso 1', 1), $partida, 10, 'Sector A');
     sector(nivel($p, 'Piso 2', 2), $otra, 10, 'Sector A');

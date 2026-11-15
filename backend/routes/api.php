@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\SesionController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DesperdicioController;
 use App\Http\Controllers\Api\V1\DocumentoController;
+use App\Http\Controllers\Api\V1\ElementoEstructuralController;
 use App\Http\Controllers\Api\V1\FacturaController;
 use App\Http\Controllers\Api\V1\GrupoPartidaController;
 use App\Http\Controllers\Api\V1\GuiaController;
@@ -51,6 +52,13 @@ Route::prefix('v1')->group(function () {
 
             // Catálogo de resistencias f'c: lo usan el presupuesto (CU04) y el registro de guías (CU06).
             Route::get('resistencias', [ResistenciaController::class, 'index']);
+            // Su mantenedor tiene los mismos permisos que los grupos de partidas.
+            Route::get('resistencias/todas', [ResistenciaController::class, 'todas'])->middleware('rol:oficina_tecnica,administrador');
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::post('resistencias', [ResistenciaController::class, 'store']);
+                Route::put('resistencias/{resistencia}', [ResistenciaController::class, 'update'])->whereNumber('resistencia');
+                Route::delete('resistencias/{resistencia}', [ResistenciaController::class, 'destroy'])->whereNumber('resistencia');
+            });
 
             // Catálogo global de grupos de partidas: lo mantiene Oficina técnica.
             Route::get('grupos-partida', [GrupoPartidaController::class, 'index'])->middleware('rol:oficina_tecnica,administrador');
@@ -58,6 +66,16 @@ Route::prefix('v1')->group(function () {
                 Route::post('grupos-partida', [GrupoPartidaController::class, 'store']);
                 Route::put('grupos-partida/{grupo}', [GrupoPartidaController::class, 'update'])->whereNumber('grupo');
                 Route::delete('grupos-partida/{grupo}', [GrupoPartidaController::class, 'destroy'])->whereNumber('grupo');
+            });
+
+            // Elementos estructurales de las partidas: los activos alimentan los combos de cualquier rol;
+            // el listado completo (con inactivos) es del mantenedor, con los mismos permisos que los grupos.
+            Route::get('elementos-estructurales', [ElementoEstructuralController::class, 'index']);
+            Route::get('elementos-estructurales/todos', [ElementoEstructuralController::class, 'todos'])->middleware('rol:oficina_tecnica,administrador');
+            Route::middleware('rol:oficina_tecnica')->group(function () {
+                Route::post('elementos-estructurales', [ElementoEstructuralController::class, 'store']);
+                Route::put('elementos-estructurales/{elemento}', [ElementoEstructuralController::class, 'update'])->whereNumber('elemento');
+                Route::delete('elementos-estructurales/{elemento}', [ElementoEstructuralController::class, 'destroy'])->whereNumber('elemento');
             });
 
             // CU04 Presupuesto: lo consultan también Producción (para repartirlo en sectores, CU05) y
@@ -120,6 +138,8 @@ Route::prefix('v1')->group(function () {
                 // Lectura de la factura con OCR: cada una cuesta en la API de IA.
                 Route::post('facturas/lecturas', [FacturaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('facturas', [FacturaController::class, 'store']);
+                // CU12 después del registro: agregar las guías que quedaron pendientes o quitar las equivocadas.
+                Route::put('facturas/{factura}/guias', [FacturaController::class, 'actualizarGuias'])->whereNumber('factura');
             });
 
             // CU18 Exportar documentos: Oficina técnica y el administrador descargan en ZIP las fotos

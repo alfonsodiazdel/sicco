@@ -16,13 +16,15 @@ class PartidaResource extends JsonResource
             'item' => $this->item,
             'descripcion' => $this->descripcion,
             'elemento' => $this->elemento,
-            'resistencia_id' => $this->resistencia_id,
+            // La resistencia y el precio son los de su concreto, compartidos con las demás partidas del mismo concreto.
+            'concreto_id' => $this->concreto_id,
+            'resistencia_id' => $this->concreto->resistencia_id,
             // El nombre, para mostrarlo: «f'c 280 kg/cm²».
-            'resistencia_fc' => $this->resistencia->nombre,
+            'resistencia_fc' => $this->concreto->resistencia->nombre,
             // El cast decimal:2 da texto; el frontend opera con números.
             'metrado_m3' => (float) $this->metrado_m3,
             'factor_desperdicio' => (float) $this->factor_desperdicio,
-            'precio_unitario' => (float) $this->precio_unitario,
+            'precio_unitario' => (float) $this->concreto->precio_unitario,
         ];
     }
 }

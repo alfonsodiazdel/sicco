@@ -8,6 +8,7 @@ import InputText from 'primevue/inputtext'
 import type { ProyectosServicio } from '@/services/proyectos'
 import type { PartidasServicio } from '@/services/partidas'
 import type { GruposServicio } from '@/services/grupos'
+import type { ElementosServicio } from '@/services/elementos'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import PartidasView from '@/views/PartidasView.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +22,7 @@ const { toast, confirm, servicios } = vi.hoisted(() => ({
     proyectos: null as ProyectosServicio | null,
     partidas: null as PartidasServicio | null,
     grupos: null as GruposServicio | null,
+    elementos: null as ElementosServicio | null,
     asignados: [] as number[],
   },
 }))
@@ -45,6 +47,16 @@ vi.mock('@/services/grupos', async (importOriginal) => {
     ...real,
     get gruposServicio() {
       return servicios.grupos
+    },
+  }
+})
+
+vi.mock('@/services/elementos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/elementos')>()
+  return {
+    ...real,
+    get elementosServicio() {
+      return servicios.elementos
     },
   }
 })
@@ -75,6 +87,7 @@ async function montar(
   servicios.proyectos = crearProyectosEnMemoria(async () => servicios.asignados)
   servicios.partidas = crearPartidasEnMemoria(async () => niveles)
   servicios.grupos = (await import('@/services/grupos')).crearGruposEnMemoria()
+  servicios.elementos = (await import('@/services/elementos')).crearElementosEnMemoria()
   await preparar?.(servicios.proyectos)
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -122,6 +135,7 @@ async function abrirNuevo(vista: VueWrapper) {
 async function llenar(
   vista: VueWrapper,
   valores: { metrado: number; desperdicio: number; precio: number },
+  resistencia = 3,
 ) {
   const select = (id: string) =>
     vista.findAllComponents(Select).find((s) => s.props('labelId') === id)!
@@ -132,7 +146,7 @@ async function llenar(
   await select('grupo_id').setValue(3)
   await texto('descripcion').setValue("CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA")
   await select('elemento').setValue('Columna')
-  await select('resistencia_id').setValue(3)
+  await select('resistencia_id').setValue(resistencia)
   await numero('metrado_m3').setValue(valores.metrado)
   await numero('factor_desperdicio').setValue(valores.desperdicio)
   await numero('precio_unitario').setValue(valores.precio)
@@ -199,12 +213,13 @@ describe('PartidasView', () => {
         '245.00',
         '1.050',
         '257.25',
-        '390.00',
-        '100,327.50',
+        // Mismo concreto que las zapatas: el mismo precio.
+        '385.00',
+        '99,041.25',
       ],
     ])
     expect(elementos(vista)).toEqual(['Zapata', 'Columna', 'Losa aligerada'])
-    expect(totalPresupuestado(vista)).toBe('S/ 307,771.80')
+    expect(totalPresupuestado(vista)).toBe('S/ 306,485.55')
   })
 
   it('resume cada grupo en su encabezado y lo subtotaliza debajo de sus partidas', async () => {
@@ -329,7 +344,8 @@ describe('PartidasView', () => {
     expect(totalPresupuestado(vista)).toBe('S/ 437.46')
 
     await abrirNuevo(vista)
-    await llenar(vista, { metrado: 0.5, desperdicio: 0, precio: 2.01 })
+    // Otra resistencia: con la misma, el precio sería el del concreto ya registrado.
+    await llenar(vista, { metrado: 0.5, desperdicio: 0, precio: 2.01 }, 4)
     await guardar(vista)
 
     expect(filas(vista)[1]?.slice(2)).toEqual(['0.50', '1.000', '0.50', '2.01', '1.01'])
@@ -339,6 +355,7 @@ describe('PartidasView', () => {
       {
         id: 5,
         proyecto_id: 3,
+        concreto_id: 4,
         grupo_id: 3,
         // El ítem quedó vacío: se guarda como null.
         item: null,
@@ -392,7 +409,8 @@ describe('PartidasView', () => {
     const vista = await montar()
     const crear = vi.spyOn(servicios.partidas!, 'crear')
     await abrirNuevo(vista)
-    await llenar(vista, { metrado: 10, desperdicio: 15.5, precio: 400 })
+    // f'c 175: el proyecto aún no usa ese concreto, así que solo se confirma el desperdicio.
+    await llenar(vista, { metrado: 10, desperdicio: 15.5, precio: 400 }, 1)
 
     confirm.require.mockImplementationOnce((o: { reject: () => void }) => o.reject())
     await guardar(vista)
@@ -411,9 +429,77 @@ describe('PartidasView', () => {
       1,
       expect.objectContaining({ factor_desperdicio: 15.5 }),
       true,
+      false,
     )
     // Cisterna va entre Cimentación y Verticales superestructura.
     expect(filas(vista)[1]?.[6]).toBe('4,620.00')
+  })
+
+  it('llena el precio con el del concreto del proyecto y avisa que cambiarlo cambia todas sus partidas', async () => {
+    const vista = await montar()
+    const crear = vi.spyOn(servicios.partidas!, 'crear')
+    await abrirNuevo(vista)
+    const precio = () =>
+      vista.findAllComponents(InputNumber).find((n) => n.props('inputId') === 'precio_unitario')!
+
+    // f'c 210 ya está en el proyecto (zapatas y losa) a S/ 385: se llena solo y sin aviso.
+    await llenar(vista, { metrado: 10, desperdicio: 5, precio: 385 }, 2)
+    await vista
+      .findAllComponents(Select)
+      .find((c) => c.props('labelId') === 'resistencia_id')!
+      .setValue(3)
+    await asentar()
+    expect(precio().props('modelValue')).toBe(420)
+    await vista
+      .findAllComponents(Select)
+      .find((c) => c.props('labelId') === 'resistencia_id')!
+      .setValue(2)
+    await asentar()
+    expect(precio().props('modelValue')).toBe(385)
+    expect(vista.find('[data-aviso]').exists()).toBe(false)
+
+    const aviso =
+      "El precio de f'c 210 kg/cm² (S/ 385.00) lo usan otras 2 partidas del proyecto; al guardar se actualizará en todas."
+    await precio().setValue(400)
+    await asentar()
+    expect(vista.get('[data-aviso]').text()).toBe(aviso)
+
+    confirm.require.mockImplementationOnce((o: { reject: () => void }) => o.reject())
+    await guardar(vista)
+    expect(confirm.require).toHaveBeenCalledWith(
+      expect.objectContaining({ header: 'Confirmar precio', message: aviso }),
+    )
+    expect(crear).not.toHaveBeenCalled()
+
+    confirm.require.mockImplementationOnce((o: { accept: () => void }) => o.accept())
+    await guardar(vista)
+    expect(crear).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ resistencia_id: 2, precio_unitario: 400 }),
+      false,
+      true,
+    )
+    // Zapatas, losa y la nueva quedan con el precio nuevo.
+    const precios210 = filas(vista)
+      .filter((f) => f[1] === '210')
+      .map((f) => f[5])
+    expect(precios210).toEqual(['400.00', '400.00', '400.00'])
+  })
+
+  it('al editar avisa en singular si el concreto lo usa una sola partida más', async () => {
+    const vista = await montar()
+    await vista.get(editarZapata).trigger('click')
+    await asentar()
+    const precio = vista
+      .findAllComponents(InputNumber)
+      .find((n) => n.props('inputId') === 'precio_unitario')!
+    expect(precio.props('modelValue')).toBe(385)
+
+    await precio.setValue(390)
+    await asentar()
+    expect(vista.get('[data-aviso]').text()).toBe(
+      "El precio de f'c 210 kg/cm² (S/ 385.00) lo usa otra partida del proyecto; al guardar se actualizará también en ella.",
+    )
   })
 
   it('edita una partida y recalcula los totales', async () => {
@@ -432,7 +518,7 @@ describe('PartidasView', () => {
       expect.objectContaining({ summary: 'Cambios guardados.' }),
     )
     expect(filas(vista)[0]?.slice(2)).toEqual(['300.00', '1.050', '315.00', '385.00', '121,275.00'])
-    expect(totalPresupuestado(vista)).toBe('S/ 299,686.80')
+    expect(totalPresupuestado(vista)).toBe('S/ 298,400.55')
   })
 
   it('no deja bajar el metrado por debajo de lo ya repartido en sectores', async () => {
@@ -467,5 +553,51 @@ describe('PartidasView', () => {
     expect(filas(vista).length).toBeGreaterThan(0)
     expect(vista.find('button[aria-label="Agregar partida"]').exists()).toBe(false)
     expect(vista.find('button[aria-label^="Editar partida "]').exists()).toBe(false)
+  })
+
+  describe('catálogos con valores inactivos', () => {
+    const opciones = (vista: VueWrapper, id: string) =>
+      vista
+        .findAllComponents(Select)
+        .find((s) => s.props('labelId') === id)!
+        .props('options') as { id: number; fc_kg_cm2: number }[]
+
+    it('ofrece solo los elementos y resistencias activos al registrar una partida', async () => {
+      const vista = await montar(async () => {
+        const viga = (await servicios.elementos!.todos()).find((e) => e.nombre === 'Viga')!
+        await servicios.elementos!.actualizar(viga.id, { nombre: 'Viga', activo: false })
+        const { resistenciasServicio } = await import('@/services/resistencias')
+        await resistenciasServicio.actualizar(1, {
+          fc_kg_cm2: 175,
+          nombre: "f'c 175 kg/cm²",
+          activo: false,
+        })
+      })
+      await abrirNuevo(vista)
+
+      expect(opciones(vista, 'elemento')).not.toContain('Viga')
+      expect(opciones(vista, 'elemento')).toContain('Columna')
+      expect(
+        opciones(vista, 'resistencia_id').map((r: { fc_kg_cm2: number }) => r.fc_kg_cm2),
+      ).toEqual([210, 280, 350])
+    })
+
+    it('al editar sigue mostrando el elemento y la resistencia inactivos de la partida', async () => {
+      const vista = await montar(async () => {
+        const zapata = (await servicios.elementos!.todos()).find((e) => e.nombre === 'Zapata')!
+        await servicios.elementos!.actualizar(zapata.id, { nombre: 'Zapata', activo: false })
+        const { resistenciasServicio } = await import('@/services/resistencias')
+        await resistenciasServicio.actualizar(2, {
+          fc_kg_cm2: 210,
+          nombre: "f'c 210 kg/cm²",
+          activo: false,
+        })
+      })
+      await vista.get(editarZapata).trigger('click')
+      await asentar()
+
+      expect(opciones(vista, 'elemento')).toContain('Zapata')
+      expect(opciones(vista, 'resistencia_id').map((r: { id: number }) => r.id)).toContain(2)
+    })
   })
 })

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  avisoPendiente,
   compararVolumenes,
   igvSugerido,
   importe,
+  m3Aviso,
   subtotalFactura,
   subtotalLineas,
   sugerirGuias,
@@ -174,5 +176,19 @@ describe('sugerirGuias', () => {
         { resistencia_id: 4, volumen_m3: 7.5, precio_unitario: 329 },
       ]),
     ).toEqual([2])
+  })
+})
+
+describe('aviso de m³ por vincular', () => {
+  it('m3Aviso muestra los enteros sin decimales y el resto con dos', () => {
+    expect(m3Aviso(20)).toBe('20 m³')
+    expect(m3Aviso(14.5)).toBe('14.50 m³')
+    expect(m3Aviso(0.5)).toBe('0.50 m³')
+  })
+
+  it('26 m³ facturados y 6 m³ en guías faltan 20 m³ sin decimales', () => {
+    expect(avisoPendiente({ volumen_m3: 26, volumen_guias_m3: 6, volumen_pendiente_m3: 20 })).toBe(
+      'Faltan 20 m³ por vincular (facturado 26 m³, en guías 6 m³)',
+    )
   })
 })

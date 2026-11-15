@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Precio unitario de una guía al cierre, como el EAT (CU15), el corte de mes (CU16) y el dashboard
  * (CU17): el de su factura; si no, el último precio facturado de su resistencia en su proyecto hasta
- * el cierre; si no, el precio presupuestado de esa resistencia, ponderado por metrado.
+ * el cierre; si no, el precio del concreto de esa resistencia en el presupuesto del proyecto.
  */
 final class PrecioGuia
 {
@@ -36,10 +36,11 @@ final class PrecioGuia
                 ->orderByDesc('fu.fecha')->orderByDesc('fu.id')->orderByDesc('uf.id')
                 ->limit(1)
                 ->select('uf.precio_unitario')),
-            self::sub(DB::table('partidas as pm')
-                ->whereColumn('pm.proyecto_id', "{$guia}.proyecto_id")
-                ->whereColumn('pm.resistencia_id', "{$guia}.resistencia_id")
-                ->selectRaw('CAST(SUM(pm.metrado_m3 * pm.precio_unitario) AS DECIMAL(30, 12)) / NULLIF(SUM(pm.metrado_m3), 0)')),
+            self::sub(DB::table('concretos as cm')
+                ->whereColumn('cm.proyecto_id', "{$guia}.proyecto_id")
+                ->whereColumn('cm.resistencia_id', "{$guia}.resistencia_id")
+                ->whereExists(fn ($q) => $q->from('partidas as pm')->whereColumn('pm.concreto_id', 'cm.id'))
+                ->select('cm.precio_unitario')),
             ['0', []],
         );
     }

@@ -25,11 +25,11 @@ function escenarioCorte(): array
     $r210 = resistencia(210);
     $r280 = resistencia(280);
     $grupo = GrupoPartida::create(['nombre' => 'Estructuras', 'orden' => 1]);
-    $p1 = $proyecto->partidas()->create(datosPartida([
+    $p1 = partida($proyecto, datosPartida([
         'grupo_id' => $grupo->id, 'item' => '01.01', 'elemento' => 'Columnas', 'resistencia_id' => $r210->id,
         'metrado_m3' => 10, 'precio_unitario' => 300, 'factor_desperdicio' => 10,
     ]));
-    $p2 = $proyecto->partidas()->create(datosPartida([
+    $p2 = partida($proyecto, datosPartida([
         'grupo_id' => $grupo->id, 'item' => '01.02', 'elemento' => 'Vigas', 'resistencia_id' => $r280->id,
         'metrado_m3' => 8, 'precio_unitario' => 350, 'factor_desperdicio' => 10,
     ]));

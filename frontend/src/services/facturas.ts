@@ -9,6 +9,7 @@ import type {
   LecturaFactura,
   RegistroFactura,
   RespuestaLecturaFactura,
+  RespuestaGuiasFactura,
   RespuestaRegistroFactura,
 } from '@/types/facturas'
 import type { GuiaFila } from '@/types/guias'
@@ -28,6 +29,15 @@ export interface FacturasServicio {
    * con `requiere_confirmacion` (flujo alternativo 1).
    */
   registrar(datos: RegistroFactura): Promise<RespuestaRegistroFactura>
+  /**
+   * CU12 después del registro: la lista completa de guías que cobra la factura. Las que salen
+   * vuelven a quedar por facturar. Si el volumen no coincide, 422 con `requiere_confirmacion`.
+   */
+  actualizarGuias(
+    facturaId: number,
+    guiaIds: number[],
+    confirmado?: boolean,
+  ): Promise<RespuestaGuiasFactura>
   /** Las concreteras registradas, para elegir el proveedor de la factura. */
   proveedores(): Promise<Proveedor[]>
 }
@@ -78,6 +88,10 @@ export function crearFacturasApi(): FacturasServicio {
     },
     async registrar(datos) {
       return (await http.post<RespuestaRegistroFactura>('/facturas', formulario(datos))).data
+    },
+    async actualizarGuias(facturaId, guiaIds, confirmado = false) {
+      const url = `/facturas/${facturaId}/guias`
+      return (await http.put<RespuestaGuiasFactura>(url, { guia_ids: guiaIds, confirmado })).data
     },
     async proveedores() {
       // Las concreteras de una empresa son pocas; se traen todas para el selector.
@@ -134,9 +148,36 @@ export function crearFacturasEnMemoria(
   let siguiente = 1
 
   const copia = (f: FacturaDetalle): FacturaFila => {
-    const { lineas: _l, cargos: _c, guias: _g, ...fila } = f
-    return { ...fila, proveedor: { ...fila.proveedor } }
+    const { lineas: _l, cargos: _c, guias: _g, pendiente_por_resistencia: _p, ...fila } = f
+    return { ...fila, ...pendiente(f), proveedor: { ...fila.proveedor } }
   }
+
+  /** Lo mismo que calcula FacturaResource: el facturado menos el de las guías vinculadas. */
+  const pendiente = (f: FacturaDetalle) => {
+    const enGuias = sumar(...f.guias.map((g) => g.volumen_m3))
+    return {
+      volumen_guias_m3: enGuias,
+      volumen_pendiente_m3: Math.max(0, sumar(f.volumen_m3, -enGuias)),
+    }
+  }
+
+  const detalle = (f: FacturaDetalle): FacturaDetalle => ({
+    ...structuredClone(f),
+    ...pendiente(f),
+    pendiente_por_resistencia: f.lineas
+      .map((l) => {
+        const enGuias = sumar(
+          ...f.guias.filter((g) => g.resistencia.id === l.resistencia.id).map((g) => g.volumen_m3),
+        )
+        return {
+          resistencia: { ...l.resistencia },
+          facturado_m3: l.volumen_m3,
+          en_guias_m3: enGuias,
+          faltan_m3: Math.max(0, sumar(l.volumen_m3, -enGuias)),
+        }
+      })
+      .filter((r) => r.faltan_m3 > 0),
+  })
 
   return {
     async listar(proyectoId) {
@@ -148,7 +189,7 @@ export function crearFacturasEnMemoria(
     async obtener(id) {
       const factura = facturas.find((f) => f.id === id)
       if (!factura) throw new Error('Factura no encontrada.')
-      return structuredClone(factura)
+      return detalle(factura)
     },
     async leer() {
       const leida = lectura()
@@ -210,6 +251,50 @@ export function crearFacturasEnMemoria(
       facturas.push(factura)
       for (const g of elegidas) vinculadas.set(g.id, factura.id)
       return { data: copia(factura), message: 'Factura registrada correctamente' }
+    },
+    async actualizarGuias(facturaId, guiaIds, confirmado = false) {
+      const factura = facturas.find((f) => f.id === facturaId)
+      if (!factura) throw new Error('Factura no encontrada.')
+      if (!guiaIds.length) throw errorDeValidacion({ guia_ids: ['Vincule al menos una guía'] })
+      const elegidas = guiaIds.map((id) => guias.find((g) => g.id === id))
+      const i = elegidas.findIndex(
+        (g) =>
+          !g ||
+          g.proyecto_id !== factura.proyecto_id ||
+          g.proveedor.id !== factura.proveedor.id ||
+          (vinculadas.has(g.id) && vinculadas.get(g.id) !== facturaId),
+      )
+      if (i >= 0) {
+        throw errorDeValidacion({
+          [`guia_ids.${i}`]: ['La guía ya está facturada o no es del proveedor y proyecto'],
+        })
+      }
+      const filas = factura.lineas.map((l) => ({
+        resistencia_id: l.resistencia.id,
+        volumen_m3: l.volumen_m3,
+        precio_unitario: l.precio_unitario,
+      }))
+      const coincide = volumenesCoinciden(compararVolumenes(filas, elegidas as GuiaFila[]))
+      if (!coincide && !confirmado) {
+        throw errorDeValidacion(
+          { guia_ids: ['El volumen facturado no coincide con las guías'] },
+          'requiere_confirmacion',
+        )
+      }
+      for (const [guiaId, id] of vinculadas) if (id === facturaId) vinculadas.delete(guiaId)
+      for (const g of elegidas as GuiaFila[]) vinculadas.set(g.id, facturaId)
+      factura.diferencia_confirmada = !coincide
+      factura.guias_count = elegidas.length
+      factura.guias = (elegidas as GuiaFila[])
+        .map((g) => {
+          const linea = factura.lineas.find((l) => l.resistencia.id === g.resistencia.id)
+          return { ...g, importe: linea ? importe(g.volumen_m3, linea.precio_unitario) : null }
+        })
+        .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id - b.id)
+      return {
+        data: detalle(factura),
+        message: 'Guías de la factura actualizadas correctamente',
+      }
     },
     async proveedores() {
       return proveedoresEjemplo.map((p) => ({ ...p }))

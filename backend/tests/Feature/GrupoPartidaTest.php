@@ -124,7 +124,7 @@ describe('eliminar', function () {
 
     it('rechaza eliminar un grupo con partidas en algún proyecto', function () {
         $g = grupo();
-        obra()->partidas()->create(datosPartida(['grupo_id' => $g->id]));
+        partida(obra(), datosPartida(['grupo_id' => $g->id]));
 
         $this->actingAs(conRol(Rol::OficinaTecnica))->deleteJson("/api/v1/grupos-partida/{$g->id}")
             ->assertConflict()

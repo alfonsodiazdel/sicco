@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requerido, texto } from '@/validaciones/usuario'
 import { hoy } from '@/validaciones/guia'
+import { decimales } from '@/services/presupuesto'
 
 /** Tasa del IGV: se propone sobre el subtotal y se puede corregir con lo que diga la factura. */
 export const TASA_IGV = 0.18
@@ -189,4 +190,19 @@ export function sugerirGuias<
     if (suma === objetivo) sugeridas.push(...elegidas)
   }
   return ordenadas.filter((g) => sugeridas.includes(g.id)).map((g) => g.id)
+}
+
+/** m³ para el aviso: sin decimales si el número es entero, con dos si no. */
+export const m3Aviso = (v: number) => `${Number.isInteger(v) ? v : decimales(v)} m³`
+
+/** Aviso de las guías que faltan por vincular; null si el volumen de las guías cubre la factura. */
+export function avisoPendiente(factura: {
+  volumen_m3: number
+  volumen_guias_m3?: number
+  volumen_pendiente_m3?: number
+}): string | null {
+  const faltan = factura.volumen_pendiente_m3 ?? 0
+  if (faltan <= 0) return null
+  const m3 = m3Aviso
+  return `Faltan ${m3(faltan)} por vincular (facturado ${m3(factura.volumen_m3)}, en guías ${m3(factura.volumen_guias_m3 ?? 0)})`
 }

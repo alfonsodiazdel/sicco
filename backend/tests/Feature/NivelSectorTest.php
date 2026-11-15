@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
 function obraConColumnas(): array
 {
     $proyecto = obra();
-    $partida = $proyecto->partidas()->create(datosPartida([
+    $partida = partida($proyecto, datosPartida([
         'descripcion' => "CONCRETO PREMEZ. F'C=280 kg/cm2 - COLUMNAS",
         'elemento' => 'Columna',
         'resistencia_id' => resistencia(280)->id,
@@ -125,7 +125,7 @@ describe('sectores', function () {
         $a = sector(nivel($p, 'Piso 1', 1), $columnas, 60);
         sector(nivel($p, 'Piso 2', 2), $columnas, 58.5, 'Sector B');
         $otra = obra(['codigo' => 'PRY-002']);
-        sector(nivel($otra), $otra->partidas()->create(datosPartida()), 10);
+        sector(nivel($otra), partida($otra, datosPartida()), 10);
 
         $this->actingAs($ing)->getJson("/api/v1/proyectos/{$p->id}/sectores")
             ->assertOk()
@@ -180,7 +180,7 @@ describe('sectores', function () {
         [$p, $columnas, $ing] = obraConColumnas();
         $piso = nivel($p);
         sector($piso, $columnas, 10);
-        $ajena = obra(['codigo' => 'PRY-002'])->partidas()->create(datosPartida());
+        $ajena = partida(obra(['codigo' => 'PRY-002']), datosPartida());
 
         $this->actingAs($ing)->postJson("/api/v1/niveles/{$piso->id}/sectores", [])
             ->assertUnprocessable()

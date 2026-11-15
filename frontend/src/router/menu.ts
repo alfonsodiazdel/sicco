@@ -29,9 +29,9 @@ export const menu: ItemMenu[] = [
     roles: ['oficina_tecnica'],
   },
   {
-    etiqueta: 'Grupos de partidas',
+    etiqueta: 'Catálogos',
     icono: 'pi pi-folder',
-    ruta: '/grupos',
+    ruta: '/catalogos',
     roles: ['oficina_tecnica'],
   },
   {

@@ -27,7 +27,7 @@ beforeEach(function () {
 
 /**
  * Proyecto con inicio el 2026-10-01: partidas P1 Columnas (210, 10 m³ a S/ 320), P2 Vigas (280, 8 m³ a
- * S/ 350) y P3 Losa aligerada (210, 5 m³ a S/ 260), todas con 10 % de desperdicio; un sector por
+ * S/ 350) y P3 Losa aligerada (210, 5 m³; el mismo concreto que P1, a S/ 320), todas con 10 % de desperdicio; un sector por
  * partida, y S2 (Vigas) culminado el 10-26. Facturas F1 (10-10: 210 a 310, 280 a 360, Bombeo 150) y F2
  * (11-05: 210 a 320, Espera 80); otra obra con una factura de 210 a 999 que no debe contar.
  */
@@ -42,7 +42,7 @@ function escenarioEat(): array
     // P2 antes que P1: las filas se ordenan por ítem.
     $p2 = partidaEat($proyecto, $estructuras, '01.02', 'Vigas', $r280, 8, 350);
     $p1 = partidaEat($proyecto, $estructuras, '01.01', 'Columnas', $r210, 10, 320);
-    $p3 = partidaEat($proyecto, $losas, '02.01', 'Losa aligerada', $r210, 5, 260);
+    $p3 = partidaEat($proyecto, $losas, '02.01', 'Losa aligerada', $r210, 5, 320);
     $nivel = $proyecto->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1]);
     $s1 = sectorEat($nivel->id, $p1->id, 'S1', 10);
     $s2 = sectorEat($nivel->id, $p2->id, 'S2', 8, '2026-10-26');
@@ -70,7 +70,7 @@ function escenarioEat(): array
 /** Con 10 % de desperdicio por defecto: el presupuesto meta es el metrado × 1.1. */
 function partidaEat(Proyecto $proyecto, GrupoPartida $grupo, string $item, string $elemento, Resistencia $r, float $metrado, float $precio, float $desperdicio = 10)
 {
-    return $proyecto->partidas()->create(datosPartida([
+    return partida($proyecto, datosPartida([
         'grupo_id' => $grupo->id, 'item' => $item, 'elemento' => $elemento, 'descripcion' => "CONCRETO - {$elemento}",
         'resistencia_id' => $r->id, 'metrado_m3' => $metrado, 'precio_unitario' => $precio, 'factor_desperdicio' => $desperdicio,
     ]));
@@ -213,11 +213,11 @@ describe('cálculo', function () {
                 [
                     'grupo_id' => $e['losas']->id, 'nombre' => 'Losas',
                     'filas' => [
-                        // Presup. 5 × 1.1 = 5.5 m³ × 260 = 1430. Consumido 2 × 310 + 1 × 310 = 930 (la guía del
-                        // 11-03 queda fuera). S3 abierto: proyecta 5.5 × 310 = 1705. Variación 1430 − 1705 = −275.
-                        filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1430.0, 3.0, 930.0, 500.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, -275.0), true),
+                        // Presup. 5 × 1.1 = 5.5 m³ × 320 = 1760. Consumido 2 × 310 + 1 × 310 = 930 (la guía del
+                        // 11-03 queda fuera). S3 abierto: proyecta 5.5 × 310 = 1705. Variación 1760 − 1705 = 55.
+                        filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, 55.0), false),
                     ],
-                    'subtotal' => [...montosEat(5.5, 1430.0, 3.0, 930.0, 500.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, -275.0), 'sobrecosto' => true],
+                    'subtotal' => [...montosEat(5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, 55.0), 'sobrecosto' => false],
                 ],
             ],
             'filas_aparte' => [
@@ -227,8 +227,8 @@ describe('cálculo', function () {
                 cargoEat('Bombeo', 150.0),
             ],
             // Las guías sin sector no suman; Bombeo sí. Consumido 5410 + 930 + 150 = 6490; real 3240 + 150 = 3390;
-            // proyectado 3410 + 1705 = 5115; EAT 3390 + 5115 = 8505; variación 8030 − 8505 = −475.
-            'total' => [...montosEat(25.3, 8030.0, 19.0, 6490.0, 1540.0, 9.0, 3390.0, 16.5, 5115.0, 25.5, 8505.0, -475.0), 'sobrecosto' => true],
+            // proyectado 3410 + 1705 = 5115; EAT 3390 + 5115 = 8505; variación 8360 − 8505 = −145.
+            'total' => [...montosEat(25.3, 8360.0, 19.0, 6490.0, 1870.0, 9.0, 3390.0, 16.5, 5115.0, 25.5, 8505.0, -145.0), 'sobrecosto' => true],
         ]]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -240,8 +240,8 @@ describe('cálculo', function () {
 
         expect($r->json('data.grupos.0.filas.0.presupuesto_soles'))->toBe(3520.0); // 10 × 1.10 × 320
         expect($r->json('data.grupos.0.filas.1.presupuesto_soles'))->toBe(3080.0); // 8 × 1.10 × 350
-        expect($r->json('data.grupos.1.filas.0.presupuesto_soles'))->toBe(1430.0); // 5 × 1.10 × 260
-        expect($r->json('data.total.presupuesto_soles'))->toBe(8030.0);
+        expect($r->json('data.grupos.1.filas.0.presupuesto_soles'))->toBe(1760.0); // 5 × 1.10 × 320
+        expect($r->json('data.total.presupuesto_soles'))->toBe(8360.0);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
@@ -264,13 +264,13 @@ describe('cálculo', function () {
             ],
             [
                 'grupo_id' => $e['losas']->id, 'nombre' => 'Losas',
-                // La guía del 10-06 sin factura: precio de la partida, 1 × 260 = 260.
-                'filas' => [filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1430.0, 1.0, 260.0, 1170.0, 0.0, 0.0, 5.5, 1430.0, 5.5, 1430.0, 0.0), false)],
-                'subtotal' => [...montosEat(5.5, 1430.0, 1.0, 260.0, 1170.0, 0.0, 0.0, 5.5, 1430.0, 5.5, 1430.0, 0.0), 'sobrecosto' => false],
+                // La guía del 10-06 sin factura: precio de la partida, 1 × 320 = 320.
+                'filas' => [filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 1.0, 320.0, 1440.0, 0.0, 0.0, 5.5, 1760.0, 5.5, 1760.0, 0.0), false)],
+                'subtotal' => [...montosEat(5.5, 1760.0, 1.0, 320.0, 1440.0, 0.0, 0.0, 5.5, 1760.0, 5.5, 1760.0, 0.0), 'sobrecosto' => false],
             ],
         ]);
         expect($r->json('data.filas_aparte'))->toBe([]);
-        expect($r->json('data.total'))->toBe([...montosEat(25.3, 8030.0, 5.0, 1500.0, 6530.0, 0.0, 0.0, 25.3, 8030.0, 25.3, 8030.0, 0.0), 'sobrecosto' => false]);
+        expect($r->json('data.total'))->toBe([...montosEat(25.3, 8360.0, 5.0, 1560.0, 6800.0, 0.0, 0.0, 25.3, 8360.0, 25.3, 8360.0, 0.0), 'sobrecosto' => false]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
@@ -370,13 +370,13 @@ describe('cálculo', function () {
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
-    it('valoriza las guías sin sector sin precio facturado con el promedio del presupuesto ponderado por metrado', function () {
+    it('valoriza las guías sin sector sin precio facturado con el precio de su concreto en el presupuesto', function () {
         $e = escenarioEat();
         guiaEat($e['proyecto'], '2026-10-07', $e['r210'], 2, null);
 
-        // Al 10-08 no hay facturas: promedio de 210 = (10 × 320 + 5 × 260) / 15 = 4500 / 15 = 300; 2 × 300 = 600
+        // Al 10-08 no hay facturas: el concreto 210 del presupuesto está a 320; 2 × 320 = 640
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-08')->assertOk();
-        expect($r->json('data.filas_aparte'))->toBe([sinSectorEat(2.0, 600.0)]);
+        expect($r->json('data.filas_aparte'))->toBe([sinSectorEat(2.0, 640.0)]);
 
         // Al 10-31: (1 + 2) × 310 = 930
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-31')->assertOk();
@@ -611,12 +611,12 @@ describe('exportación', function () {
             ["01.02 Vigas · f'c 280 kg/cm²", 8.8, 3080.0, 9.0, 3240.0, -160.0, 3240.0, 0.0, 0.0, 3240.0, -160.0],
             ['Subtotal Estructuras', 19.8, 6600.0, 16.0, 5410.0, 1190.0, 3240.0, 11.0, 3410.0, 6650.0, -50.0],
             ['Losas'],
-            ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.5, 1430.0, 3.0, 930.0, 500.0, 0.0, 5.5, 1705.0, 1705.0, -275.0],
-            ['Subtotal Losas', 5.5, 1430.0, 3.0, 930.0, 500.0, 0.0, 5.5, 1705.0, 1705.0, -275.0],
+            ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, 1705.0, 1705.0, 55.0],
+            ['Subtotal Losas', 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, 1705.0, 1705.0, 55.0],
             ['Guías sin sector', 0.0, 0.0, 1.0, 310.0, '—', '—', '—', '—', '—', '—'],
             [AVISO_SIN_SECTOR_EAT],
             ['Bombeo', 0.0, 0.0, '—', 150.0, -150.0, 150.0, '—', 0.0, 150.0, -150.0],
-            ['Total', 25.3, 8030.0, 19.0, 6490.0, 1540.0, 3390.0, 16.5, 5115.0, 8505.0, -475.0],
+            ['Total', 25.3, 8360.0, 19.0, 6490.0, 1870.0, 3390.0, 16.5, 5115.0, 8505.0, -145.0],
         ]);
         // Variación negativa: la variación del total va en rojo; la de un cargo no, porque no es sobrecosto.
         expect(fuenteExcelEat($r->streamedContent(), 'Total', 'K'))->toBe(['negrita' => true, 'rojo' => true]);
@@ -636,11 +636,11 @@ describe('exportación', function () {
             ->assertDownload('reporte-eat-OBR-01-20261031.pdf');
 
         expect(substr($r->getContent(), 0, 5))->toBe('%PDF-');
-        // Variación −475: la última celda del total lleva la clase de sobrecosto.
+        // Variación −145: la última celda del total lleva la clase de sobrecosto.
         $html = view('reportes.eat', $datos)->render();
         $total = collect(filasHtmlEat($html))->last();
         expect($total['clase'])->toBe('total');
-        expect(end($total['celdas']))->toBe(['-475.00', 'monto sobrecosto']);
+        expect(end($total['celdas']))->toBe(['-145.00', 'monto sobrecosto']);
         expect($html)->toContain(AVISO_CARGOS_EAT);
     });
 
@@ -876,7 +876,7 @@ describe('opciones del PDF', function () {
 });
 
 /**
- * Cuatro partidas sin consumo (605 m³ netos; con 10 % de desperdicio, 665.5 m³ y S/ 252 945), ninguna factura y una guía f'c 210 de 6 m³ sin sector:
+ * Cuatro partidas sin consumo (605 m³ netos; con 10 % de desperdicio, 665.5 m³ y S/ 256 822.50; un precio por concreto: 280 a S/ 395 y 210 a S/ 375), ninguna factura y una guía f'c 210 de 6 m³ sin sector:
  * el total tiene que quedar en lo presupuestado.
  */
 function escenarioSoloGuiaSinSector(): array
@@ -887,9 +887,9 @@ function escenarioSoloGuiaSinSector(): array
     $muros = GrupoPartida::create(['nombre' => 'Muros anclados', 'orden' => 1]);
     $cimentacion = GrupoPartida::create(['nombre' => 'Cimentación', 'orden' => 2]);
     $verticales = GrupoPartida::create(['nombre' => 'Verticales sótanos', 'orden' => 3]);
-    partidaEat($proyecto, $muros, '01.01.01', 'Placa', $r280, 210, 385);
+    partidaEat($proyecto, $muros, '01.01.01', 'Placa', $r280, 210, 395);
     partidaEat($proyecto, $cimentacion, '02.01.01', 'Zapata', $r210, 180, 375);
-    partidaEat($proyecto, $cimentacion, '02.01.02', 'Cimiento corrido', $r210, 95, 360);
+    partidaEat($proyecto, $cimentacion, '02.01.02', 'Cimiento corrido', $r210, 95, 375);
     partidaEat($proyecto, $verticales, '03.01.01', 'Columna', $r280, 120, 395);
     guiaEat($proyecto, '2026-06-26', $r210, 6, null);
 
@@ -960,11 +960,11 @@ describe('guías sin sector en una obra sin consumo', function () {
 
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-11-09')->assertOk();
 
-        // Promedio presupuestado de 210: (180 × 375 + 95 × 360) / 275 = 369.8181…; 6 × 369.8181… = 2218.909 → 2218.91
-        expect($r->json('data.filas_aparte'))->toBe([sinSectorEat(6.0, 2218.91)]);
-        // Sin consumo asignado, el EAT es el presupuesto meta: 605 × 1.1 = 665.5 m³ y S/ 252 945
-        // (231 × 385 + 198 × 375 + 104.5 × 360 + 132 × 395), sin los 6 m³ ni los S/ 2218.91.
-        expect($r->json('data.total'))->toBe([...montosEat(665.5, 252945.0, 0.0, 0.0, 252945.0, 0.0, 0.0, 665.5, 252945.0, 665.5, 252945.0, 0.0), 'sobrecosto' => false]);
+        // Precio del concreto 210 en el presupuesto: 6 × 375 = 2250.00
+        expect($r->json('data.filas_aparte'))->toBe([sinSectorEat(6.0, 2250.0)]);
+        // Sin consumo asignado, el EAT es el presupuesto meta: 605 × 1.1 = 665.5 m³ y S/ 256 822.50
+        // (231 × 395 + 198 × 375 + 104.5 × 375 + 132 × 395), sin los 6 m³ ni los S/ 2250.
+        expect($r->json('data.total'))->toBe([...montosEat(665.5, 256822.5, 0.0, 0.0, 256822.5, 0.0, 0.0, 665.5, 256822.5, 665.5, 256822.5, 0.0), 'sobrecosto' => false]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 
@@ -974,9 +974,9 @@ describe('guías sin sector en una obra sin consumo', function () {
         $contenido = exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-11-09')->assertOk()->streamedContent();
 
         expect(array_slice(filasExcelEat($contenido), -3))->toBe([
-            ['Guías sin sector', 0.0, 0.0, 6.0, 2218.91, '—', '—', '—', '—', '—', '—'],
+            ['Guías sin sector', 0.0, 0.0, 6.0, 2250.0, '—', '—', '—', '—', '—', '—'],
             [AVISO_SIN_SECTOR_EAT],
-            ['Total', 665.5, 252945.0, 0.0, 0.0, 252945.0, 0.0, 665.5, 252945.0, 252945.0, 0.0],
+            ['Total', 665.5, 256822.5, 0.0, 0.0, 256822.5, 0.0, 665.5, 256822.5, 256822.5, 0.0],
         ]);
         expect(fuenteExcelEat($contenido, 'Total', 'K'))->toBe(['negrita' => true, 'rojo' => false]);
         expect(fuenteExcelEat($contenido, AVISO_SIN_SECTOR_EAT, 'A'))->toBe(['negrita' => false, 'rojo' => false]);
@@ -996,14 +996,14 @@ describe('guías sin sector en una obra sin consumo', function () {
         $filas = filasHtmlEat(view('reportes.eat', $datos)->render());
         expect(array_slice($filas, -3))->toBe([
             ['clase' => 'aparte', 'celdas' => [
-                ['Guías sin sector', ''], ['0.00', 'monto'], ['0.00', 'monto'], ['6.00', 'monto'], ['2,218.91', 'monto'],
+                ['Guías sin sector', ''], ['0.00', 'monto'], ['0.00', 'monto'], ['6.00', 'monto'], ['2,250.00', 'monto'],
                 ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'],
             ]],
             ['clase' => 'aviso', 'celdas' => [[AVISO_SIN_SECTOR_EAT, '']]],
             ['clase' => 'total', 'celdas' => [
-                ['Total', ''], ['665.50', 'monto'], ['252,945.00', 'monto'], ['0.00', 'monto'], ['0.00', 'monto'],
-                ['252,945.00', 'monto'], ['0.00', 'monto'], ['665.50', 'monto'], ['252,945.00', 'monto'],
-                ['252,945.00', 'monto'], ['0.00', 'monto'],
+                ['Total', ''], ['665.50', 'monto'], ['256,822.50', 'monto'], ['0.00', 'monto'], ['0.00', 'monto'],
+                ['256,822.50', 'monto'], ['0.00', 'monto'], ['665.50', 'monto'], ['256,822.50', 'monto'],
+                ['256,822.50', 'monto'], ['0.00', 'monto'],
             ]],
         ]);
     });
