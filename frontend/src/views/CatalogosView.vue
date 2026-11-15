@@ -16,7 +16,7 @@ import ResistenciasView from '@/views/catalogos/ResistenciasView.vue'
       <Tab value="elementos">Elementos estructurales</Tab>
       <Tab value="resistencias">Resistencias f'c</Tab>
     </TabList>
-    <TabPanels class="!px-0">
+    <TabPanels>
       <TabPanel value="grupos"><GruposView /></TabPanel>
       <TabPanel value="elementos"><ElementosView /></TabPanel>
       <TabPanel value="resistencias"><ResistenciasView /></TabPanel>
