@@ -61,6 +61,15 @@ return [
         ]),
     ],
 
+    // CU01 Iniciar sesión: captcha Cloudflare Turnstile. Apagado si TURNSTILE_ENABLED no es true.
+    'turnstile' => [
+        'enabled' => filter_var(env('TURNSTILE_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'secret' => env('TURNSTILE_SECRET'),
+        // Hostnames del frontend que se aceptan en la respuesta (separados por comas).
+        'hostnames' => array_values(array_filter(array_map('trim', explode(',', (string) env('TURNSTILE_HOSTNAMES', ''))))),
+        'timeout' => (float) env('TURNSTILE_TIMEOUT', 5),
+    ],
+
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'ocr_model' => env('ANTHROPIC_OCR_MODEL', 'claude-opus-5-5'),

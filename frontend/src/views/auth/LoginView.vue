@@ -9,6 +9,7 @@ import Password from 'primevue/password'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import IlustracionObra from '@/components/organismos/IlustracionObra.vue'
+import CaptchaTurnstile from '@/components/moleculas/CaptchaTurnstile.vue'
 import { useAuthStore } from '@/stores/auth'
 import { destinoTrasLogin } from '@/router'
 import { erroresDeValidacion, esErrorApi, mensajeDeError } from '@/api/http'
@@ -17,9 +18,18 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const { defineField, handleSubmit, errors, setErrors, isSubmitting } = useForm({
+// Sin site key (p. ej. en pruebas) el login no muestra captcha.
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY ?? ''
+const captchaRef = ref<InstanceType<typeof CaptchaTurnstile> | null>(null)
+
+const { defineField, handleSubmit, errors, setErrors, setFieldValue, isSubmitting } = useForm({
   validationSchema: toTypedSchema(
     z.object({
+      captcha: turnstileSiteKey
+        ? z
+            .string({ required_error: 'Complete la verificación de seguridad' })
+            .min(1, 'Complete la verificación de seguridad')
+        : z.string().optional(),
       email: z
         .string({ required_error: 'Este dato es requerido' })
         .min(1, 'Este dato es requerido')
@@ -33,6 +43,7 @@ const { defineField, handleSubmit, errors, setErrors, isSubmitting } = useForm({
 
 const [email, emailAttrs] = defineField('email')
 const [password, passwordAttrs] = defineField('password')
+const [captcha] = defineField('captcha')
 const errorGeneral = ref<string | null>(auth.errorSesion)
 const anio = new Date().getFullYear()
 
@@ -42,12 +53,17 @@ const ingresar = handleSubmit(async (valores) => {
     await auth.login(valores)
     await router.replace(destinoTrasLogin(route.query.redirect))
   } catch (error) {
+    // El token ya se consumió en el servidor: hace falta uno nuevo para reintentar.
+    setFieldValue('captcha', '', false)
+    captchaRef.value?.reset()
+
     const status = esErrorApi(error) ? error.response?.status : undefined
     if (status === 422) {
-      // «Correo o contraseña incorrectos» se muestra como mensaje general, no bajo un campo.
-      const { email: errorEmail, ...resto } = erroresDeValidacion(error)
+      // «Correo o contraseña incorrectos» y el fallo del captcha se muestran como mensaje
+      // general, no bajo un campo.
+      const { email: errorEmail, captcha: errorCaptcha, ...resto } = erroresDeValidacion(error)
       setErrors(resto)
-      errorGeneral.value = errorEmail ?? null
+      errorGeneral.value = errorEmail ?? errorCaptcha ?? null
     } else {
       errorGeneral.value = mensajeDeError(error)
     }
@@ -149,6 +165,16 @@ const ingresar = handleSubmit(async (valores) => {
                 fluid
               />
               <small v-if="errors.password" class="text-red-600">{{ errors.password }}</small>
+            </div>
+
+            <div v-if="turnstileSiteKey" class="space-y-1.5">
+              <CaptchaTurnstile
+                ref="captchaRef"
+                v-model="captcha"
+                :sitekey="turnstileSiteKey"
+                action="login"
+              />
+              <small v-if="errors.captcha" class="text-red-600">{{ errors.captcha }}</small>
             </div>
 
             <Button

@@ -24,6 +24,8 @@ export interface Usuario {
 export interface Credenciales {
   email: string
   password: string
+  /** Token de Cloudflare Turnstile; solo si el captcha está activo. */
+  captcha?: string
 }
 
 export interface CambioPassword {

@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 
 // La SPA envía estas cabeceras; con ellas Sanctum habilita la sesión por cookie.
 beforeEach(fn () => $this->withHeaders([
@@ -114,4 +116,63 @@ it('rechaza una contraseña de más de 255 caracteres sin intentar el acceso', f
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['email' => 'Correo o contraseña incorrectos.'])
         ->assertJsonMissingValidationErrors(['password']);
+});
+
+describe('captcha Turnstile', function () {
+    beforeEach(function () {
+        config([
+            'services.turnstile.enabled' => true,
+            'services.turnstile.secret' => 'secreto',
+            'services.turnstile.hostnames' => ['sicco.test'],
+        ]);
+        User::factory()->create(['email' => 'ana@sicco.test']);
+    });
+
+    $login = fn (array $extra = []) => test()->postJson('/api/v1/auth/login', [
+        'email' => 'ana@sicco.test',
+        'password' => 'password',
+        ...$extra,
+    ]);
+
+    it('exige el captcha cuando está activo', function () use ($login) {
+        Http::fake();
+
+        $login()->assertUnprocessable()->assertJsonValidationErrors(['captcha']);
+
+        Http::assertNothingSent();
+        $this->assertGuest();
+    });
+
+    it('inicia sesión con un token aprobado por Cloudflare', function () use ($login) {
+        Http::fake(['challenges.cloudflare.com/*' => Http::response([
+            'success' => true, 'action' => 'login', 'hostname' => 'sicco.test',
+        ])]);
+
+        $login(['captcha' => 'token-valido'])->assertOk();
+
+        Http::assertSent(fn ($request) => $request['secret'] === 'secreto'
+            && $request['response'] === 'token-valido');
+        $this->assertAuthenticated();
+    });
+
+    it('rechaza el token', function (array $respuesta) use ($login) {
+        Http::fake(['challenges.cloudflare.com/*' => Http::response($respuesta)]);
+
+        $login(['captcha' => 'token'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['captcha' => 'No se pudo completar la verificación de seguridad. Inténtelo de nuevo.']);
+
+        $this->assertGuest();
+    })->with([
+        'no aprobado' => [['success' => false, 'error-codes' => ['invalid-input-response']]],
+        'otra acción' => [['success' => true, 'action' => 'registro', 'hostname' => 'sicco.test']],
+        'otro hostname' => [['success' => true, 'action' => 'login', 'hostname' => 'evil.example']],
+    ]);
+
+    it('rechaza el token si Cloudflare no responde', function () use ($login) {
+        Http::fake(fn () => throw new ConnectionException('timeout'));
+
+        $login(['captcha' => 'token'])->assertUnprocessable()->assertJsonValidationErrors(['captcha']);
+        $this->assertGuest();
+    });
 });
