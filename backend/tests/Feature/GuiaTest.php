@@ -2,6 +2,7 @@
 
 use App\Contracts\OcrServiceInterface;
 use App\Enums\Rol;
+use App\Http\Resources\GuiaResource;
 use App\Models\GuiaRemision;
 use App\Models\ProductoProveedor;
 use App\Models\Proveedor;
@@ -404,5 +405,32 @@ describe('registro (CU06 y CU08)', function () {
             ->assertForbidden();
 
         expect(GuiaRemision::count())->toBe(0);
+    });
+});
+
+describe('proveedores inactivos', function () {
+    it('no deja registrar una guía con un proveedor inactivo', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $inactivo = Proveedor::factory()->create(['activo' => false]);
+
+        $this->actingAs($almacenero)
+            ->post('/api/v1/guias', datosGuia($p, ['proveedor_id' => $inactivo->id, 'foto' => foto()]), ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['proveedor_id' => 'Este proveedor está inactivo.']);
+
+        expect(GuiaRemision::count())->toBe(0);
+    });
+
+    it('sigue mostrando el proveedor inactivo en una guía ya registrada', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $proveedor = Proveedor::factory()->create();
+        $this->actingAs($almacenero)
+            ->post('/api/v1/guias', datosGuia($p, ['proveedor_id' => $proveedor->id, 'foto' => foto()]), ['Accept' => 'application/json'])
+            ->assertCreated();
+        $proveedor->update(['activo' => false]);
+
+        $guia = GuiaRemision::with('proveedor')->firstOrFail();
+        expect(GuiaResource::make($guia)->resolve()['proveedor']->resolve())
+            ->toMatchArray(['id' => $proveedor->id, 'razon_social' => $proveedor->razon_social]);
     });
 });

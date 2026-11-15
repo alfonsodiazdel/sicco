@@ -40,7 +40,7 @@ export function crearGuiasApi(): GuiasServicio {
     },
     async proveedores() {
       // Las concreteras de una empresa son pocas; se traen todas para el selector.
-      return (await proveedoresApi.listar({ per_page: 200 })).data
+      return (await proveedoresApi.listar({ per_page: 200, activo: 1 })).data
     },
   }
 }

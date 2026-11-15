@@ -15,6 +15,7 @@ class ProveedorResource extends JsonResource
             'id' => $this->id,
             'ruc' => $this->ruc,
             'razon_social' => $this->razon_social,
+            'activo' => $this->activo,
         ];
     }
 }
