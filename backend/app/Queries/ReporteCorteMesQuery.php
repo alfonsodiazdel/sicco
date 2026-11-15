@@ -41,18 +41,23 @@ final readonly class ReporteCorteMesQuery
         $this->cierre = $primero->endOfMonth()->toDateString();
     }
 
-    /** @return array<string, mixed>|null null si el mes no tiene guías ni facturas */
+    /**
+     * @return array<string, mixed>|null null si el mes no tiene guías ni facturas y tampoco quedan guías
+     *                                   de meses anteriores pendientes al cierre
+     */
     public function calcular(): ?array
     {
-        $guiasDelMes = $this->guias()->whereBetween('g.fecha', [$this->inicio, $this->cierre]);
         $facturasDelMes = DB::table('facturas')
             ->where('proyecto_id', $this->proyecto->id)
             ->whereBetween('fecha', [$this->inicio, $this->cierre]);
-        if (! (clone $guiasDelMes)->exists() && ! (clone $facturasDelMes)->exists()) {
+
+        // Las filas ya son las guías del mes más las anteriores aún pendientes: un mes sin movimientos
+        // propios igual tiene corte si arrastra pendientes que provisionar.
+        $guias = $this->filasGuias();
+        if ($guias === [] && ! (clone $facturasDelMes)->exists()) {
             return null;
         }
 
-        $guias = $this->filasGuias();
         $delMes = array_filter($guias, fn (array $g) => $g['del_mes']);
         $pendientes = array_filter($guias, fn (array $g) => $g['estado'] === 'pendiente');
         $facturado = (clone $facturasDelMes)

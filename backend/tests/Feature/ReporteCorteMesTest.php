@@ -140,6 +140,26 @@ describe('cálculo del corte', function () {
 
         expect(DB::table('reportes_generados')->count())->toBe(0);
     });
+
+    it('sin guías ni facturas en el mes igual muestra las guías de meses anteriores aún pendientes', function () {
+        $proyecto = obra(['fecha_inicio' => '2026-08-01']);
+        $r210 = resistencia(210);
+        $f1 = facturaCorte($proyecto, 'F001-1', '2026-08-20', [[$r210, 310]], 5, 1550);
+        guiaCorte($proyecto, 'G1', '2026-08-10', $r210, 5, $f1);
+        guiaCorte($proyecto, 'G2', '2026-09-15', $r210, 2, null);
+
+        $r = reporteCorte(asignadoA($proyecto), $proyecto, 2026, 10)->assertOk();
+
+        expect(collect($r->json('data.guias'))->map(fn ($g) => [$g['numero'], $g['estado'], $g['del_mes']])->all())
+            ->toEqual([['G2', 'pendiente', false]])
+            ->and($r->json('data.resumen'))->toEqual([
+                'guias_recibidas' => 0, 'recibido_m3' => 0.0, 'vaciado_m3' => 0.0,
+                'facturas' => 0, 'facturado_m3' => 0.0, 'facturado_soles' => 0.0,
+                // G2 al último precio facturado de 210.
+                'guias_pendientes' => 1, 'pendiente_m3' => 2.0, 'pendiente_soles' => 620.0,
+            ]);
+        expect(DB::table('reportes_generados')->where('proyecto_id', $proyecto->id)->count())->toBe(1);
+    });
 });
 
 describe('validación del mes', function () {
