@@ -5,6 +5,7 @@ use App\Enums\OrigenGuia;
 use App\Enums\Rol;
 use App\Models\Asignacion;
 use App\Models\Concreto;
+use App\Models\ElementoEstructural;
 use App\Models\Factura;
 use App\Models\GrupoPartida;
 use App\Models\GuiaRemision;
@@ -49,9 +50,13 @@ function obra(array $atributos = []): Proyecto
     ]);
 }
 
+/**
+ * Datos válidos de una partida. Deja admitido el elemento en el grupo (`grupo_elemento`), como lo
+ * haría Oficina técnica en el catálogo; las pruebas de esa regla lo quitan después.
+ */
 function datosPartida(array $cambios = []): array
 {
-    return [
+    $datos = [
         'grupo_id' => $cambios['grupo_id'] ?? GrupoPartida::firstOrCreate(
             ['nombre' => 'Cimentación'],
             ['partida_control' => '2.02.02', 'orden' => 2],
@@ -65,6 +70,12 @@ function datosPartida(array $cambios = []): array
         'precio_unitario' => 385,
         ...$cambios,
     ];
+    $elemento = ElementoEstructural::where('nombre', $datos['elemento'])->first();
+    if ($elemento && is_int($datos['grupo_id'])) {
+        GrupoPartida::find($datos['grupo_id'])?->elementos()->syncWithoutDetaching([$elemento->id]);
+    }
+
+    return $datos;
 }
 
 /**

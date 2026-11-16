@@ -4,13 +4,17 @@ export interface ElementoEstructural {
   nombre: string
 }
 
-/** Fila del mantenedor: el elemento con su estado y si alguna partida lo usa. */
+/** Fila del mantenedor: el elemento con su estado, si alguna partida lo usa y sus grupos. */
 export interface ElementoFila extends ElementoEstructural {
   activo: boolean
   en_uso: boolean
+  /** Ids de los grupos en los que se puede elegir (`grupo_elemento`). */
+  grupos: number[]
 }
 
 export interface ElementoDatos {
   nombre: string
   activo?: boolean
+  /** Sin el campo (p. ej. al activar o desactivar), el backend deja los grupos como están. */
+  grupos?: number[]
 }

@@ -4,6 +4,8 @@ import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
+import MultiSelect from 'primevue/multiselect'
+import { errorDeValidacion } from '@/services/errores'
 import { createPinia, setActivePinia } from 'pinia'
 import type { GruposServicio } from '@/services/grupos'
 import GruposView from '@/views/GruposView.vue'
@@ -20,6 +22,12 @@ vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
 
 // Cada prueba arranca con los datos de ejemplo intactos.
+// Los elementos solo se leen (columna y combo): basta con los de ejemplo.
+vi.mock('@/services/elementos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/elementos')>()
+  return { ...real, elementosServicio: real.crearElementosEnMemoria() }
+})
+
 vi.mock('@/services/grupos', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/services/grupos')>()
   return {
@@ -102,6 +110,49 @@ describe('GruposView', () => {
 
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Grupo registrado' }))
     expect(filas(vista).slice(-1)[0]).toEqual(['8', 'Obras exteriores'])
+  })
+
+  it('muestra los elementos que admite cada grupo', async () => {
+    const vista = await montar()
+    const cimentacion = vista
+      .findAll('tbody tr')
+      .map((tr) => tr.findAll('td').map((td) => td.text()))
+      .find((c) => c[1] === 'Cimentación')!
+
+    expect(cimentacion[2]).toBe('Zapata, Cimiento corrido, Viga, Losa maciza')
+  })
+
+  it('registra un grupo con los elementos que admite', async () => {
+    const vista = await montar()
+    const crear = vi.spyOn(servicios.grupos!, 'crear')
+    await pulsar(vista, 'Nuevo grupo')
+
+    expect(vista.get('[data-aviso]').text()).toBe(
+      'Sin elementos, no se podrán registrar partidas en este grupo.',
+    )
+    await llenar(vista, 'Obras exteriores')
+    await vista.findComponent(MultiSelect).setValue([1, 7])
+    await guardar(vista)
+
+    expect(crear).toHaveBeenCalledWith(expect.objectContaining({ elementos: [1, 7] }))
+    expect((await servicios.grupos!.listar()).slice(-1)[0]?.elementos).toEqual([1, 7])
+  })
+
+  it('muestra bajo el campo el elemento que no se puede quitar', async () => {
+    const vista = await montar()
+    vi.spyOn(servicios.grupos!, 'actualizar').mockRejectedValueOnce(
+      errorDeValidacion({
+        elementos: ['No se puede quitar Zapata: hay partidas de este grupo que lo usan'],
+      }),
+    )
+    await pulsar(vista, 'Editar Cimentación')
+    await vista.findComponent(MultiSelect).setValue([2])
+    await guardar(vista)
+
+    expect(vista.get('#elementos-error').text()).toBe(
+      'No se puede quitar Zapata: hay partidas de este grupo que lo usan',
+    )
+    expect(toast.add).not.toHaveBeenCalled()
   })
 
   it('propone la partida de control 2.02.02 y exige números separados por puntos', async () => {

@@ -3,6 +3,7 @@ import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
 import { asentar, usarRelojFalso } from './asentar'
 import PrimeVue from 'primevue/config'
 import InputText from 'primevue/inputtext'
+import MultiSelect from 'primevue/multiselect'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ElementosServicio } from '@/services/elementos'
 import ElementosView from '@/views/catalogos/ElementosView.vue'
@@ -17,6 +18,12 @@ const { toast, confirm, servicios } = vi.hoisted(() => ({
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
+
+// Los grupos solo se leen (columna y combo): basta con los de ejemplo.
+vi.mock('@/services/grupos', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/services/grupos')>()
+  return { ...real, gruposServicio: real.crearGruposEnMemoria() }
+})
 
 vi.mock('@/services/elementos', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/services/elementos')>()
@@ -41,13 +48,18 @@ async function montar(rol: RolClave = 'oficina_tecnica') {
   return vista
 }
 
+// Nombre y estado; la columna de grupos se revisa aparte.
 const filas = (vista: VueWrapper) =>
-  vista.findAll('tbody tr').map((tr) =>
-    tr
-      .findAll('td')
-      .map((td) => td.text())
-      .slice(0, 2),
-  )
+  vista.findAll('tbody tr').map((tr) => {
+    const celdas = tr.findAll('td').map((td) => td.text())
+    return [celdas[0], celdas[2]]
+  })
+
+const gruposDe = (vista: VueWrapper, nombre: string) =>
+  vista
+    .findAll('tbody tr')
+    .map((tr) => tr.findAll('td').map((td) => td.text()))
+    .find((celdas) => celdas[0] === nombre)?.[1]
 
 async function pulsar(vista: VueWrapper, etiqueta: string) {
   await vista.get(`button[aria-label="${etiqueta}"]`).trigger('click')
@@ -94,6 +106,24 @@ describe('ElementosView', () => {
       expect.objectContaining({ summary: 'Elemento registrado' }),
     )
     expect(filas(vista).slice(-1)[0]).toEqual(['Muro de contención', 'Activo'])
+  })
+
+  it('muestra los grupos de cada elemento en el orden del presupuesto', async () => {
+    const vista = await montar()
+
+    expect(gruposDe(vista, 'Columna')).toBe('Verticales sótanos, Verticales superestructura')
+  })
+
+  it('registra un elemento ya asignado a grupos y conserva los grupos al desactivarlo', async () => {
+    const vista = await montar()
+    await pulsar(vista, 'Nuevo elemento')
+    await vista.findComponent(MultiSelect).setValue([1, 4])
+    await guardarNombre(vista, 'Muro de contención')
+
+    expect(gruposDe(vista, 'Muro de contención')).toBe('Muros anclados, Verticales sótanos')
+
+    await pulsar(vista, 'Desactivar Muro de contención')
+    expect(gruposDe(vista, 'Muro de contención')).toBe('Muros anclados, Verticales sótanos')
   })
 
   it('exige el nombre, de 30 caracteres como máximo, y no lo repite', async () => {

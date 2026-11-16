@@ -33,6 +33,7 @@ describe('listar', function () {
             'nombre' => 'Muros anclados',
             'partida_control' => '2.02.02',
             'orden' => 1,
+            'elementos' => [],
         ]);
     });
 

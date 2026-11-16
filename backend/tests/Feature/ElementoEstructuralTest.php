@@ -21,7 +21,7 @@ describe('catálogo inicial y listado', function () {
             ->and(ElementoEstructural::where('activo', false)->count())->toBe(0);
     });
 
-    it('lista id, nombre, activo y si está en uso, para Oficina técnica y administrador', function () {
+    it('lista id, nombre, activo, si está en uso y sus grupos, para Oficina técnica y administrador', function () {
         $p = obra();
         partida($p, datosPartida(['elemento' => 'Zapata']));
 
@@ -29,7 +29,7 @@ describe('catálogo inicial y listado', function () {
 
         expect($r->json())->toHaveCount(8);
         $zapata = collect($r->json())->firstWhere('nombre', 'Zapata');
-        expect(array_keys($zapata))->toEqualCanonicalizing(['id', 'nombre', 'activo', 'en_uso'])
+        expect(array_keys($zapata))->toEqualCanonicalizing(['id', 'nombre', 'activo', 'en_uso', 'grupos'])
             ->and($zapata['en_uso'])->toBeTrue()
             ->and(collect($r->json())->firstWhere('nombre', 'Viga')['en_uso'])->toBeFalse();
         $this->actingAs(User::factory()->rol(Rol::Administrador)->create())

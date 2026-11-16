@@ -14,6 +14,8 @@ class GrupoPartidaResource extends JsonResource
             'nombre' => $this->nombre,
             'partida_control' => $this->partida_control,
             'orden' => $this->orden,
+            // Ids de los elementos estructurales que admite el grupo.
+            'elementos' => $this->elementos->pluck('id'),
         ];
     }
 }

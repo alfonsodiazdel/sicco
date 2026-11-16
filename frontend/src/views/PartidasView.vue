@@ -20,6 +20,7 @@ import { partidasServicio } from '@/services/partidas'
 import { decimales } from '@/services/presupuesto'
 import { resistenciasServicio } from '@/services/resistencias'
 import { esquemaPartida, valoresDePartida } from '@/validaciones/partida'
+import type { ElementoEstructural } from '@/types/elementos'
 import type { GrupoFila } from '@/types/grupos'
 import type { PartidaFila } from '@/types/partidas'
 import type { Resistencia } from '@/types/resistencias'
@@ -40,7 +41,7 @@ const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const partidas = ref<PartidaFila[]>([])
 const grupos = ref<GrupoFila[]>([])
 const resistencias = ref<Resistencia[]>([])
-const elementos = ref<string[]>([])
+const elementos = ref<ElementoEstructural[]>([])
 const cargando = ref(true)
 
 function avisarError(error: unknown) {
@@ -78,7 +79,7 @@ onMounted(async () => {
     ])
     grupos.value = lista
     resistencias.value = fc
-    elementos.value = activos.map((e) => e.nombre)
+    elementos.value = activos
   } catch (error) {
     avisarError(error)
     cargando.value = false
@@ -88,13 +89,23 @@ onMounted(async () => {
 const dialogo = ref(false)
 const editando = ref<PartidaFila | null>(null)
 
-// Solo los activos; una partida que ya tiene un valor inactivo lo sigue mostrando al editarla.
+// Solo los activos que admite el grupo elegido (`grupo_elemento`). Al editar, la partida sigue
+// mostrando su elemento mientras siga en su grupo, aunque ya esté inactivo o fuera del catálogo.
+const grupoElegido = computed(() => grupos.value.find((g) => g.id === grupoId.value))
 const opcionesElemento = computed(() => {
-  const actual = editando.value?.elemento
-  return actual && !elementos.value.includes(actual)
-    ? [...elementos.value, actual]
-    : elementos.value
+  const grupo = grupoElegido.value
+  if (!grupo) return []
+  const nombres = elementos.value.filter((e) => grupo.elementos.includes(e.id)).map((e) => e.nombre)
+  const actual = editando.value
+  return actual && actual.grupo_id === grupo.id && !nombres.includes(actual.elemento)
+    ? [...nombres, actual.elemento]
+    : nombres
 })
+const avisoElemento = computed(() =>
+  grupoElegido.value && !opcionesElemento.value.length
+    ? 'Este grupo no tiene elementos asignados; agréguelos en Catálogos.'
+    : undefined,
+)
 const opcionesResistencia = computed(() => {
   const actual = editando.value
   return actual && !resistencias.value.some((r) => r.id === actual.resistencia_id)
@@ -109,9 +120,8 @@ const opcionesResistencia = computed(() => {
     : resistencias.value
 })
 
-const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } = useForm({
-  validationSchema: toTypedSchema(esquemaPartida),
-})
+const { defineField, handleSubmit, errors, setErrors, resetForm, setFieldValue, isSubmitting } =
+  useForm({ validationSchema: toTypedSchema(esquemaPartida) })
 
 const [grupoId, grupoIdAttrs] = defineField('grupo_id')
 const [item, itemAttrs] = defineField('item')
@@ -121,6 +131,13 @@ const [resistenciaId, resistenciaIdAttrs] = defineField('resistencia_id')
 const [metrado, metradoAttrs] = defineField('metrado_m3')
 const [desperdicio, desperdicioAttrs] = defineField('factor_desperdicio')
 const [precio, precioAttrs] = defineField('precio_unitario')
+
+// Al cambiar de grupo, el elemento elegido se descarta si el nuevo grupo no lo admite; queda
+// marcado como requerido para que se elija otro.
+watch(grupoId, () => {
+  if (elemento.value && !opcionesElemento.value.includes(elemento.value))
+    setFieldValue('elemento', undefined)
+})
 
 // Las otras partidas del proyecto con el mismo concreto (hoy, la misma resistencia): comparten el
 // precio unitario, así que el precio se llena con el suyo y cambiarlo las afecta a todas.
@@ -261,6 +278,7 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           para="grupo_id"
           :error="errors.grupo_id"
           obligatorio
+          ancho="medio"
         >
           <!-- Select e InputNumber no pasan los atributos al elemento que recibe el foco. -->
           <Select
@@ -279,19 +297,22 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
 
         <CampoFormulario
           v-slot="{ idError }"
-          etiqueta="Ítem del expediente"
-          para="item"
-          :error="errors.item"
+          etiqueta="Elemento estructural"
+          para="elemento"
+          :error="errors.elemento"
+          :aviso="avisoElemento"
+          obligatorio
           ancho="medio"
         >
-          <InputText
-            id="item"
-            v-model="item"
-            v-bind="itemAttrs"
-            maxlength="20"
-            placeholder="Ej.: 03.01.01.01"
-            :invalid="!!errors.item"
-            :aria-describedby="idError"
+          <Select
+            v-model="elemento"
+            v-bind="elementoAttrs"
+            label-id="elemento"
+            :options="opcionesElemento"
+            :placeholder="grupoId ? 'Seleccione' : 'Elija primero el grupo'"
+            :disabled="!grupoId"
+            :invalid="!!errors.elemento"
+            :pt="{ label: { 'aria-describedby': idError } }"
             fluid
           />
         </CampoFormulario>
@@ -317,20 +338,19 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
 
         <CampoFormulario
           v-slot="{ idError }"
-          etiqueta="Elemento estructural"
-          para="elemento"
-          :error="errors.elemento"
-          obligatorio
+          etiqueta="Ítem del expediente"
+          para="item"
+          :error="errors.item"
           ancho="medio"
         >
-          <Select
-            v-model="elemento"
-            v-bind="elementoAttrs"
-            label-id="elemento"
-            :options="opcionesElemento"
-            placeholder="Seleccione"
-            :invalid="!!errors.elemento"
-            :pt="{ label: { 'aria-describedby': idError } }"
+          <InputText
+            id="item"
+            v-model="item"
+            v-bind="itemAttrs"
+            maxlength="20"
+            placeholder="Ej.: 03.01.01.01"
+            :invalid="!!errors.item"
+            :aria-describedby="idError"
             fluid
           />
         </CampoFormulario>

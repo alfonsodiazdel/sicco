@@ -4,7 +4,9 @@ namespace App\Http\Requests;
 
 use App\Models\Partida;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /** Registro (POST) y actualización (PUT) de una partida del presupuesto (CU04). */
 class PartidaRequest extends FormRequest
@@ -43,6 +45,33 @@ class PartidaRequest extends FormRequest
             // Confirmación de un precio nuevo para un concreto que usan otras partidas del proyecto.
             'confirmado_precio' => ['sometimes', 'boolean'],
         ];
+    }
+
+    /**
+     * El elemento tiene que estar entre los que admite el grupo (`grupo_elemento`). Al editar se
+     * acepta el par que ya tiene la partida, aunque luego se haya quitado del catálogo.
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator) {
+            if ($validator->errors()->hasAny(['grupo_id', 'elemento'])) {
+                return;
+            }
+            $grupoId = (int) $this->input('grupo_id');
+            $elemento = $this->input('elemento');
+            $partida = $this->route('partida');
+            if ($partida instanceof Partida && $partida->grupo_id === $grupoId && $partida->elemento === $elemento) {
+                return;
+            }
+            $admitido = DB::table('grupo_elemento as ge')
+                ->join('elementos_estructurales as e', 'e.id', '=', 'ge.elemento_id')
+                ->where('ge.grupo_id', $grupoId)
+                ->where('e.nombre', $elemento)
+                ->exists();
+            if (! $admitido) {
+                $validator->errors()->add('elemento', __('sicco.partidas.elemento_fuera_de_grupo'));
+            }
+        }];
     }
 
     public function messages(): array

@@ -13,8 +13,15 @@ export const esquemaGrupo = z.object({
     .number({ required_error: requerido, invalid_type_error: requerido })
     .int('Ingrese un número entero')
     .positive('Ingrese un valor mayor a cero'),
+  // Puede quedar vacío: el grupo existe, pero sus partidas no tendrán elemento que elegir.
+  elementos: z.array(z.number()).default([]),
 })
 
 export function valoresDeGrupo(grupo: GrupoFila) {
-  return { nombre: grupo.nombre, partida_control: grupo.partida_control, orden: grupo.orden }
+  return {
+    nombre: grupo.nombre,
+    partida_control: grupo.partida_control,
+    orden: grupo.orden,
+    elementos: [...grupo.elementos],
+  }
 }

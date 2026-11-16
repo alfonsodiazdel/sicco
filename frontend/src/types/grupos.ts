@@ -7,6 +7,8 @@ export interface GrupoDatos {
   partida_control: string
   /** Posición del grupo en el presupuesto y en los reportes. */
   orden: number
+  /** Ids de los elementos estructurales que pueden elegir las partidas del grupo. */
+  elementos: number[]
 }
 
 export interface GrupoFila extends GrupoDatos {

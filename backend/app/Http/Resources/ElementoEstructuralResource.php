@@ -16,6 +16,8 @@ class ElementoEstructuralResource extends JsonResource
             'nombre' => $this->nombre,
             'activo' => $this->activo,
             'en_uso' => $this->enUso(),
+            // Ids de los grupos donde se puede elegir.
+            'grupos' => $this->grupos->pluck('id'),
         ];
     }
 }

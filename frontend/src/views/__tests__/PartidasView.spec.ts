@@ -145,11 +145,19 @@ async function llenar(
     vista.findAllComponents(InputText).find((t) => t.attributes('id') === id)!
   await select('grupo_id').setValue(3)
   await texto('descripcion').setValue("CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA")
-  await select('elemento').setValue('Columna')
+  await select('elemento').setValue('Placa')
   await select('resistencia_id').setValue(resistencia)
   await numero('metrado_m3').setValue(valores.metrado)
   await numero('factor_desperdicio').setValue(valores.desperdicio)
   await numero('precio_unitario').setValue(valores.precio)
+}
+
+const selectDe = (vista: VueWrapper, id: string) =>
+  vista.findAllComponents(Select).find((s) => s.props('labelId') === id)!
+
+async function elegirGrupo(vista: VueWrapper, id: number) {
+  await selectDe(vista, 'grupo_id').setValue(id)
+  await asentar()
 }
 
 async function guardar(vista: VueWrapper) {
@@ -360,7 +368,7 @@ describe('PartidasView', () => {
         // El ítem quedó vacío: se guarda como null.
         item: null,
         descripcion: "CONCRETO PREMEZ. F'C=280 kg/cm2 CISTERNA",
-        elemento: 'Columna',
+        elemento: 'Placa',
         resistencia_id: 3,
         resistencia_fc: "f'c 280 kg/cm²",
         metrado_m3: 12.5,
@@ -555,6 +563,73 @@ describe('PartidasView', () => {
     expect(vista.find('button[aria-label^="Editar partida "]').exists()).toBe(false)
   })
 
+  describe('elemento según el grupo', () => {
+    const elementoSelect = (vista: VueWrapper) => selectDe(vista, 'elemento')
+
+    it('pide primero el grupo y luego ofrece solo los elementos que este admite', async () => {
+      const vista = await montar()
+      await abrirNuevo(vista)
+
+      expect(elementoSelect(vista).props('disabled')).toBe(true)
+      expect(elementoSelect(vista).props('placeholder')).toBe('Elija primero el grupo')
+
+      await elegirGrupo(vista, 3)
+
+      expect(elementoSelect(vista).props('disabled')).toBe(false)
+      expect(elementoSelect(vista).props('options')).toEqual(['Placa', 'Viga', 'Losa maciza'])
+    })
+
+    it('al cambiar de grupo conserva el elemento si el nuevo lo admite y si no, lo descarta', async () => {
+      const vista = await montar()
+      await abrirNuevo(vista)
+      await elegirGrupo(vista, 3)
+      await elementoSelect(vista).setValue('Placa')
+      await asentar()
+      // Verticales sótanos también admite Placa.
+      await elegirGrupo(vista, 4)
+      expect(elementoSelect(vista).props('modelValue')).toBe('Placa')
+
+      // Horizontales sótanos no: se vacía y pide elegir otro.
+      await elegirGrupo(vista, 5)
+      expect(elementoSelect(vista).props('modelValue')).toBeUndefined()
+      expect(vista.get('#elemento-error').text()).toBe('Este dato es requerido')
+    })
+
+    it('avisa si el grupo no tiene elementos asignados', async () => {
+      const vista = await montar(async () => {
+        await servicios.grupos!.actualizar(1, {
+          nombre: 'Muros anclados',
+          partida_control: '2.02.02',
+          orden: 1,
+          elementos: [],
+        })
+      })
+      await abrirNuevo(vista)
+      await elegirGrupo(vista, 1)
+
+      expect(elementoSelect(vista).props('options')).toEqual([])
+      expect(vista.get('[data-aviso]').text()).toBe(
+        'Este grupo no tiene elementos asignados; agréguelos en Catálogos.',
+      )
+    })
+
+    it('muestra el error del backend si el elemento no corresponde al grupo', async () => {
+      const vista = await montar()
+      await elegirProyecto(3)
+      const { errorDeValidacion } = await import('@/services/errores')
+      vi.spyOn(servicios.partidas!, 'crear').mockRejectedValueOnce(
+        errorDeValidacion({ elemento: ['El elemento no corresponde al grupo elegido'] }),
+      )
+      await abrirNuevo(vista)
+      await llenar(vista, { metrado: 1, desperdicio: 0, precio: 1 })
+      await guardar(vista)
+
+      expect(vista.get('#elemento-error').text()).toBe(
+        'El elemento no corresponde al grupo elegido',
+      )
+    })
+  })
+
   describe('catálogos con valores inactivos', () => {
     const opciones = (vista: VueWrapper, id: string) =>
       vista
@@ -574,9 +649,10 @@ describe('PartidasView', () => {
         })
       })
       await abrirNuevo(vista)
+      // Horizontales sótanos admite Viga, Losa aligerada, Losa maciza y Escalera.
+      await elegirGrupo(vista, 5)
 
-      expect(opciones(vista, 'elemento')).not.toContain('Viga')
-      expect(opciones(vista, 'elemento')).toContain('Columna')
+      expect(opciones(vista, 'elemento')).toEqual(['Losa aligerada', 'Losa maciza', 'Escalera'])
       expect(
         opciones(vista, 'resistencia_id').map((r: { fc_kg_cm2: number }) => r.fc_kg_cm2),
       ).toEqual([210, 280, 350])

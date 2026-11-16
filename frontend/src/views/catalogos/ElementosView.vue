@@ -6,14 +6,17 @@ import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import MultiSelect from 'primevue/multiselect'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
 import EstadoTag from '@/components/moleculas/EstadoTag.vue'
 import { elementosServicio } from '@/services/elementos'
+import { gruposServicio } from '@/services/grupos'
 import { esquemaElemento } from '@/validaciones/elemento'
 import type { ElementoFila } from '@/types/elementos'
+import type { GrupoFila } from '@/types/grupos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,19 +28,31 @@ const auth = useAuthStore()
 const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 
 const elementos = ref<ElementoFila[]>([])
+const grupos = ref<GrupoFila[]>([])
 const cargando = ref(true)
 
 const columnas = [
   { campo: 'nombre', encabezado: 'Elemento' },
+  { campo: 'grupos', encabezado: 'Grupos', secundaria: true },
   { campo: 'activo', encabezado: 'Estado' },
 ]
+
+// Los grupos vienen en el orden del presupuesto; los del elemento se muestran en ese mismo orden.
+const nombresDeGrupos = (elemento: ElementoFila) =>
+  grupos.value
+    .filter((g) => elemento.grupos.includes(g.id))
+    .map((g) => g.nombre)
+    .join(', ')
 
 function avisarError(error: unknown) {
   toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
 }
 
 async function cargar() {
-  elementos.value = await elementosServicio.todos()
+  ;[elementos.value, grupos.value] = await Promise.all([
+    elementosServicio.todos(),
+    gruposServicio.listar(),
+  ])
 }
 
 onMounted(async () => {
@@ -57,10 +72,11 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
   validationSchema: toTypedSchema(esquemaElemento),
 })
 const [nombre, nombreAttrs] = defineField('nombre')
+const [gruposElemento, gruposElementoAttrs] = defineField('grupos')
 
 function abrir(elemento: ElementoFila | null = null) {
   editando.value = elemento
-  resetForm({ values: { nombre: elemento?.nombre ?? '' } })
+  resetForm({ values: { nombre: elemento?.nombre ?? '', grupos: [...(elemento?.grupos ?? [])] } })
   dialogo.value = true
 }
 
@@ -117,7 +133,7 @@ function confirmarEliminacion(elemento: ElementoFila) {
 <template>
   <PaginaListado
     titulo="Elementos estructurales"
-    subtitulo="Los que se ofrecen al registrar una partida; uno en uso solo se puede desactivar"
+    subtitulo="Se ofrecen al registrar una partida, solo en los grupos asignados; uno en uso solo se puede desactivar"
   >
     <template v-if="puedeGestionar" #acciones>
       <Button
@@ -135,6 +151,10 @@ function confirmarEliminacion(elemento: ElementoFila) {
       vacio="Aún no hay elementos registrados."
       :cargando="cargando"
     >
+      <template #col-grupos="{ fila }">
+        <span v-if="fila.grupos.length" class="text-sm">{{ nombresDeGrupos(fila) }}</span>
+        <span v-else class="text-sm text-amber-700">Sin grupos</span>
+      </template>
       <template #col-activo="{ fila }"><EstadoTag :activo="fila.activo" /></template>
       <template v-if="puedeGestionar" #acciones="{ fila }">
         <Button
@@ -188,6 +208,33 @@ function confirmarEliminacion(elemento: ElementoFila) {
             placeholder="Ej.: Muro de contención"
             :invalid="!!errors.nombre"
             :aria-describedby="idError"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Grupos"
+          para="grupos"
+          :error="errors.grupos"
+          :aviso="
+            gruposElemento?.length
+              ? undefined
+              : 'Sin grupos, no se podrá elegir en ninguna partida.'
+          "
+        >
+          <!-- MultiSelect no pasa los atributos al elemento que recibe el foco. -->
+          <MultiSelect
+            v-model="gruposElemento"
+            v-bind="gruposElementoAttrs"
+            input-id="grupos"
+            :options="grupos"
+            option-label="nombre"
+            option-value="id"
+            display="chip"
+            placeholder="Donde se puede elegir"
+            :invalid="!!errors.grupos"
+            :pt="{ hiddenInput: { 'aria-describedby': idError } }"
             fluid
           />
         </CampoFormulario>

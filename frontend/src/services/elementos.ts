@@ -1,5 +1,6 @@
 import { http } from '@/api/http'
 import { errorDeConflicto, errorDeValidacion } from '@/services/errores'
+import { gruposEjemplo } from '@/services/grupos'
 import type { ElementoDatos, ElementoEstructural, ElementoFila } from '@/types/elementos'
 
 export interface ElementosServicio {
@@ -29,7 +30,13 @@ const enUsoMensaje = 'Este elemento está en uso en partidas: solo se puede desa
 export function crearElementosEnMemoria(
   enUso: (nombre: string) => Promise<boolean> = async () => false,
 ): ElementosServicio {
-  const elementos = nombresIniciales.map((nombre, i) => ({ id: i + 1, nombre, activo: true }))
+  // Los grupos de cada uno salen de los de ejemplo de crearGruposEnMemoria.
+  const elementos = nombresIniciales.map((nombre, i) => ({
+    id: i + 1,
+    nombre,
+    activo: true,
+    grupos: gruposEjemplo.filter((g) => g.elementos.includes(i + 1)).map((g) => g.id),
+  }))
   let siguienteId = elementos.length + 1
 
   const buscar = (id: number) => {
@@ -37,12 +44,9 @@ export function crearElementosEnMemoria(
     if (!elemento) throw new Error('Elemento no encontrado.')
     return elemento
   }
-  const fila = async (e: {
-    id: number
-    nombre: string
-    activo: boolean
-  }): Promise<ElementoFila> => ({
+  const fila = async (e: Omit<ElementoFila, 'en_uso'>): Promise<ElementoFila> => ({
     ...e,
+    grupos: [...e.grupos],
     en_uso: await enUso(e.nombre),
   })
 
@@ -62,7 +66,12 @@ export function crearElementosEnMemoria(
     },
     async crear(datos) {
       validarNombre(datos.nombre)
-      const elemento = { id: siguienteId++, nombre: datos.nombre, activo: datos.activo ?? true }
+      const elemento = {
+        id: siguienteId++,
+        nombre: datos.nombre,
+        activo: datos.activo ?? true,
+        grupos: [...(datos.grupos ?? [])],
+      }
       elementos.push(elemento)
       return fila(elemento)
     },
@@ -72,7 +81,11 @@ export function crearElementosEnMemoria(
       if (datos.nombre !== elemento.nombre && (await enUso(elemento.nombre))) {
         throw errorDeConflicto(enUsoMensaje)
       }
-      Object.assign(elemento, { nombre: datos.nombre, activo: datos.activo ?? elemento.activo })
+      Object.assign(elemento, {
+        nombre: datos.nombre,
+        activo: datos.activo ?? elemento.activo,
+        grupos: [...(datos.grupos ?? elemento.grupos)],
+      })
       return fila(elemento)
     },
     async eliminar(id) {

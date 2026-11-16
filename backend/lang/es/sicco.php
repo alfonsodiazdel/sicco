@@ -25,10 +25,12 @@ return [
     'grupos' => [
         'duplicado' => 'El grupo ya existe',
         'en_uso' => 'El grupo tiene partidas registradas; reasígnelas antes de eliminarlo.',
+        'elemento_en_uso' => 'No se puede quitar :elemento: hay partidas de este grupo que lo usan',
     ],
     'elementos' => [
         'duplicado' => 'El elemento ya existe',
         'en_uso' => 'Este elemento está en uso en partidas: solo se puede desactivar.',
+        'grupo_en_uso' => 'No se puede quitar :grupo: hay partidas de ese grupo con este elemento',
     ],
     'resistencias' => [
         'duplicada' => 'La resistencia ya existe',
@@ -38,6 +40,7 @@ return [
         'sin_acceso' => 'No tiene acceso a este proyecto.',
     ],
     'partidas' => [
+        'elemento_fuera_de_grupo' => 'El elemento no corresponde al grupo elegido',
         'metrado_repartido' => 'El metrado es menor al volumen ya repartido en sectores (:repartido m³)',
         'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
         'confirmar_precio' => '{1} El precio de :resistencia (S/ :anterior) lo usa otra partida del proyecto; al guardar se actualizará también en ella.'

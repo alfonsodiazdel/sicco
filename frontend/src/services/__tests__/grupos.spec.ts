@@ -7,7 +7,12 @@ const conPartidasEn = (...ids: number[]) => crearGruposEnMemoria(async (id) => i
 describe('grupos en memoria', () => {
   it('lista los grupos por orden', async () => {
     const grupos = conPartidasEn()
-    await grupos.crear({ nombre: 'Obras exteriores', partida_control: '2.02.02', orden: 0 })
+    await grupos.crear({
+      nombre: 'Obras exteriores',
+      partida_control: '2.02.02',
+      orden: 0,
+      elementos: [],
+    })
 
     const nombres = (await grupos.listar()).map((g) => g.nombre)
     expect(nombres.slice(0, 3)).toEqual(['Obras exteriores', 'Muros anclados', 'Cimentación'])
@@ -17,12 +22,17 @@ describe('grupos en memoria', () => {
     const grupos = conPartidasEn()
 
     const error = await grupos
-      .crear({ nombre: 'CISTERNA', partida_control: '2.02.02', orden: 9 })
+      .crear({ nombre: 'CISTERNA', partida_control: '2.02.02', orden: 9, elementos: [] })
       .catch((e: unknown) => e)
     expect(erroresDeValidacion(error)).toEqual({ nombre: 'El grupo ya existe' })
     // Al editar, el propio nombre no cuenta como repetido.
     await expect(
-      grupos.actualizar(3, { nombre: 'Cisterna', partida_control: '2.02.02', orden: 8 }),
+      grupos.actualizar(3, {
+        nombre: 'Cisterna',
+        partida_control: '2.02.02',
+        orden: 8,
+        elementos: [],
+      }),
     ).resolves.toMatchObject({
       orden: 8,
     })

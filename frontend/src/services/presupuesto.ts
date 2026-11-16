@@ -47,11 +47,12 @@ export interface GrupoDePresupuesto {
   total: number
 }
 
-const sinGrupo = {
+const sinGrupo: GrupoFila = {
   id: 0,
   nombre: 'Sin grupo',
   partida_control: '',
   orden: Number.POSITIVE_INFINITY,
+  elementos: [],
 }
 
 /**

@@ -10,21 +10,47 @@ export interface GruposServicio {
   eliminar(id: number): Promise<void>
 }
 
-const gruposEjemplo: GrupoFila[] = [
-  { id: 1, nombre: 'Muros anclados', partida_control: '2.02.02', orden: 1 },
-  { id: 2, nombre: 'Cimentación', partida_control: '2.02.02', orden: 2 },
-  { id: 3, nombre: 'Cisterna', partida_control: '2.02.02', orden: 3 },
-  { id: 4, nombre: 'Verticales sótanos', partida_control: '2.02.02', orden: 4 },
-  { id: 5, nombre: 'Horizontales sótanos', partida_control: '2.02.02', orden: 5 },
-  { id: 6, nombre: 'Verticales superestructura', partida_control: '2.02.02', orden: 6 },
-  { id: 7, nombre: 'Horizontales superestructura', partida_control: '2.02.02', orden: 7 },
+// Los elementos son los ids de crearElementosEnMemoria (1 Zapata, 2 Cimiento corrido, 3 Columna,
+// 4 Placa, 5 Viga, 6 Losa aligerada, 7 Losa maciza, 8 Escalera), como los asigna GrupoPartidaSeeder.
+export const gruposEjemplo: GrupoFila[] = [
+  { id: 1, nombre: 'Muros anclados', partida_control: '2.02.02', orden: 1, elementos: [2, 4, 5] },
+  { id: 2, nombre: 'Cimentación', partida_control: '2.02.02', orden: 2, elementos: [1, 2, 5, 7] },
+  { id: 3, nombre: 'Cisterna', partida_control: '2.02.02', orden: 3, elementos: [4, 5, 7] },
+  {
+    id: 4,
+    nombre: 'Verticales sótanos',
+    partida_control: '2.02.02',
+    orden: 4,
+    elementos: [3, 4, 8],
+  },
+  {
+    id: 5,
+    nombre: 'Horizontales sótanos',
+    partida_control: '2.02.02',
+    orden: 5,
+    elementos: [5, 6, 7, 8],
+  },
+  {
+    id: 6,
+    nombre: 'Verticales superestructura',
+    partida_control: '2.02.02',
+    orden: 6,
+    elementos: [3, 4, 8],
+  },
+  {
+    id: 7,
+    nombre: 'Horizontales superestructura',
+    partida_control: '2.02.02',
+    orden: 7,
+    elementos: [5, 6, 7, 8],
+  },
 ]
 
 /** Para las pruebas. `enUso` indica si el grupo tiene partidas (en la API lo verifica el backend). */
 export function crearGruposEnMemoria(
   enUso: (grupoId: number) => Promise<boolean> = async () => false,
 ): GruposServicio {
-  const grupos = gruposEjemplo.map((g) => ({ ...g }))
+  const grupos = gruposEjemplo.map((g) => ({ ...g, elementos: [...g.elementos] }))
   let siguienteId = grupos.length + 1
 
   function buscar(id: number) {
@@ -43,17 +69,20 @@ export function crearGruposEnMemoria(
 
   return {
     async listar() {
-      return grupos.map((g) => ({ ...g })).sort((a, b) => a.orden - b.orden || a.id - b.id)
+      return grupos
+        .map((g) => ({ ...g, elementos: [...g.elementos] }))
+        .sort((a, b) => a.orden - b.orden || a.id - b.id)
     },
     async crear(datos) {
       validarNombre(datos.nombre)
-      const grupo: GrupoFila = { id: siguienteId++, ...datos }
-      grupos.push({ ...grupo })
+      const grupo: GrupoFila = { id: siguienteId++, ...datos, elementos: [...datos.elementos] }
+      grupos.push({ ...grupo, elementos: [...grupo.elementos] })
       return grupo
     },
     async actualizar(id, datos) {
       validarNombre(datos.nombre, id)
-      return { ...Object.assign(buscar(id), datos) }
+      const grupo = Object.assign(buscar(id), datos, { elementos: [...datos.elementos] })
+      return { ...grupo, elementos: [...grupo.elementos] }
     },
     async eliminar(id) {
       buscar(id)

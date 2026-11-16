@@ -7,13 +7,16 @@ import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
+import MultiSelect from 'primevue/multiselect'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoFormulario from '@/components/organismos/DialogoFormulario.vue'
 import CampoFormulario from '@/components/moleculas/CampoFormulario.vue'
+import { elementosServicio } from '@/services/elementos'
 import { gruposServicio } from '@/services/grupos'
 import { esquemaGrupo, partidaControlPorDefecto, valoresDeGrupo } from '@/validaciones/grupo'
 import type { GrupoFila } from '@/types/grupos'
+import type { ElementoFila } from '@/types/elementos'
 import { erroresDeValidacion, mensajeDeError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 
@@ -25,20 +28,40 @@ const auth = useAuthStore()
 const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 
 const grupos = ref<GrupoFila[]>([])
+// Todos, también los inactivos: un grupo puede seguir admitiendo uno que ya no se ofrece.
+const elementos = ref<ElementoFila[]>([])
 const cargando = ref(true)
 
 const columnas = [
   { campo: 'orden', encabezado: 'Orden', numerica: true },
   { campo: 'nombre', encabezado: 'Grupo' },
+  { campo: 'elementos', encabezado: 'Elementos estructurales', secundaria: true },
   { campo: 'partida_control', encabezado: 'Partida de control', secundaria: true },
 ]
+
+const nombreElemento = computed(() => new Map(elementos.value.map((e) => [e.id, e.nombre])))
+const nombresDeElementos = (grupo: GrupoFila) =>
+  grupo.elementos
+    .map((id) => nombreElemento.value.get(id))
+    .filter(Boolean)
+    .join(', ')
+
+const opcionesElementos = computed(() =>
+  elementos.value.map((e) => ({
+    id: e.id,
+    etiqueta: e.activo ? e.nombre : `${e.nombre} (inactivo)`,
+  })),
+)
 
 function avisarError(error: unknown) {
   toast.add({ severity: 'error', summary: mensajeDeError(error), life: 5000 })
 }
 
 async function cargar() {
-  grupos.value = await gruposServicio.listar()
+  ;[grupos.value, elementos.value] = await Promise.all([
+    gruposServicio.listar(),
+    elementosServicio.todos(),
+  ])
 }
 
 onMounted(async () => {
@@ -61,6 +84,7 @@ const { defineField, handleSubmit, errors, setErrors, resetForm, isSubmitting } 
 const [nombre, nombreAttrs] = defineField('nombre')
 const [partidaControl, partidaControlAttrs] = defineField('partida_control')
 const [orden, ordenAttrs] = defineField('orden')
+const [elementosGrupo, elementosGrupoAttrs] = defineField('elementos')
 
 function abrir(grupo: GrupoFila | null = null) {
   editando.value = grupo
@@ -69,7 +93,7 @@ function abrir(grupo: GrupoFila | null = null) {
   resetForm({
     values: grupo
       ? valoresDeGrupo(grupo)
-      : { partida_control: partidaControlPorDefecto, orden: siguiente },
+      : { partida_control: partidaControlPorDefecto, orden: siguiente, elementos: [] },
   })
   dialogo.value = true
 }
@@ -128,6 +152,10 @@ function confirmarEliminacion(grupo: GrupoFila) {
       vacio="Aún no hay grupos registrados."
       :cargando="cargando"
     >
+      <template #col-elementos="{ fila }">
+        <span v-if="fila.elementos.length" class="text-sm">{{ nombresDeElementos(fila) }}</span>
+        <span v-else class="text-sm text-amber-700">Sin elementos</span>
+      </template>
       <template v-if="puedeGestionar" #acciones="{ fila }">
         <Button
           icon="pi pi-pencil"
@@ -212,6 +240,33 @@ function confirmarEliminacion(grupo: GrupoFila) {
             :use-grouping="false"
             :invalid="!!errors.orden"
             :pt="{ pcInputText: { root: { 'aria-describedby': idError } } }"
+            fluid
+          />
+        </CampoFormulario>
+
+        <CampoFormulario
+          v-slot="{ idError }"
+          etiqueta="Elementos estructurales"
+          para="elementos"
+          :error="errors.elementos"
+          :aviso="
+            elementosGrupo?.length
+              ? undefined
+              : 'Sin elementos, no se podrán registrar partidas en este grupo.'
+          "
+        >
+          <!-- MultiSelect no pasa los atributos al elemento que recibe el foco. -->
+          <MultiSelect
+            v-model="elementosGrupo"
+            v-bind="elementosGrupoAttrs"
+            input-id="elementos"
+            :options="opcionesElementos"
+            option-label="etiqueta"
+            option-value="id"
+            display="chip"
+            placeholder="Los que pueden elegir sus partidas"
+            :invalid="!!errors.elementos"
+            :pt="{ hiddenInput: { 'aria-describedby': idError } }"
             fluid
           />
         </CampoFormulario>
