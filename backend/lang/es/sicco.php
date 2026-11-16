@@ -59,6 +59,8 @@ return [
         'resistencia_producto' => 'El producto :codigo está registrado como :resistencia',
         'foto_no_disponible' => 'La foto de la guía no está disponible',
         'rango_invalido' => 'La fecha final debe ser igual o posterior a la inicial',
+        'eliminada' => 'Guía eliminada correctamente',
+        'no_eliminable' => 'La guía ya fue asignada o facturada; pida a Producción u Oficina técnica que la corrijan',
     ],
     'asignaciones' => [
         'guardada' => 'Guía asignada correctamente',

@@ -50,7 +50,7 @@ export const menu: ItemMenu[] = [
     etiqueta: 'Guías sin sector',
     icono: 'pi pi-inbox',
     ruta: '/guias/sin-sector',
-    roles: ['ingeniero_produccion', 'oficina_tecnica'],
+    roles: ['almacenero', 'ingeniero_produccion', 'oficina_tecnica'],
   },
   {
     etiqueta: 'Proveedores',

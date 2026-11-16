@@ -151,6 +151,33 @@ class GuiaController extends Controller
     }
 
     /**
+     * Elimina una guía registrada por error (por ejemplo, en otro proyecto) para que el almacenero
+     * la vuelva a registrar en el correcto. Solo mientras siga sin sector y sin factura: una vez
+     * asignada o facturada, su volumen ya cuenta en el control de la obra.
+     */
+    public function destroy(Request $request, GuiaRemision $guia): JsonResponse
+    {
+        $this->autorizarProyecto($request, $guia->proyecto);
+
+        DB::transaction(function () use ($guia) {
+            $guia = GuiaRemision::lockForUpdate()->findOrFail($guia->id);
+            if ($guia->estado_asignacion !== EstadoAsignacion::SinSector
+                || $guia->factura_id !== null
+                || $guia->asignaciones()->exists()
+                || $guia->historialAsignaciones()->exists()) {
+                throw ValidationException::withMessages(['guia' => __('sicco.guias.no_eliminable')]);
+            }
+
+            $guia->delete();
+        });
+
+        // Después de confirmar el borrado: si falla, queda solo un archivo huérfano en el bucket.
+        Storage::delete($guia->foto_ruta);
+
+        return response()->json(['message' => __('sicco.guias.eliminada')]);
+    }
+
+    /**
      * La foto de la guía, para verla junto a sus datos. Pasa por la API y no por una URL firmada del
      * bucket: el acceso se revisa con la sesión y en local la firma apuntaría al host interno de S3.
      */

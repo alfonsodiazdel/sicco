@@ -27,6 +27,8 @@ class GuiaPendienteResource extends GuiaResource
             'volumen_pendiente_m3' => (Volumen::centesimos($this->volumen_m3) - $asignado) / 100,
             'dias_transcurridos' => $dias,
             'atrasada' => $dias > self::DIAS_TOLERANCIA,
+            // El almacenero puede eliminarla (proyecto equivocado) mientras no se use en otro lado.
+            'eliminable' => $asignado === 0 && $this->factura_id === null,
         ];
     }
 

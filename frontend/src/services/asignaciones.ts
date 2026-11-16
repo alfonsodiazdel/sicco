@@ -18,6 +18,8 @@ export interface AsignacionesServicio {
   obtener(guiaId: number): Promise<AsignacionGuia>
   /** CU09 pasos 5–7: reemplaza el reparto de la guía. */
   guardar(guiaId: number, asignaciones: AsignacionDatos[]): Promise<AsignacionGuia>
+  /** El almacenero elimina una guía registrada por error (p. ej. en otro proyecto) sin asignar. */
+  eliminarGuia(guiaId: number): Promise<void>
 }
 
 // Sin fechas, el backend trae todas las pendientes.
@@ -40,6 +42,9 @@ export function crearAsignacionesApi(): AsignacionesServicio {
     async guardar(guiaId, asignaciones) {
       return (await http.put<AsignacionGuia>(`/guias/${guiaId}/asignaciones`, { asignaciones }))
         .data
+    },
+    async eliminarGuia(guiaId) {
+      await http.delete(`/guias/${guiaId}`)
     },
   }
 }
@@ -71,6 +76,7 @@ const guia = (
   volumen_pendiente_m3: volumen_m3,
   dias_transcurridos: dias,
   atrasada: dias > 2,
+  eliminable: true,
 })
 
 const guiasEjemplo: GuiaPendiente[] = [
@@ -134,7 +140,17 @@ export function crearAsignacionesEnMemoria(
       g.volumen_asignado_m3 = suma / 100
       g.volumen_pendiente_m3 = (centesimos(g.volumen_m3) - suma) / 100
       g.estado_asignacion = suma === centesimos(g.volumen_m3) ? 'asignada' : 'parcial'
+      g.eliminable = false
       return { ...respuesta(g), sectores_excedidos: [], message: 'Guía asignada correctamente' }
+    },
+    async eliminarGuia(guiaId) {
+      if (!buscar(guiaId).eliminable) {
+        throw errorDeValidacion({ guia: ['La guía ya fue asignada o facturada'] })
+      }
+      guias.splice(
+        guias.findIndex((g) => g.id === guiaId),
+        1,
+      )
     },
   }
 }

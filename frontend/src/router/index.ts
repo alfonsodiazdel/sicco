@@ -121,7 +121,7 @@ const routes: RouteRecordRaw[] = [
         name: 'guias-sin-sector',
         component: () => import('@/views/guias/GuiasSinSectorView.vue'),
         meta: {
-          roles: ['ingeniero_produccion', 'oficina_tecnica'],
+          roles: ['almacenero', 'ingeniero_produccion', 'oficina_tecnica'],
           titulo: 'Guías sin sector',
           porProyecto: true,
         },

@@ -108,6 +108,9 @@ Route::prefix('v1')->group(function () {
                 // CU07: cada lectura cuesta en la API de IA.
                 Route::post('guias/lecturas', [GuiaController::class, 'lectura'])->middleware('throttle:ocr');
                 Route::post('guias', [GuiaController::class, 'store']);
+                // Una guía subida al proyecto equivocado se elimina para registrarla en el correcto,
+                // mientras nadie la haya asignado ni facturado.
+                Route::delete('guias/{guia}', [GuiaController::class, 'destroy'])->whereNumber('guia');
             });
 
             // Foto de la guía: la ve todo rol que consulta guías, solo en sus proyectos.
@@ -115,13 +118,16 @@ Route::prefix('v1')->group(function () {
                 ->whereNumber('guia')
                 ->middleware('rol:administrador,almacenero,ingeniero_produccion,oficina_tecnica,gerencia');
 
-            // CU10 Guías sin sector: las consultan Producción y Oficina técnica en sus proyectos, y
-            // CU09 la asignación que se abre desde ellas, que solo guarda Producción.
-            Route::middleware('rol:ingeniero_produccion,oficina_tecnica,administrador')->group(function () {
+            // CU10 Guías sin sector: las consultan Producción, Oficina técnica y el almacenero (para
+            // revisar lo que registró) en sus proyectos, y CU09 la asignación que se abre desde
+            // ellas, que solo guarda Producción.
+            Route::middleware('rol:ingeniero_produccion,oficina_tecnica,almacenero,administrador')->group(function () {
                 Route::get('proyectos/{proyecto}/guias/sin-sector', [GuiaSinSectorController::class, 'index'])->whereNumber('proyecto');
                 Route::get('proyectos/{proyecto}/guias/sin-sector/exportar', [GuiaSinSectorController::class, 'exportar'])->whereNumber('proyecto');
-                Route::get('guias/{guia}/asignaciones', [AsignacionController::class, 'show'])->whereNumber('guia');
             });
+            Route::get('guias/{guia}/asignaciones', [AsignacionController::class, 'show'])
+                ->whereNumber('guia')
+                ->middleware('rol:ingeniero_produccion,oficina_tecnica,administrador');
             Route::put('guias/{guia}/asignaciones', [AsignacionController::class, 'update'])
                 ->whereNumber('guia')
                 ->middleware('rol:ingeniero_produccion');

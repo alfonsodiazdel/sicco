@@ -81,6 +81,8 @@ export interface GuiaPendiente extends GuiaFila {
   dias_transcurridos: number
   /** Más de 2 días sin asignar: se resalta en rojo (CU10 paso 4). */
   atrasada: boolean
+  /** Sin asignar ni facturar: el almacenero puede eliminarla si la subió al proyecto equivocado. */
+  eliminable: boolean
 }
 
 /** CU10 paso 1: rango de fechas, AAAA-MM-DD; sin fechas trae todas las pendientes. */

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
+import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import DatePicker from 'primevue/datepicker'
@@ -19,12 +20,15 @@ import { useAuthStore } from '@/stores/auth'
 import { useProyectoActualStore } from '@/stores/proyectoActual'
 
 const toast = useToast()
+const confirm = useConfirm()
 const router = useRouter()
 const auth = useAuthStore()
 const proyectoActual = useProyectoActualStore()
 
 // Oficina técnica y el administrador consultan; solo Producción asigna (CU09).
 const puedeAsignar = computed(() => auth.tieneRol('ingeniero_produccion'))
+// El almacenero revisa lo que registró y elimina la guía subida al proyecto equivocado.
+const puedeEliminar = computed(() => auth.tieneRol('almacenero'))
 
 const { proyecto, proyectoId } = storeToRefs(proyectoActual)
 const desde = ref<Date | null>(null)
@@ -88,6 +92,25 @@ async function exportar() {
   } finally {
     exportando.value = false
   }
+}
+
+function confirmarEliminacion(guia: GuiaPendiente) {
+  confirm.require({
+    header: 'Eliminar guía',
+    message: `¿Eliminar la guía ${guia.numero} de ${guia.proveedor.razon_social}? Si la subió al proyecto equivocado, regístrela de nuevo en el correcto.`,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Eliminar', severity: 'danger' },
+    accept: async () => {
+      try {
+        await asignacionesServicio.eliminarGuia(guia.id)
+        toast.add({ severity: 'success', summary: 'Guía eliminada correctamente', life: 3000 })
+        await buscar()
+      } catch (error) {
+        avisarError(error)
+      }
+    },
+  })
 }
 
 // Al entrar ya se listan todas las pendientes: el caso de uso busca detectarlas a tiempo.
@@ -208,6 +231,15 @@ const fecha = { dateFormat: 'dd/mm/yy', placeholder: 'dd/mm/aaaa', showClear: tr
           size="small"
           :aria-label="`Asignar guía ${fila.numero}`"
           @click="router.push({ name: 'asignar-guia', params: { id: fila.id } })"
+        />
+        <Button
+          v-if="puedeEliminar && fila.eliminable"
+          icon="pi pi-trash"
+          severity="danger"
+          text
+          size="small"
+          :aria-label="`Eliminar guía ${fila.numero}`"
+          @click="confirmarEliminacion(fila)"
         />
       </template>
     </TablaCrud>

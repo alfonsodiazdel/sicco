@@ -1,12 +1,15 @@
 <?php
 
 use App\Contracts\OcrServiceInterface;
+use App\Enums\EstadoAsignacion;
 use App\Enums\Rol;
 use App\Http\Resources\GuiaResource;
+use App\Models\Factura;
 use App\Models\GuiaRemision;
 use App\Models\ProductoProveedor;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
+use App\Models\User;
 use App\Services\Ocr\LecturaFactura;
 use App\Services\Ocr\LecturaGuia;
 use App\Services\Ocr\LecturaNoDisponible;
@@ -453,4 +456,81 @@ describe('proveedores inactivos', function () {
         expect(GuiaResource::make($guia)->resolve()['proveedor']->resolve())
             ->toMatchArray(['id' => $proveedor->id, 'razon_social' => $proveedor->razon_social]);
     });
+});
+
+describe('eliminar una guía registrada por error', function () {
+    /** Registra una guía con foto como lo hace el almacenero y la devuelve. */
+    function guiaRegistrada(Proyecto $proyecto, User $almacenero): GuiaRemision
+    {
+        test()->actingAs($almacenero)
+            ->post('/api/v1/guias', datosGuia($proyecto, ['proveedor_id' => Proveedor::factory()->create()->id, 'foto' => foto()]), ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        return GuiaRemision::latest('id')->firstOrFail();
+    }
+
+    it('elimina la guía sin sector y su foto, y deja registrarla en otro proyecto', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $correcto = obra(['codigo' => 'PRY-002']);
+        $correcto->usuarios()->attach($almacenero->id);
+        $guia = guiaRegistrada($p, $almacenero);
+
+        $this->deleteJson("/api/v1/guias/{$guia->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Guía eliminada correctamente');
+
+        expect(GuiaRemision::count())->toBe(0);
+        Storage::assertMissing($guia->foto_ruta);
+
+        $this->post('/api/v1/guias', datosGuia($correcto, ['proveedor_id' => $guia->proveedor_id, 'foto' => foto()]), ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('proyecto_id', $correcto->id);
+    });
+
+    it('no elimina una guía asignada', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $guia = guiaRegistrada($p, $almacenero);
+        $guia->update(['estado_asignacion' => EstadoAsignacion::Asignada]);
+
+        $this->deleteJson("/api/v1/guias/{$guia->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['guia' => 'La guía ya fue asignada o facturada']);
+
+        expect(GuiaRemision::count())->toBe(1);
+        Storage::assertExists($guia->foto_ruta);
+    });
+
+    it('no elimina una guía facturada', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $guia = guiaRegistrada($p, $almacenero);
+        $factura = Factura::create([
+            'proyecto_id' => $p->id, 'proveedor_id' => $guia->proveedor_id, 'numero' => 'F001-00000001',
+            'fecha' => today()->toDateString(), 'volumen_m3' => 8.5, 'subtotal' => 0, 'igv' => 0, 'total' => 0,
+            'archivo_ruta' => "facturas/{$p->id}/f.pdf", 'registrado_por' => asignadoA($p)->id,
+        ]);
+        $guia->update(['factura_id' => $factura->id]);
+
+        $this->actingAs($almacenero)
+            ->deleteJson("/api/v1/guias/{$guia->id}")
+            ->assertUnprocessable();
+
+        expect(GuiaRemision::count())->toBe(1);
+    });
+
+    it('no elimina las guías de un proyecto no asignado', function () {
+        [$p, $almacenero] = obraConAlmacenero();
+        $guia = guiaRegistrada($p, $almacenero);
+        $otro = asignadoA(obra(['codigo' => 'PRY-002']), Rol::Almacenero);
+
+        $this->actingAs($otro)->deleteJson("/api/v1/guias/{$guia->id}")->assertForbidden();
+
+        expect(GuiaRemision::count())->toBe(1);
+    });
+
+    it('solo la elimina el almacenero', function (Rol $rol) {
+        [$p, $almacenero] = obraConAlmacenero();
+        $guia = guiaRegistrada($p, $almacenero);
+
+        $this->actingAs(asignadoA($p, $rol))->deleteJson("/api/v1/guias/{$guia->id}")->assertForbidden();
+    })->with([Rol::IngenieroProduccion, Rol::OficinaTecnica, Rol::Gerencia, Rol::Administrador]);
 });

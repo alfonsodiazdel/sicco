@@ -10,8 +10,9 @@ import GuiasSinSectorView from '@/views/guias/GuiasSinSectorView.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { RolClave, Usuario } from '@/types/auth'
 
-const { toast, servicios } = vi.hoisted(() => ({
+const { toast, confirm, servicios } = vi.hoisted(() => ({
   toast: { add: vi.fn<(mensaje: object) => void>() },
+  confirm: { require: vi.fn<(opciones: object) => void>() },
   servicios: {
     proyectos: null as ProyectosServicio | null,
     asignaciones: null as AsignacionesServicio | null,
@@ -19,6 +20,7 @@ const { toast, servicios } = vi.hoisted(() => ({
 }))
 
 vi.mock('primevue/usetoast', () => ({ useToast: () => toast }))
+vi.mock('primevue/useconfirm', () => ({ useConfirm: () => confirm }))
 
 vi.mock('@/services/proyectos', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/services/proyectos')>()
@@ -70,6 +72,7 @@ enableAutoUnmount(afterEach)
 beforeEach(() => {
   usarRelojFalso()
   toast.add.mockClear()
+  confirm.require.mockReset()
   // Select y DatePicker de PrimeVue lo usan al montarse; jsdom no lo trae.
   vi.stubGlobal(
     'matchMedia',
@@ -151,6 +154,38 @@ describe('GuiasSinSectorView (CU10)', () => {
 
     expect(numeros(vista)).toHaveLength(3)
     expect(vista.find('button[aria-label^="Asignar guía"]').exists()).toBe(false)
+  })
+
+  it('el almacenero consulta sin asignar y elimina la guía subida al proyecto equivocado', async () => {
+    const { vista } = await montar('almacenero')
+
+    expect(numeros(vista)).toHaveLength(3)
+    expect(vista.find('button[aria-label^="Asignar guía"]').exists()).toBe(false)
+    confirm.require.mockImplementationOnce((o: object) => (o as { accept: () => void }).accept())
+    await vista.get('button[aria-label="Eliminar guía T001-00012340"]').trigger('click')
+    await asentar()
+
+    expect(confirm.require).toHaveBeenCalledWith(
+      expect.objectContaining({ header: 'Eliminar guía' }),
+    )
+    expect(numeros(vista)).toEqual(['T001-00012345', 'T001-00012350'])
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Guía eliminada correctamente' }),
+    )
+  })
+
+  it('no elimina si se cancela la confirmación', async () => {
+    const { vista } = await montar('almacenero')
+    await vista.get('button[aria-label="Eliminar guía T001-00012340"]').trigger('click')
+    await asentar()
+
+    expect(numeros(vista)).toHaveLength(3)
+  })
+
+  it('solo el almacenero ve Eliminar', async () => {
+    const { vista } = await montar('oficina_tecnica')
+
+    expect(vista.find('button[aria-label^="Eliminar guía"]').exists()).toBe(false)
   })
 
   it('cada guía muestra su foto', async () => {

@@ -132,13 +132,34 @@ describe('guías sin sector (CU10)', function () {
             ->assertJsonCount(0);
     });
 
-    it('la consultan Producción, Oficina técnica y el administrador', function (Rol $rol) {
+    it('la consultan Producción, Oficina técnica, el almacenero y el administrador', function (Rol $rol) {
         [$p] = obraConSectores();
 
         $this->actingAs(asignadoA($p, $rol))
             ->getJson("/api/v1/proyectos/{$p->id}/guias/sin-sector")
             ->assertOk();
-    })->with([Rol::IngenieroProduccion, Rol::OficinaTecnica, Rol::Administrador]);
+    })->with([Rol::IngenieroProduccion, Rol::OficinaTecnica, Rol::Almacenero, Rol::Administrador]);
+
+    it('indica qué guías se pueden eliminar', function () {
+        [$p, $a, , $ingeniero] = obraConSectores();
+        $libre = guiaDe($p, ['fecha' => today()->subDays(2)->toDateString()]);
+        $parcial = guiaDe($p, ['fecha' => today()->subDay()->toDateString(), 'estado_asignacion' => EstadoAsignacion::Parcial]);
+        $parcial->asignaciones()->create(['sector_id' => $a->id, 'volumen_m3' => 3, 'registrado_por' => $ingeniero->id]);
+
+        $this->actingAs(asignadoA($p, Rol::Almacenero))
+            ->getJson("/api/v1/proyectos/{$p->id}/guias/sin-sector")
+            ->assertJsonPath('0.id', $libre->id)
+            ->assertJsonPath('0.eliminable', true)
+            ->assertJsonPath('1.eliminable', false);
+    });
+
+    it('el almacenero no abre la asignación', function () {
+        [$p] = obraConSectores();
+
+        $this->actingAs(asignadoA($p, Rol::Almacenero))
+            ->getJson('/api/v1/guias/'.guiaDe($p)->id.'/asignaciones')
+            ->assertForbidden();
+    });
 
     it('no la consultan los demás roles', function (Rol $rol) {
         [$p] = obraConSectores();
@@ -146,7 +167,7 @@ describe('guías sin sector (CU10)', function () {
         $this->actingAs(asignadoA($p, $rol))
             ->getJson("/api/v1/proyectos/{$p->id}/guias/sin-sector")
             ->assertForbidden();
-    })->with([Rol::Almacenero, Rol::Gerencia]);
+    })->with([Rol::Gerencia]);
 
     it('no muestra las de un proyecto no asignado', function () {
         [, , , $ingeniero] = obraConSectores();
