@@ -3,13 +3,27 @@
 use App\Enums\Rol;
 use App\Models\Concreto;
 use App\Models\Partida;
+use App\Models\Sector;
 use App\Models\User;
 
 const CAMPOS_PARTIDA = [
     'id', 'proyecto_id', 'grupo_id', 'item', 'descripcion', 'elemento', 'concreto_id', 'resistencia_id',
     'resistencia_fc',
-    'metrado_m3', 'factor_desperdicio', 'precio_unitario',
+    'metrado_m3', 'factor_desperdicio', 'precio_unitario', 'tiene_sectores',
 ];
+
+/** Un sector de vaciado (CU05) que reparte parte del metrado de la partida. */
+function sectorDePartida(Partida $partida): Sector
+{
+    $nivel = $partida->proyecto->niveles()->create(['nombre' => 'Piso 1', 'orden' => 1]);
+
+    return Sector::create([
+        'nivel_id' => $nivel->id,
+        'presupuesto_id' => $partida->id,
+        'nombre' => 'Sector A',
+        'volumen_presup_m3' => 50,
+    ]);
+}
 
 describe('listar', function () {
     it('devuelve solo las partidas del proyecto, con números y no texto', function () {
@@ -173,6 +187,72 @@ describe('editar', function () {
             ->assertForbidden();
 
         expect((float) $partida->fresh()->metrado_m3)->toBe(320.0);
+    });
+});
+
+describe('eliminar', function () {
+    it('elimina una partida sin sectores, y con ella su concreto si ya nadie lo usa', function () {
+        $p = obra();
+        $partida = partida($p, datosPartida());
+
+        $this->actingAs(asignadoA($p))->deleteJson("/api/v1/partidas/{$partida->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Partida eliminada correctamente');
+
+        expect(Partida::count())->toBe(0);
+        expect(Concreto::count())->toBe(0);
+    });
+
+    it('conserva el concreto y su precio si otra partida lo usa', function () {
+        $p = obra();
+        $zapata = partida($p, datosPartida(['precio_unitario' => 250]));
+        $viga = partida($p, datosPartida(['elemento' => 'Viga', 'precio_unitario' => 250]));
+
+        $this->actingAs(asignadoA($p))->deleteJson("/api/v1/partidas/{$viga->id}")->assertOk();
+
+        expect(Partida::sole()->id)->toBe($zapata->id);
+        expect((float) Concreto::sole()->precio_unitario)->toBe(250.0);
+    });
+
+    it('no elimina una partida con sectores', function () {
+        $p = obra();
+        $partida = partida($p, datosPartida());
+        sectorDePartida($partida);
+
+        $this->actingAs(asignadoA($p))->deleteJson("/api/v1/partidas/{$partida->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['partida' => 'La partida tiene sectores; elimínelos para eliminarla']);
+
+        expect(Partida::count())->toBe(1);
+        expect(Concreto::count())->toBe(1);
+    });
+
+    it('la lista dice qué partidas tienen sectores', function () {
+        $p = obra();
+        $conSectores = partida($p, datosPartida());
+        partida($p, datosPartida(['elemento' => 'Viga']));
+        sectorDePartida($conSectores);
+
+        $this->actingAs(asignadoA($p))->getJson("/api/v1/proyectos/{$p->id}/partidas")
+            ->assertJsonPath('0.tiene_sectores', true)
+            ->assertJsonPath('1.tiene_sectores', false);
+    });
+
+    it('solo Oficina técnica asignada elimina; a un proyecto ajeno responde 403', function () {
+        $p = obra();
+        $partida = partida($p, datosPartida());
+
+        $this->actingAs(conRol(Rol::OficinaTecnica))->deleteJson("/api/v1/partidas/{$partida->id}")
+            ->assertForbidden()
+            ->assertJsonPath('code', 'sin_permiso');
+        foreach ([Rol::IngenieroProduccion, Rol::Gerencia] as $rol) {
+            $this->actingAs(asignadoA($p, $rol))->deleteJson("/api/v1/partidas/{$partida->id}")->assertForbidden();
+        }
+        $this->actingAs(User::factory()->rol(Rol::Administrador)->create())
+            ->deleteJson("/api/v1/partidas/{$partida->id}")
+            ->assertForbidden();
+
+        expect(Partida::count())->toBe(1);
     });
 });
 

@@ -26,4 +26,6 @@ export interface PartidaFila extends PartidaDatos {
   concreto_id: number
   /** El nombre de la resistencia, para mostrarlo: «f'c 280 kg/cm²». */
   resistencia_fc: string
+  /** Si ya se reparte en sectores (CU05): entonces no se puede eliminar. */
+  tiene_sectores: boolean
 }

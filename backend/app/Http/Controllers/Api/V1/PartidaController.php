@@ -10,6 +10,7 @@ use App\Models\Concreto;
 use App\Models\Partida;
 use App\Models\Proyecto;
 use App\Support\Volumen;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +28,7 @@ class PartidaController extends Controller
     {
         $this->autorizarProyecto($request, $proyecto);
 
-        return PartidaResource::collection($proyecto->partidas()->with('concreto.resistencia')->orderBy('id')->get());
+        return PartidaResource::collection($proyecto->partidas()->with('concreto.resistencia')->withExists('sectores')->orderBy('id')->get());
     }
 
     public function store(PartidaRequest $request, Proyecto $proyecto): JsonResponse
@@ -41,7 +42,7 @@ class PartidaController extends Controller
             return $proyecto->partidas()->create([...$request->datos(), 'concreto_id' => $concreto->id]);
         });
 
-        return PartidaResource::make($partida->load('concreto.resistencia'))->response()->setStatusCode(201);
+        return PartidaResource::make($partida->load('concreto.resistencia')->loadExists('sectores'))->response()->setStatusCode(201);
     }
 
     public function update(PartidaRequest $request, Partida $partida): PartidaResource
@@ -65,7 +66,40 @@ class PartidaController extends Controller
             $partida->update([...$request->datos(), 'concreto_id' => $concreto->id]);
         });
 
-        return PartidaResource::make($partida->load('concreto.resistencia'));
+        return PartidaResource::make($partida->load('concreto.resistencia')->loadExists('sectores'));
+    }
+
+    /**
+     * Para corregir una partida duplicada o registrada en el proyecto equivocado: solo si no tiene
+     * sectores (CU05), porque de ellos salen sus guías, su desperdicio y su costo real. Si era la
+     * última partida de su concreto, el concreto se va con ella.
+     */
+    public function destroy(Request $request, Partida $partida): JsonResponse
+    {
+        $this->autorizarProyecto($request, $partida->proyecto);
+
+        try {
+            DB::transaction(function () use ($partida) {
+                // Registrar un sector bloquea la misma partida: no se cruza con uno que se esté creando.
+                $partida = Partida::whereKey($partida->id)->lockForUpdate()->firstOrFail();
+                if ($partida->sectores()->exists()) {
+                    throw ValidationException::withMessages(['partida' => __('sicco.partidas.con_sectores')]);
+                }
+
+                $concretoId = $partida->concreto_id;
+                $partida->delete();
+
+                Concreto::whereKey($concretoId)->whereDoesntHave('partidas')->delete();
+            });
+        } catch (QueryException $e) {
+            // Un sector creado a la vez: la clave foránea no deja eliminar la partida.
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+            throw ValidationException::withMessages(['partida' => __('sicco.partidas.con_sectores')]);
+        }
+
+        return response()->json(['message' => __('sicco.partidas.eliminada')]);
     }
 
     /**

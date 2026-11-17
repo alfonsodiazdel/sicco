@@ -54,4 +54,31 @@ describe('partidas en memoria', () => {
       metrado_m3: 0.01,
     })
   })
+
+  it('la lista dice qué partidas ya se reparten en sectores', async () => {
+    const { partidas } = crearServicios()
+    const nueva = await partidas.crear(1, zapata(10))
+
+    expect(nueva.tiene_sectores).toBe(false)
+    const lista = await partidas.listar(1)
+    expect(lista.map((p) => [p.id, p.tiene_sectores])).toEqual([
+      [1, true],
+      [2, true],
+      [3, true],
+      [nueva.id, false],
+    ])
+  })
+
+  it('elimina una partida sin sectores y rechaza una con sectores', async () => {
+    const { partidas } = crearServicios()
+    const nueva = await partidas.crear(1, zapata(10))
+
+    await partidas.eliminar(nueva.id)
+    const error = await partidas.eliminar(1).catch((e: unknown) => e)
+
+    expect(erroresDeValidacion(error)).toEqual({
+      partida: 'La partida tiene sectores; elimínelos para eliminarla',
+    })
+    expect((await partidas.listar(1)).map((p) => p.id)).toEqual([1, 2, 3])
+  })
 })

@@ -25,6 +25,8 @@ class PartidaResource extends JsonResource
             'metrado_m3' => (float) $this->metrado_m3,
             'factor_desperdicio' => (float) $this->factor_desperdicio,
             'precio_unitario' => (float) $this->concreto->precio_unitario,
+            // Con sectores (CU05) no se puede eliminar.
+            'tiene_sectores' => (bool) ($this->sectores_exists ?? $this->sectores()->exists()),
         ];
     }
 }

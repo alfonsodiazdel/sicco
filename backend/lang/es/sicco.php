@@ -45,6 +45,8 @@ return [
         'confirmar_desperdicio' => 'El factor de desperdicio es :valor %, mayor a 15 %. ¿Confirma el valor?',
         'confirmar_precio' => '{1} El precio de :resistencia (S/ :anterior) lo usa otra partida del proyecto; al guardar se actualizará también en ella.'
             .'|[2,*] El precio de :resistencia (S/ :anterior) lo usan otras :cantidad partidas del proyecto; al guardar se actualizará en todas.',
+        'con_sectores' => 'La partida tiene sectores; elimínelos para eliminarla',
+        'eliminada' => 'Partida eliminada correctamente',
     ],
     'niveles' => [
         'duplicado' => 'El nivel ya existe en el proyecto',

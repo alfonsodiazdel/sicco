@@ -374,6 +374,7 @@ describe('PartidasView', () => {
         metrado_m3: 12.5,
         factor_desperdicio: 5,
         precio_unitario: 33.33,
+        tiene_sectores: false,
       },
       expect.objectContaining({ id: 6, proyecto_id: 3, factor_desperdicio: 0 }),
     ])
@@ -547,6 +548,71 @@ describe('PartidasView', () => {
     expect(filas(vista)[0]?.slice(2)).toEqual(['320.00', '1.050', '336.00', '385.00', '129,360.00'])
   })
 
+  describe('eliminar', () => {
+    const placa = "CONCRETO PREMEZ. F'C=350 kg/cm2 - PLACAS"
+    const eliminarPlaca = `button[aria-label="Eliminar partida ${placa}"]`
+
+    it('ofrece eliminar solo las partidas sin sectores', async () => {
+      const vista = await montar()
+
+      // Las tres partidas del primer proyecto ya se reparten en sectores.
+      expect(vista.find('button[aria-label^="Eliminar partida "]').exists()).toBe(false)
+      await elegirProyecto(2)
+      expect(vista.find(eliminarPlaca).exists()).toBe(true)
+    })
+
+    it('elimina la partida después de confirmar y actualiza el total', async () => {
+      const vista = await montar()
+      await elegirProyecto(2)
+      const eliminar = vi.spyOn(servicios.partidas!, 'eliminar')
+
+      await vista.get(eliminarPlaca).trigger('click')
+      expect(confirm.require).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: 'Eliminar partida',
+          message: `¿Eliminar la partida ${placa}? Saldrá del presupuesto y del EAT.`,
+        }),
+      )
+      expect(eliminar).not.toHaveBeenCalled()
+      await confirm.require.mock.calls[0]![0].accept()
+      await asentar()
+
+      expect(eliminar).toHaveBeenCalledWith(4)
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: 'Partida eliminada correctamente' }),
+      )
+      expect(vista.text()).toContain('Este proyecto aún no tiene partidas.')
+      expect(totalPresupuestado(vista)).toBe('S/ 0.00')
+    })
+
+    it('si el backend la rechaza lo avisa y recarga la lista sin la papelera', async () => {
+      const vista = await montar()
+      await elegirProyecto(2)
+      const { errorDeValidacion } = await import('@/services/errores')
+      vi.spyOn(servicios.partidas!, 'eliminar').mockRejectedValue(
+        errorDeValidacion({ partida: ['La partida tiene sectores; elimínelos para eliminarla'] }),
+      )
+      // Otro usuario le acaba de crear un sector.
+      const listar = servicios.partidas!.listar
+      vi.spyOn(servicios.partidas!, 'listar').mockImplementation(async (id) =>
+        (await listar(id)).map((p) => ({ ...p, tiene_sectores: true })),
+      )
+
+      await vista.get(eliminarPlaca).trigger('click')
+      await confirm.require.mock.calls[0]![0].accept()
+      await asentar()
+
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'error',
+          summary: 'La partida tiene sectores; elimínelos para eliminarla',
+        }),
+      )
+      expect(filas(vista)).toHaveLength(1)
+      expect(vista.find(eliminarPlaca).exists()).toBe(false)
+    })
+  })
+
   it('ofrece solo los proyectos asignados al usuario', async () => {
     servicios.asignados = [2]
     const vista = await montar()
@@ -561,6 +627,8 @@ describe('PartidasView', () => {
     expect(filas(vista).length).toBeGreaterThan(0)
     expect(vista.find('button[aria-label="Agregar partida"]').exists()).toBe(false)
     expect(vista.find('button[aria-label^="Editar partida "]').exists()).toBe(false)
+    await elegirProyecto(2)
+    expect(vista.find('button[aria-label^="Eliminar partida "]').exists()).toBe(false)
   })
 
   describe('elemento según el grupo', () => {

@@ -86,6 +86,7 @@ Route::prefix('v1')->group(function () {
             Route::middleware('rol:oficina_tecnica')->group(function () {
                 Route::post('proyectos/{proyecto}/partidas', [PartidaController::class, 'store'])->whereNumber('proyecto');
                 Route::put('partidas/{partida}', [PartidaController::class, 'update'])->whereNumber('partida');
+                Route::delete('partidas/{partida}', [PartidaController::class, 'destroy'])->whereNumber('partida');
             });
 
             // CU05 Niveles y sectores de vaciado: los gestiona Producción y los consultan también

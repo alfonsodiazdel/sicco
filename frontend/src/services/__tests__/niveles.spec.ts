@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { erroresDeValidacion } from '@/api/http'
 import { crearPartidasEnMemoria } from '@/services/partidas'
-import { crearNivelesEnMemoria } from '@/services/niveles'
+import { crearNivelesEnMemoria, type NivelesServicio } from '@/services/niveles'
+
+// Enlazados como en la API: las partidas leen los sectores para saber si tienen alguno.
+function enMemoria() {
+  const enlace: { niveles?: NivelesServicio } = {}
+  return (enlace.niveles = crearNivelesEnMemoria(
+    crearPartidasEnMemoria(async () => enlace.niveles!),
+  ))
+}
 
 describe('niveles en memoria', () => {
   it('rechaza como la API un sector que excede lo presupuestado para el elemento', async () => {
-    const niveles = crearNivelesEnMemoria(crearPartidasEnMemoria())
+    const niveles = enMemoria()
     // Columna del proyecto 1: 180.5 − 60 − 58.5 = 62 disponibles.
     const intento = niveles.crearSector(1, {
       nombre: 'Columnas eje 1',
@@ -21,7 +29,7 @@ describe('niveles en memoria', () => {
   })
 
   it('un sector nuevo nace sin volumen vaciado', async () => {
-    const niveles = crearNivelesEnMemoria(crearPartidasEnMemoria())
+    const niveles = enMemoria()
     const sector = await niveles.crearSector(1, {
       nombre: 'Columnas eje 1',
       presupuesto_id: 2,
@@ -40,7 +48,7 @@ describe('niveles en memoria', () => {
   })
 
   it('elimina como la API: nivel sin sectores, sector abierto y sin vaciado', async () => {
-    const niveles = crearNivelesEnMemoria(crearPartidasEnMemoria())
+    const niveles = enMemoria()
     const rechazo = async (p: Promise<unknown>) => erroresDeValidacion(await p.catch((e) => e))
 
     expect(await rechazo(niveles.eliminarNivel(1))).toEqual({

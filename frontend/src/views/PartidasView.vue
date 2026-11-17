@@ -33,7 +33,7 @@ const confirm = useConfirm()
 const auth = useAuthStore()
 const proyectoActual = useProyectoActualStore()
 
-// El administrador entra en modo consulta: registrar y editar quedan para Oficina técnica.
+// El administrador entra en modo consulta: registrar, editar y eliminar quedan para Oficina técnica.
 const puedeGestionar = computed(() => auth.tieneRol('oficina_tecnica'))
 
 // El proyecto se elige en el encabezado (SelectorProyecto).
@@ -226,6 +226,27 @@ const guardar = handleSubmit(async (valores) => {
   }
 })
 
+// Para corregir una partida duplicada o del proyecto equivocado. Solo se ofrece sin sectores (CU05);
+// el backend repite la regla.
+function eliminar(partida: PartidaFila) {
+  confirm.require({
+    header: 'Eliminar partida',
+    message: `¿Eliminar la partida ${partida.descripcion}? Saldrá del presupuesto y del EAT.`,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Eliminar', severity: 'danger' },
+    accept: async () => {
+      try {
+        await partidasServicio.eliminar(partida.id)
+        toast.add({ severity: 'success', summary: 'Partida eliminada correctamente', life: 4000 })
+      } catch (error) {
+        avisarError(error)
+      }
+      await cargarPartidas()
+    },
+  })
+}
+
 const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, min: 0, fluid: true }
 </script>
 
@@ -261,6 +282,17 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
           :aria-label="`Editar partida ${fila.descripcion}`"
           :title="`Editar partida ${fila.descripcion}`"
           @click="abrir(fila)"
+        />
+        <Button
+          v-if="!fila.tiene_sectores"
+          icon="pi pi-trash"
+          text
+          rounded
+          severity="danger"
+          class="max-sm:w-8!"
+          :aria-label="`Eliminar partida ${fila.descripcion}`"
+          :title="`Eliminar partida ${fila.descripcion}`"
+          @click="eliminar(fila)"
         />
       </template>
     </TablaPresupuesto>

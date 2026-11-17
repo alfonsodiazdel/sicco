@@ -25,9 +25,14 @@ export interface PartidasServicio {
     confirmado?: boolean,
     confirmadoPrecio?: boolean,
   ): Promise<PartidaFila>
+  /** Solo sin sectores (CU05): si los tiene, la API responde 422. */
+  eliminar(id: number): Promise<void>
 }
 
-const partidasEjemplo: PartidaFila[] = [
+/** Como la guarda el servicio en memoria: si tiene sectores se calcula al leerla. */
+type PartidaGuardada = Omit<PartidaFila, 'tiene_sectores'>
+
+const partidasEjemplo: PartidaGuardada[] = [
   {
     id: 1,
     proyecto_id: 1,
@@ -97,6 +102,15 @@ export function crearPartidasEnMemoria(
   let siguienteId = partidas.length + 1
   let siguienteConcreto = Math.max(...partidas.map((p) => p.concreto_id)) + 1
 
+  const sectoresDe = async (proyectoId: number) => (await niveles()).listarSectores(proyectoId)
+  const conSectores = (
+    p: PartidaGuardada,
+    sectores: { presupuesto_id: number }[],
+  ): PartidaFila => ({
+    ...p,
+    tiene_sectores: sectores.some((s) => s.presupuesto_id === p.id),
+  })
+
   // Como la API: el concreto del proyecto con esa resistencia lleva el precio, y lo comparten
   // todas sus partidas.
   const fijarPrecio = (proyectoId: number, datos: PartidaDatos) => {
@@ -109,10 +123,13 @@ export function crearPartidasEnMemoria(
 
   return {
     async listar(proyectoId) {
-      return partidas.filter((p) => p.proyecto_id === proyectoId).map((p) => ({ ...p }))
+      const sectores = await sectoresDe(proyectoId)
+      return partidas
+        .filter((p) => p.proyecto_id === proyectoId)
+        .map((p) => conSectores(p, sectores))
     },
     async crear(proyectoId, datos) {
-      const partida: PartidaFila = {
+      const partida: PartidaGuardada = {
         id: siguienteId++,
         proyecto_id: proyectoId,
         concreto_id: fijarPrecio(proyectoId, datos),
@@ -120,13 +137,13 @@ export function crearPartidasEnMemoria(
         resistencia_fc: nombreResistencia(datos.resistencia_id),
       }
       partidas.push({ ...partida })
-      return partida
+      return { ...partida, tiene_sectores: false }
     },
     async actualizar(id, datos) {
       const partida = partidas.find((p) => p.id === id)
       if (!partida) throw new Error('Partida no encontrada.')
       // El metrado no puede quedar debajo de lo ya repartido: el disponible de CU05 quedaría negativo.
-      const sectores = await (await niveles()).listarSectores(partida.proyecto_id)
+      const sectores = await sectoresDe(partida.proyecto_id)
       const repartido = -volumenDisponible({ id, metrado_m3: 0 }, sectores)
       if (datos.metrado_m3 < repartido) {
         throw errorDeValidacion({
@@ -135,12 +152,22 @@ export function crearPartidasEnMemoria(
           ],
         })
       }
-      return {
-        ...Object.assign(partida, datos, {
-          concreto_id: fijarPrecio(partida.proyecto_id, datos),
-          resistencia_fc: nombreResistencia(datos.resistencia_id),
-        }),
+      const guardada = Object.assign(partida, datos, {
+        concreto_id: fijarPrecio(partida.proyecto_id, datos),
+        resistencia_fc: nombreResistencia(datos.resistencia_id),
+      })
+      return conSectores(guardada, sectores)
+    },
+    async eliminar(id) {
+      const i = partidas.findIndex((p) => p.id === id)
+      if (i < 0) throw new Error('Partida no encontrada.')
+      const sectores = await sectoresDe(partidas[i]!.proyecto_id)
+      if (sectores.some((s) => s.presupuesto_id === id)) {
+        throw errorDeValidacion({
+          partida: ['La partida tiene sectores; elimínelos para eliminarla'],
+        })
       }
+      partidas.splice(i, 1)
     },
   }
 }
@@ -157,6 +184,9 @@ export function crearPartidasApi(): PartidasServicio {
     async actualizar(id, datos, confirmado = false, confirmadoPrecio = false) {
       const cuerpo = { ...datos, confirmado, confirmado_precio: confirmadoPrecio }
       return (await http.put<PartidaFila>(`/partidas/${id}`, cuerpo)).data
+    },
+    async eliminar(id) {
+      await http.delete(`/partidas/${id}`)
     },
   }
 }
