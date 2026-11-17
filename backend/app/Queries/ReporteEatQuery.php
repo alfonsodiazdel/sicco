@@ -23,6 +23,9 @@ use Illuminate\Support\Facades\DB;
  * proyectan. Las guías sin sector se muestran con un aviso y no suman: ese concreto acabará en un
  * sector abierto, ya proyectado, o en uno culminado, como costo real.
  *
+ * Cada partida trae además su PU proyectado (el precio vigente de lo que falta), si salió de una
+ * factura o del presupuesto, y el PU del presupuesto, para ver si la variación viene del precio.
+ *
  * Los montos de cada fila se calculan en SQL con DECIMAL exacto y se redondean con ROUND (la mitad
  * hacia arriba); subtotales y total suman esas filas en céntimos enteros, para que la tabla cuadre al
  * céntimo. Los fragmentos SQL van como [sql, bindings] para encadenarlos sin interpolar valores.
@@ -83,6 +86,7 @@ final readonly class ReporteEatQuery
             .' + COALESCE(c.exceso_abiertos, 0)';
         [$precio, $bPrecio] = $this->precioPartida('cp');
         [$vigente, $bVigente] = $this->precioVigente('cp');
+        [$facturado, $bFacturado] = $this->ultimoPrecioFacturado('cp.resistencia_id');
 
         return DB::table('partidas as p')
             ->join('grupos_partida as gp', 'gp.id', '=', 'p.grupo_id')
@@ -98,6 +102,10 @@ final readonly class ReporteEatQuery
             ->selectRaw('COALESCE(c.real_m3, 0) AS real_m3, ROUND(COALESCE(c.real_soles, 0), 2) AS real_soles')
             ->selectRaw("{$proyectado} AS proyectado_m3")
             ->selectRaw("ROUND(({$proyectado}) * {$vigente}, 2) AS proyectado_soles", $bVigente)
+            // El precio de lo proyectado, de dónde salió y el del presupuesto, para compararlos.
+            ->selectRaw("{$vigente} AS pu_proyectado", $bVigente)
+            ->selectRaw("{$facturado} IS NOT NULL AS pu_facturado", $bFacturado)
+            ->selectRaw("{$precio} AS pu_presupuesto", $bPrecio)
             ->orderBy('gp.orden')->orderBy('gp.id')->orderBy('p.item')->orderBy('p.id')
             ->get();
     }
@@ -281,6 +289,10 @@ final readonly class ReporteEatQuery
         return [
             'partida_id' => (int) $p->id, 'item' => $p->item, 'etiqueta' => "{$p->elemento} · {$p->resistencia}",
             ...$montos, 'sobrecosto' => $montos['variacion_soles'] < 0,
+            // Fuera de MONTOS: un precio no se suma, así que no va en subtotales ni en el total.
+            'pu_proyectado' => (float) $p->pu_proyectado,
+            'pu_origen' => $p->pu_facturado ? 'facturado' : 'presupuesto',
+            'pu_presupuesto' => (float) $p->pu_presupuesto,
         ];
     }
 

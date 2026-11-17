@@ -17,13 +17,16 @@ final class ReporteEatExport
 {
     public const COLUMNAS = [
         'Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo S/',
-        'Real culminado S/', 'Proyectado m³', 'Proyectado S/', 'EAT S/', 'Variación S/',
+        'Real culminado S/', 'Proyectado m³', 'PU proyectado S/', 'Proyectado S/', 'EAT S/', 'Variación S/',
     ];
 
-    /** El monto de cada columna, en el mismo orden. La última (variación) va en rojo si hay sobrecosto. */
+    /**
+     * El monto de cada columna, en el mismo orden. La última (variación) va en rojo si hay sobrecosto.
+     * El PU proyectado solo lo tienen las partidas: en subtotales, total y filas aparte sale «—».
+     */
     private const MONTOS = [
         'presupuesto_m3', 'presupuesto_soles', 'consumido_m3', 'consumido_soles', 'saldo_soles',
-        'real_soles', 'proyectado_m3', 'proyectado_soles', 'eat_soles', 'variacion_soles',
+        'real_soles', 'proyectado_m3', 'pu_proyectado', 'proyectado_soles', 'eat_soles', 'variacion_soles',
     ];
 
     /**
@@ -38,7 +41,7 @@ final class ReporteEatExport
         $fila = fn (string $tipo, string $elemento, array $montos = []) => [
             'tipo' => $tipo,
             'elemento' => $elemento,
-            'montos' => $montos === [] ? [] : array_map(fn (string $k) => $montos[$k], self::MONTOS),
+            'montos' => $montos === [] ? [] : array_map(fn (string $k) => $montos[$k] ?? null, self::MONTOS),
             'sobrecosto' => $montos['sobrecosto'] ?? false,
         ];
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Tooltip from 'primevue/tooltip'
 import { decimales, soles } from '@/services/presupuesto'
-import type { FilaAparteEat, MontosEat, ReporteEat } from '@/types/reportes'
+import type { FilaAparteEat, FilaEat, MontosEat, ReporteEat } from '@/types/reportes'
 
 defineProps<{ reporte: ReporteEat }>()
 
@@ -9,7 +9,8 @@ defineProps<{ reporte: ReporteEat }>()
 // y al llegar con el teclado. Igual que en TablaPresupuesto.
 const vTooltip = Tooltip
 
-type Campo = Exclude<keyof MontosEat, 'sobrecosto'>
+// El PU proyectado solo lo traen las partidas; en subtotales, total y filas aparte sale «—».
+type Campo = Exclude<keyof MontosEat, 'sobrecosto'> | 'pu_proyectado'
 
 const ayudaElemento = "Partida del presupuesto: elemento y f'c. Debajo, su ítem."
 
@@ -61,11 +62,17 @@ const columnas: { campo: Campo; encabezado: string; enSoles: boolean; ayuda: str
     ayuda: 'Lo que falta vaciar, con desperdicio: sectores abiertos y metrado aún sin sector.',
   },
   {
+    campo: 'pu_proyectado',
+    encabezado: 'PU proyectado S/',
+    enSoles: true,
+    ayuda:
+      "Precio vigente por m³ de lo que falta: el último facturado de su f'c hasta el corte o, si no hay, el de la partida. ▲: sobre el precio del presupuesto.",
+  },
+  {
     campo: 'proyectado_soles',
     encabezado: 'Proyectado S/',
     enSoles: true,
-    ayuda:
-      "Proyectado m³ al precio vigente: el último facturado de su f'c o, si no hay, el de la partida.",
+    ayuda: 'Proyectado m³ × PU proyectado: lo que falta al precio vigente.',
   },
   {
     campo: 'eat_soles',
@@ -81,11 +88,25 @@ const columnas: { campo: Campo; encabezado: string; enSoles: boolean; ayuda: str
   },
 ]
 
-// Los cargos no tienen volumen y las guías sin sector no tienen EAT: esos montos llegan nulos.
+// Los cargos no tienen volumen y las guías sin sector no tienen EAT: esos montos llegan nulos. El PU
+// proyectado no llega fuera de las partidas.
 function monto(fila: MontosEat | FilaAparteEat, columna: (typeof columnas)[number]) {
-  const valor = fila[columna.campo]
-  if (valor === null) return '—'
+  const valor = (fila as Partial<Record<Campo, number | null>>)[columna.campo]
+  if (valor === null || valor === undefined) return '—'
   return columna.enSoles ? soles(valor) : decimales(valor)
+}
+
+// El PU proyectado de una partida: de dónde salió y si sube sobre el del presupuesto.
+const subePu = (fila: FilaEat) => fila.pu_proyectado > fila.pu_presupuesto
+function ayudaPu(fila: FilaEat) {
+  const origen =
+    fila.pu_origen === 'facturado'
+      ? "Último precio facturado de su f'c hasta el corte."
+      : "Precio de la partida: aún no hay facturas de su f'c hasta el corte."
+  const comparacion = subePu(fila)
+    ? `Sobre el del presupuesto, ${soles(fila.pu_presupuesto)}.`
+    : `Presupuesto: ${soles(fila.pu_presupuesto)}.`
+  return `${origen} ${comparacion}`
 }
 
 const rojo = (fila: { sobrecosto: boolean }) => ({ 'fila-sobrecosto': fila.sobrecosto })
@@ -148,7 +169,23 @@ const celda = 'px-3 py-2 text-right font-mono whitespace-nowrap tabular-nums'
             >
           </td>
           <td v-for="columna in columnas" :key="columna.campo" :class="celda">
-            {{ monto(fila, columna) }}
+            <span
+              v-if="columna.campo === 'pu_proyectado'"
+              v-tooltip.top="ayudaPu(fila)"
+              :aria-label="`${monto(fila, columna)}. ${ayudaPu(fila)}`"
+              tabindex="0"
+              class="cursor-help"
+              data-pu
+              >{{ monto(fila, columna)
+              }}<span
+                v-if="subePu(fila)"
+                class="ml-1 text-amber-600"
+                aria-hidden="true"
+                data-pu-sube
+                >▲</span
+              ></span
+            >
+            <template v-else>{{ monto(fila, columna) }}</template>
           </td>
         </tr>
 

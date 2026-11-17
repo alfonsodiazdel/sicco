@@ -55,11 +55,19 @@ const montos = (m: Doce, sobrecosto: boolean): MontosEat => {
   }
 }
 
-const fila = (partida_id: number, item: string, etiqueta: string, m: MontosEat): FilaEat => ({
+// El PU proyectado, de dónde salió y el del presupuesto: solo en las partidas.
+const fila = (
+  partida_id: number,
+  item: string,
+  etiqueta: string,
+  m: MontosEat,
+  pu: Pick<FilaEat, 'pu_proyectado' | 'pu_origen' | 'pu_presupuesto'>,
+): FilaEat => ({
   partida_id,
   item,
   etiqueta,
   ...m,
+  ...pu,
 })
 
 // P1: S1 abierto. Presup. 11 × 320 = 3,520; proyecta 11 × 310 = 3,410; variación 110.
@@ -68,13 +76,16 @@ const p1 = fila(
   '01.01',
   "Columnas · f'c 210",
   montos([11, 3520, 7, 2170, 1350, 0, 0, 11, 3410, 11, 3410, 110], false),
+  { pu_proyectado: 310, pu_origen: 'facturado', pu_presupuesto: 320 },
 )
-// P2: S2 culminado con 9 × 360 = 3,240 real; variación 3,080 − 3,240 = −160.
+// P2: S2 culminado con 9 × 360 = 3,240 real; variación 3,080 − 3,240 = −160. El último facturado de
+// 280 (360) pasa al del presupuesto (350).
 const p2 = fila(
   11,
   '01.02',
   "Vigas · f'c 280",
   montos([8.8, 3080, 9, 3240, -160, 9, 3240, 0, 0, 9, 3240, -160], true),
+  { pu_proyectado: 360, pu_origen: 'facturado', pu_presupuesto: 350 },
 )
 // P3: S3 abierto. Proyecta 5.5 × 310 = 1,705 > 1,430.
 const p3 = fila(
@@ -82,6 +93,7 @@ const p3 = fila(
   '02.01',
   "Losa aligerada · f'c 210",
   montos([5.5, 1430, 3, 930, 500, 0, 0, 5.5, 1705, 5.5, 1705, -275], true),
+  { pu_proyectado: 310, pu_origen: 'facturado', pu_presupuesto: 260 },
 )
 
 const aviso = 'Asigne un sector a estas guías: mientras no lo tengan, no suman al total.'
@@ -148,7 +160,7 @@ const reporte: ReporteEat = {
 const montar = (r: ReporteEat = reporte) =>
   mount(TablaReporteEat, { props: { reporte: r }, global: { plugins: [PrimeVue] } })
 
-// Las 10 celdas de montos, sin la del elemento.
+// Las 11 celdas de montos, sin la del elemento.
 const montosDe = (tr: Fila) =>
   tr
     .findAll('td')
@@ -156,7 +168,7 @@ const montosDe = (tr: Fila) =>
     .map((td) => td.text())
 
 describe('TablaReporteEat', () => {
-  it('muestra las 11 columnas en el orden del reporte, iguales al Excel y al PDF', () => {
+  it('muestra las 12 columnas en el orden del reporte, iguales al Excel y al PDF', () => {
     const encabezados = montar()
       .findAll('thead th')
       .map((th) => th.text())
@@ -170,6 +182,7 @@ describe('TablaReporteEat', () => {
       'Saldo S/',
       'Real culminado S/',
       'Proyectado m³',
+      'PU proyectado S/',
       'Proyectado S/',
       'EAT S/',
       'Variación S/',
@@ -179,7 +192,7 @@ describe('TablaReporteEat', () => {
   it('cada encabezado tiene su ayuda, accesible también con el teclado', () => {
     const ayudas = montar().findAll('thead [data-ayuda]')
 
-    expect(ayudas).toHaveLength(11)
+    expect(ayudas).toHaveLength(12)
     for (const ayuda of ayudas) {
       expect(ayuda.element.tagName).toBe('ABBR')
       expect(ayuda.attributes('tabindex')).toBe('0')
@@ -216,6 +229,7 @@ describe('TablaReporteEat', () => {
       'S/ 1,350.00',
       'S/ 0.00',
       '11.00',
+      'S/ 310.00',
       'S/ 3,410.00',
       'S/ 3,410.00',
       'S/ 110.00',
@@ -228,6 +242,7 @@ describe('TablaReporteEat', () => {
       'S/ -160.00',
       'S/ 3,240.00',
       '0.00',
+      'S/ 360.00▲',
       'S/ 0.00',
       'S/ 3,240.00',
       'S/ -160.00',
@@ -244,6 +259,7 @@ describe('TablaReporteEat', () => {
       'S/ 1,190.00',
       'S/ 3,240.00',
       '11.00',
+      '—',
       'S/ 3,410.00',
       'S/ 6,650.00',
       'S/ -50.00',
@@ -269,6 +285,7 @@ describe('TablaReporteEat', () => {
       '—',
       '—',
       '—',
+      '—',
     ])
     // El cargo no tiene volumen ni proyección: su EAT es lo facturado.
     expect(montosDe(aparte[1]!)).toStrictEqual([
@@ -278,6 +295,7 @@ describe('TablaReporteEat', () => {
       'S/ 150.00',
       'S/ -150.00',
       'S/ 150.00',
+      '—',
       '—',
       'S/ 0.00',
       'S/ 150.00',
@@ -292,7 +310,7 @@ describe('TablaReporteEat', () => {
     expect(fila.get('[data-aviso] i').classes()).toEqual(
       expect.arrayContaining(['pi', 'pi-exclamation-triangle']),
     )
-    expect(fila.findAll('td')).toHaveLength(11)
+    expect(fila.findAll('td')).toHaveLength(12)
     expect(montosDe(fila).slice(2, 4)).toStrictEqual(['1.00', 'S/ 310.00'])
   })
 
@@ -315,10 +333,54 @@ describe('TablaReporteEat', () => {
       'S/ 1,540.00',
       'S/ 3,390.00',
       '16.50',
+      '—',
       'S/ 5,115.00',
       'S/ 8,505.00',
       'S/ -475.00',
     ])
+  })
+
+  it('muestra el PU proyectado de cada partida con su origen, y ▲ cuando sube sobre el del presupuesto', () => {
+    const pus = montar().findAll('[data-fila] [data-pu]')
+
+    expect(pus.map((pu) => pu.text())).toStrictEqual(['S/ 310.00', 'S/ 360.00▲', 'S/ 310.00▲'])
+    expect(pus.map((pu) => pu.find('[data-pu-sube]').exists())).toStrictEqual([false, true, true])
+    expect(pus[0]!.attributes('tabindex')).toBe('0')
+    expect(pus[0]!.attributes('aria-label')).toBe(
+      "S/ 310.00. Último precio facturado de su f'c hasta el corte. Presupuesto: S/ 320.00.",
+    )
+    expect(pus[1]!.attributes('aria-label')).toBe(
+      "S/ 360.00. Último precio facturado de su f'c hasta el corte. Sobre el del presupuesto, S/ 350.00.",
+    )
+  })
+
+  it("sin facturas de su f'c el PU proyectado es el de la partida, y lo dice", () => {
+    const delPresupuesto: FilaEat = {
+      ...p1,
+      pu_proyectado: 320,
+      pu_origen: 'presupuesto',
+      pu_presupuesto: 320,
+    }
+    const tabla = montar({
+      ...reporte,
+      grupos: [{ ...reporte.grupos[0]!, filas: [delPresupuesto] }],
+    })
+    const pu = tabla.get('[data-fila] [data-pu]')
+
+    expect(pu.text()).toBe('S/ 320.00')
+    expect(pu.attributes('aria-label')).toBe(
+      "S/ 320.00. Precio de la partida: aún no hay facturas de su f'c hasta el corte. Presupuesto: S/ 320.00.",
+    )
+  })
+
+  it('el PU no se suma: subtotales, total y filas aparte muestran una raya', () => {
+    const tabla = montar()
+    const columnaPu = (tr: Fila) => montosDe(tr)[7]
+
+    expect(tabla.findAll('[data-subtotal]').map(columnaPu)).toStrictEqual(['—', '—'])
+    expect(tabla.findAll('[data-fila-aparte]').map(columnaPu)).toStrictEqual(['—', '—'])
+    expect(columnaPu(tabla.get('tfoot tr'))).toBe('—')
+    expect(tabla.findAll('[data-subtotal] [data-pu], tfoot [data-pu]')).toHaveLength(0)
   })
 
   it('un saldo o una variación en cero negativo se muestran sin signo', () => {
@@ -331,8 +393,8 @@ describe('TablaReporteEat', () => {
     })
 
     expect(montosDe(tabla.get('[data-fila]'))[4]).toBe('S/ 0.00')
-    expect(montosDe(tabla.get('[data-fila]'))[9]).toBe('S/ 0.00')
-    expect(montosDe(tabla.get('tfoot tr'))[9]).toBe('S/ 0.00')
+    expect(montosDe(tabla.get('[data-fila]'))[10]).toBe('S/ 0.00')
+    expect(montosDe(tabla.get('tfoot tr'))[10]).toBe('S/ 0.00')
   })
 
   it('resalta en rojo los elementos, subtotales y total con sobrecosto, nunca las filas aparte', () => {

@@ -173,9 +173,15 @@ function cargoEat(string $concepto, float $importe): array
     ];
 }
 
-function filaEat(int $partidaId, string $item, string $etiqueta, array $montos, bool $sobrecosto): array
+function filaEat(int $partidaId, string $item, string $etiqueta, array $montos, bool $sobrecosto, array $pu): array
 {
-    return ['partida_id' => $partidaId, 'item' => $item, 'etiqueta' => $etiqueta, ...$montos, 'sobrecosto' => $sobrecosto];
+    return ['partida_id' => $partidaId, 'item' => $item, 'etiqueta' => $etiqueta, ...$montos, 'sobrecosto' => $sobrecosto, ...$pu];
+}
+
+/** El PU proyectado de una partida, de dónde salió (facturado o presupuesto) y el PU del presupuesto. */
+function puEat(float $pu, string $origen, float $presupuesto): array
+{
+    return ['pu_proyectado' => $pu, 'pu_origen' => $origen, 'pu_presupuesto' => $presupuesto];
 }
 
 function registrosEat(): array
@@ -203,10 +209,10 @@ describe('cálculo', function () {
                     'filas' => [
                         // Presup. 10 × 1.1 = 11 m³ × 320 = 3520. Consumido 4 × 310 + 3 × 310 = 2170; saldo 1350.
                         // S1 abierto: nada real; proyecta 10 × 1.1 = 11 m³ × 310 = 3410. Variación 3520 − 3410 = 110.
-                        filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 7.0, 2170.0, 1350.0, 0.0, 0.0, 11.0, 3410.0, 11.0, 3410.0, 110.0), false),
+                        filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 7.0, 2170.0, 1350.0, 0.0, 0.0, 11.0, 3410.0, 11.0, 3410.0, 110.0), false, puEat(310.0, 'facturado', 320.0)),
                         // Presup. 8 × 1.1 = 8.8 m³ × 350 = 3080. S2 culminado el 10-26: real 9 × 360 = 3240,
                         // nada por proyectar. Variación 3080 − 3240 = −160.
-                        filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 9.0, 3240.0, 0.0, 0.0, 9.0, 3240.0, -160.0), true),
+                        filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 9.0, 3240.0, 0.0, 0.0, 9.0, 3240.0, -160.0), true, puEat(360.0, 'facturado', 350.0)),
                     ],
                     'subtotal' => [...montosEat(19.8, 6600.0, 16.0, 5410.0, 1190.0, 9.0, 3240.0, 11.0, 3410.0, 20.0, 6650.0, -50.0), 'sobrecosto' => true],
                 ],
@@ -215,7 +221,7 @@ describe('cálculo', function () {
                     'filas' => [
                         // Presup. 5 × 1.1 = 5.5 m³ × 320 = 1760. Consumido 2 × 310 + 1 × 310 = 930 (la guía del
                         // 11-03 queda fuera). S3 abierto: proyecta 5.5 × 310 = 1705. Variación 1760 − 1705 = 55.
-                        filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, 55.0), false),
+                        filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, 55.0), false, puEat(310.0, 'facturado', 320.0)),
                     ],
                     'subtotal' => [...montosEat(5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 0.0, 5.5, 1705.0, 5.5, 1705.0, 55.0), 'sobrecosto' => false],
                 ],
@@ -257,15 +263,15 @@ describe('cálculo', function () {
                 'filas' => [
                     // La guía del 10-05 toma el precio de su factura F1 (10-10): 4 × 310 = 1240. Lo que falta, al
                     // precio de la partida: 11 × 320 = 3520.
-                    filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 4.0, 1240.0, 2280.0, 0.0, 0.0, 11.0, 3520.0, 11.0, 3520.0, 0.0), false),
-                    filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 0.0, 0.0, 3080.0, 0.0, 0.0, 8.8, 3080.0, 8.8, 3080.0, 0.0), false),
+                    filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 4.0, 1240.0, 2280.0, 0.0, 0.0, 11.0, 3520.0, 11.0, 3520.0, 0.0), false, puEat(320.0, 'presupuesto', 320.0)),
+                    filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 0.0, 0.0, 3080.0, 0.0, 0.0, 8.8, 3080.0, 8.8, 3080.0, 0.0), false, puEat(350.0, 'presupuesto', 350.0)),
                 ],
                 'subtotal' => [...montosEat(19.8, 6600.0, 4.0, 1240.0, 5360.0, 0.0, 0.0, 19.8, 6600.0, 19.8, 6600.0, 0.0), 'sobrecosto' => false],
             ],
             [
                 'grupo_id' => $e['losas']->id, 'nombre' => 'Losas',
                 // La guía del 10-06 sin factura: precio de la partida, 1 × 320 = 320.
-                'filas' => [filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 1.0, 320.0, 1440.0, 0.0, 0.0, 5.5, 1760.0, 5.5, 1760.0, 0.0), false)],
+                'filas' => [filaEat($e['p3']->id, '02.01', "Losa aligerada · f'c 210 kg/cm²", montosEat(5.5, 1760.0, 1.0, 320.0, 1440.0, 0.0, 0.0, 5.5, 1760.0, 5.5, 1760.0, 0.0), false, puEat(320.0, 'presupuesto', 320.0))],
                 'subtotal' => [...montosEat(5.5, 1760.0, 1.0, 320.0, 1440.0, 0.0, 0.0, 5.5, 1760.0, 5.5, 1760.0, 0.0), 'sobrecosto' => false],
             ],
         ]);
@@ -281,13 +287,13 @@ describe('cálculo', function () {
         // Proyecta 8.8 + 0.2 de exceso = 9 m³ × 360 = 3240: el EAT no queda debajo de lo ya vaciado.
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-25')->assertOk();
         expect($r->json('data.grupos.0.filas.1'))->toBe(
-            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 0.0, 0.0, 9.0, 3240.0, 9.0, 3240.0, -160.0), true),
+            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 0.0, 0.0, 9.0, 3240.0, 9.0, 3240.0, -160.0), true, puEat(360.0, 'facturado', 350.0)),
         );
 
         // Al 10-26 ya está culminado: los mismos 9 m³ pasan a costo real y no queda nada por proyectar.
         $r = reporteEat($e['usuario'], $e['proyecto'], '2026-10-26')->assertOk();
         expect($r->json('data.grupos.0.filas.1'))->toBe(
-            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 9.0, 3240.0, 0.0, 0.0, 9.0, 3240.0, -160.0), true),
+            filaEat($e['p2']->id, '01.02', "Vigas · f'c 280 kg/cm²", montosEat(8.8, 3080.0, 9.0, 3240.0, -160.0, 9.0, 3240.0, 0.0, 0.0, 9.0, 3240.0, -160.0), true, puEat(360.0, 'facturado', 350.0)),
         );
         expect(DB::table('reportes_generados')->count())->toBe(2);
     });
@@ -300,7 +306,7 @@ describe('cálculo', function () {
 
         // S1 (10 m³ netos) culminó con 7 m³: real 2170 y nada por proyectar. Variación 3520 − 2170 = 1350.
         expect($r->json('data.grupos.0.filas.0'))->toBe(
-            filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 7.0, 2170.0, 1350.0, 7.0, 2170.0, 0.0, 0.0, 7.0, 2170.0, 1350.0), false),
+            filaEat($e['p1']->id, '01.01', "Columnas · f'c 210 kg/cm²", montosEat(11.0, 3520.0, 7.0, 2170.0, 1350.0, 7.0, 2170.0, 0.0, 0.0, 7.0, 2170.0, 1350.0), false, puEat(310.0, 'facturado', 320.0)),
         );
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -321,7 +327,7 @@ describe('cálculo', function () {
         // Sin facturas: todo a 100. Real 6.5 × 100 = 650. Por ejecutar (10 − 6) × 1.1 = 4.4 m³: SB (2) y
         // los 2 m³ sin sector, aunque SB ya tenga 1 m³. 4.4 × 100 = 440; EAT 650 + 440 = 1090.
         expect($r->json('data.grupos.0.filas.0'))->toBe(
-            filaEat($p->id, '01.01', "Placas · f'c 210 kg/cm²", montosEat(11.0, 1100.0, 7.5, 750.0, 350.0, 6.5, 650.0, 4.4, 440.0, 10.9, 1090.0, 10.0), false),
+            filaEat($p->id, '01.01', "Placas · f'c 210 kg/cm²", montosEat(11.0, 1100.0, 7.5, 750.0, 350.0, 6.5, 650.0, 4.4, 440.0, 10.9, 1090.0, 10.0), false, puEat(100.0, 'presupuesto', 100.0)),
         );
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
@@ -412,8 +418,8 @@ describe('cálculo', function () {
         // Sin desperdicio. Real: 1.05 × 310.50 = 326.025 → 326.03. Saldo: 200 − 326.03 = −126.03.
         // Proyectado: 0.95 × 310.50 = 294.975 → 294.98. EAT 326.03 + 294.98 = 621.01; variación −421.01.
         $fila = montosEat(2.0, 200.0, 1.05, 326.03, -126.03, 1.05, 326.03, 0.95, 294.98, 2.0, 621.01, -421.01);
-        expect($r->json('data.grupos.0.filas.0'))->toBe(filaEat($a->id, '01.01', "Columnas · f'c 210 kg/cm²", $fila, true));
-        expect($r->json('data.grupos.0.filas.1'))->toBe(filaEat($b->id, '01.02', "Placas · f'c 210 kg/cm²", $fila, true));
+        expect($r->json('data.grupos.0.filas.0'))->toBe(filaEat($a->id, '01.01', "Columnas · f'c 210 kg/cm²", $fila, true, puEat(310.5, 'facturado', 100.0)));
+        expect($r->json('data.grupos.0.filas.1'))->toBe(filaEat($b->id, '01.02', "Placas · f'c 210 kg/cm²", $fila, true, puEat(310.5, 'facturado', 100.0)));
         // Suma de filas redondeadas: 326.03 × 2 = 652.06 (no 652.05); 621.01 × 2 = 1242.02 (no 1242.00).
         $suma = montosEat(4.0, 400.0, 2.1, 652.06, -252.06, 2.1, 652.06, 1.9, 589.96, 4.0, 1242.02, -842.02);
         expect($r->json('data.grupos.0.subtotal'))->toBe([...$suma, 'sobrecosto' => true]);
@@ -605,22 +611,22 @@ describe('exportación', function () {
             ['Fecha de corte', '31/10/2026'],
             ['Montos sin IGV'],
             [AVISO_CARGOS_EAT],
-            ['Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo S/', 'Real culminado S/', 'Proyectado m³', 'Proyectado S/', 'EAT S/', 'Variación S/'],
+            ['Elemento', 'Presup. m³', 'Presup. S/', 'Consumido m³', 'Consumido S/', 'Saldo S/', 'Real culminado S/', 'Proyectado m³', 'PU proyectado S/', 'Proyectado S/', 'EAT S/', 'Variación S/'],
             ['Estructuras'],
-            ["01.01 Columnas · f'c 210 kg/cm²", 11.0, 3520.0, 7.0, 2170.0, 1350.0, 0.0, 11.0, 3410.0, 3410.0, 110.0],
-            ["01.02 Vigas · f'c 280 kg/cm²", 8.8, 3080.0, 9.0, 3240.0, -160.0, 3240.0, 0.0, 0.0, 3240.0, -160.0],
-            ['Subtotal Estructuras', 19.8, 6600.0, 16.0, 5410.0, 1190.0, 3240.0, 11.0, 3410.0, 6650.0, -50.0],
+            ["01.01 Columnas · f'c 210 kg/cm²", 11.0, 3520.0, 7.0, 2170.0, 1350.0, 0.0, 11.0, 310.0, 3410.0, 3410.0, 110.0],
+            ["01.02 Vigas · f'c 280 kg/cm²", 8.8, 3080.0, 9.0, 3240.0, -160.0, 3240.0, 0.0, 360.0, 0.0, 3240.0, -160.0],
+            ['Subtotal Estructuras', 19.8, 6600.0, 16.0, 5410.0, 1190.0, 3240.0, 11.0, '—', 3410.0, 6650.0, -50.0],
             ['Losas'],
-            ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, 1705.0, 1705.0, 55.0],
-            ['Subtotal Losas', 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, 1705.0, 1705.0, 55.0],
-            ['Guías sin sector', 0.0, 0.0, 1.0, 310.0, '—', '—', '—', '—', '—', '—'],
+            ["02.01 Losa aligerada · f'c 210 kg/cm²", 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, 310.0, 1705.0, 1705.0, 55.0],
+            ['Subtotal Losas', 5.5, 1760.0, 3.0, 930.0, 830.0, 0.0, 5.5, '—', 1705.0, 1705.0, 55.0],
+            ['Guías sin sector', 0.0, 0.0, 1.0, 310.0, '—', '—', '—', '—', '—', '—', '—'],
             [AVISO_SIN_SECTOR_EAT],
-            ['Bombeo', 0.0, 0.0, '—', 150.0, -150.0, 150.0, '—', 0.0, 150.0, -150.0],
-            ['Total', 25.3, 8360.0, 19.0, 6490.0, 1870.0, 3390.0, 16.5, 5115.0, 8505.0, -145.0],
+            ['Bombeo', 0.0, 0.0, '—', 150.0, -150.0, 150.0, '—', '—', 0.0, 150.0, -150.0],
+            ['Total', 25.3, 8360.0, 19.0, 6490.0, 1870.0, 3390.0, 16.5, '—', 5115.0, 8505.0, -145.0],
         ]);
         // Variación negativa: la variación del total va en rojo; la de un cargo no, porque no es sobrecosto.
-        expect(fuenteExcelEat($r->streamedContent(), 'Total', 'K'))->toBe(['negrita' => true, 'rojo' => true]);
-        expect(fuenteExcelEat($r->streamedContent(), 'Bombeo', 'K'))->toBe(['negrita' => false, 'rojo' => false]);
+        expect(fuenteExcelEat($r->streamedContent(), 'Total', 'L'))->toBe(['negrita' => true, 'rojo' => true]);
+        expect(fuenteExcelEat($r->streamedContent(), 'Bombeo', 'L'))->toBe(['negrita' => false, 'rojo' => false]);
     });
 
     it('descarga el PDF con su tipo y nombre de archivo', function () {
@@ -805,10 +811,10 @@ describe('textos del Excel', function () {
         expect($filas['Proyecto'])->toBe(['Proyecto', "'=HOY() Edificio Mirador"]);
         expect($filas["'=1+1"])->toBe(["'=1+1"]);
         expect($filas["'@SUMA(A1)"])->toBe(["'@SUMA(A1)"]);
-        expect($filas['Subtotal =1+1'])->toBe(['Subtotal =1+1', 19.8, 6600.0, 16.0, 5410.0, 1190.0, 3240.0, 11.0, 3410.0, 6650.0, -50.0]);
-        expect($filas["01.02 Vigas · f'c 280 kg/cm²"])->toBe(["01.02 Vigas · f'c 280 kg/cm²", 8.8, 3080.0, 9.0, 3240.0, -160.0, 3240.0, 0.0, 0.0, 3240.0, -160.0]);
-        expect($filas["'+HIPERVINCULO(\"http://x\")"])->toBe(["'+HIPERVINCULO(\"http://x\")", 0.0, 0.0, '—', 150.0, -150.0, 150.0, '—', 0.0, 150.0, -150.0]);
-        expect($filas["'-2+3"])->toBe(["'-2+3", 0.0, 0.0, '—', 10.0, -10.0, 10.0, '—', 0.0, 10.0, -10.0]);
+        expect($filas['Subtotal =1+1'])->toBe(['Subtotal =1+1', 19.8, 6600.0, 16.0, 5410.0, 1190.0, 3240.0, 11.0, '—', 3410.0, 6650.0, -50.0]);
+        expect($filas["01.02 Vigas · f'c 280 kg/cm²"])->toBe(["01.02 Vigas · f'c 280 kg/cm²", 8.8, 3080.0, 9.0, 3240.0, -160.0, 3240.0, 0.0, 360.0, 0.0, 3240.0, -160.0]);
+        expect($filas["'+HIPERVINCULO(\"http://x\")"])->toBe(["'+HIPERVINCULO(\"http://x\")", 0.0, 0.0, '—', 150.0, -150.0, 150.0, '—', '—', 0.0, 150.0, -150.0]);
+        expect($filas["'-2+3"])->toBe(["'-2+3", 0.0, 0.0, '—', 10.0, -10.0, 10.0, '—', '—', 0.0, 10.0, -10.0]);
         expect(DB::table('reportes_generados')->count())->toBe(1);
     });
 });
@@ -974,11 +980,11 @@ describe('guías sin sector en una obra sin consumo', function () {
         $contenido = exportarEat($e['usuario'], $e['proyecto'], 'excel', '2026-11-09')->assertOk()->streamedContent();
 
         expect(array_slice(filasExcelEat($contenido), -3))->toBe([
-            ['Guías sin sector', 0.0, 0.0, 6.0, 2250.0, '—', '—', '—', '—', '—', '—'],
+            ['Guías sin sector', 0.0, 0.0, 6.0, 2250.0, '—', '—', '—', '—', '—', '—', '—'],
             [AVISO_SIN_SECTOR_EAT],
-            ['Total', 665.5, 256822.5, 0.0, 0.0, 256822.5, 0.0, 665.5, 256822.5, 256822.5, 0.0],
+            ['Total', 665.5, 256822.5, 0.0, 0.0, 256822.5, 0.0, 665.5, '—', 256822.5, 256822.5, 0.0],
         ]);
-        expect(fuenteExcelEat($contenido, 'Total', 'K'))->toBe(['negrita' => true, 'rojo' => false]);
+        expect(fuenteExcelEat($contenido, 'Total', 'L'))->toBe(['negrita' => true, 'rojo' => false]);
         expect(fuenteExcelEat($contenido, AVISO_SIN_SECTOR_EAT, 'A'))->toBe(['negrita' => false, 'rojo' => false]);
     });
 
@@ -997,12 +1003,12 @@ describe('guías sin sector en una obra sin consumo', function () {
         expect(array_slice($filas, -3))->toBe([
             ['clase' => 'aparte', 'celdas' => [
                 ['Guías sin sector', ''], ['0.00', 'monto'], ['0.00', 'monto'], ['6.00', 'monto'], ['2,250.00', 'monto'],
-                ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'],
+                ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'], ['—', 'monto'],
             ]],
             ['clase' => 'aviso', 'celdas' => [[AVISO_SIN_SECTOR_EAT, '']]],
             ['clase' => 'total', 'celdas' => [
                 ['Total', ''], ['665.50', 'monto'], ['256,822.50', 'monto'], ['0.00', 'monto'], ['0.00', 'monto'],
-                ['256,822.50', 'monto'], ['0.00', 'monto'], ['665.50', 'monto'], ['256,822.50', 'monto'],
+                ['256,822.50', 'monto'], ['0.00', 'monto'], ['665.50', 'monto'], ['—', 'monto'], ['256,822.50', 'monto'],
                 ['256,822.50', 'monto'], ['0.00', 'monto'],
             ]],
         ]);

@@ -27,7 +27,17 @@ const reporte: ReporteEat = {
     {
       grupo_id: 1,
       nombre: 'Estructuras',
-      filas: [{ partida_id: 10, item: '01.01', etiqueta: "Columnas · f'c 210", ...montos }],
+      filas: [
+        {
+          partida_id: 10,
+          item: '01.01',
+          etiqueta: "Columnas · f'c 210",
+          ...montos,
+          pu_proyectado: 310,
+          pu_origen: 'facturado',
+          pu_presupuesto: 320,
+        },
+      ],
       subtotal: montos,
     },
   ],

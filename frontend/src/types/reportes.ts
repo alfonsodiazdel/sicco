@@ -30,6 +30,14 @@ export interface FilaEat extends MontosEat {
   item: string | null
   /** «elemento · resistencia», como en el control de desperdicio. */
   etiqueta: string
+  /**
+   * Precio por m³ de lo proyectado: el último facturado de su f'c hasta el corte o, si no hay, el del
+   * presupuesto. Solo en las partidas: un precio no se suma en subtotales ni en el total.
+   */
+  pu_proyectado: number
+  pu_origen: 'facturado' | 'presupuesto'
+  /** El precio de la partida en el presupuesto, para ver si la variación viene del precio. */
+  pu_presupuesto: number
 }
 
 export interface GrupoEat {

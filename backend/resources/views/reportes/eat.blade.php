@@ -5,7 +5,7 @@
 <title>Reporte EAT {{ $encabezado['proyecto'] }}</title>
 <style>
     @page { margin: 18mm 12mm; }
-    /* 11 columnas en A4 horizontal: 8pt para que los montos no se partan. */
+    /* 12 columnas en A4 horizontal: 8pt para que los montos no se partan. */
     body { font-family: DejaVu Sans, sans-serif; font-size: 8pt; color: #222; }
     h1 { font-size: 14pt; margin: 0 0 6pt; }
     .encabezado { margin-bottom: 10pt; }
