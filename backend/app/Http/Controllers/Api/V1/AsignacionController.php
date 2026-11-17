@@ -59,6 +59,10 @@ class AsignacionController extends Controller
             // En orden de id, para que dos transacciones no se bloqueen en cruz.
             $sectores = Sector::whereKey($nuevas->keys()->merge($anteriores->keys())->unique())
                 ->with(['partida', 'nivel'])->orderBy('id')->lockForUpdate()->get();
+            // Se eliminó (CU05) entre la validación y el bloqueo.
+            if ($nuevas->keys()->diff($sectores->modelKeys())->isNotEmpty()) {
+                throw ValidationException::withMessages(['asignaciones' => __('sicco.asignaciones.sector_eliminado')]);
+            }
             $registradas = 0;
             foreach ($sectores as $sector) {
                 $diferencia = $nuevas->get($sector->id, 0) - $centesimosAnteriores->get($sector->id, 0);

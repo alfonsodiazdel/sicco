@@ -6,12 +6,14 @@ use App\Contracts\OcrServiceInterface;
 use App\Http\Controllers\Concerns\AutorizaProyecto;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Facturas\ActualizarGuiasFacturaRequest;
+use App\Http\Requests\Facturas\EliminarFacturaRequest;
 use App\Http\Requests\Facturas\GuiasPorFacturarRequest;
 use App\Http\Requests\Facturas\LeerFacturaRequest;
 use App\Http\Requests\Facturas\StoreFacturaRequest;
 use App\Http\Resources\FacturaResource;
 use App\Http\Resources\GuiaResource;
 use App\Models\Factura;
+use App\Models\FacturaEliminada;
 use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
@@ -276,6 +278,62 @@ class FacturaController extends Controller
             'cargos',
             'guias' => fn ($q) => $q->with(['proveedor', 'resistencia', 'producto'])->orderBy('fecha')->orderBy('id'),
         ])->loadCount('guias'))->additional(['message' => __('sicco.facturas.guias_actualizadas')]);
+    }
+
+    /**
+     * Elimina una factura registrada por error, p. ej. en el proyecto equivocado: el número es único
+     * por proveedor, así que sin borrarla no se puede registrar en el correcto. Sus guías vuelven a
+     * quedar por facturar, el detalle y los cargos se borran con ella y queda una copia en
+     * `facturas_eliminadas` con quién la borró y por qué.
+     */
+    public function destroy(EliminarFacturaRequest $request, Factura $factura): JsonResponse
+    {
+        $this->autorizarProyecto($request, $factura->proyecto);
+
+        $ruta = DB::transaction(function () use ($request, $factura) {
+            // A la vez que otro cambio de guías o eliminación de la misma factura: espera al primero.
+            $factura = Factura::whereKey($factura->id)->lockForUpdate()->firstOrFail();
+            $factura->load(['lineas.resistencia', 'cargos', 'guias' => fn ($q) => $q->orderBy('id')]);
+
+            $motivo = trim((string) $request->validated('motivo'));
+            FacturaEliminada::create([
+                'factura_id' => $factura->id,
+                'proyecto_id' => $factura->proyecto_id,
+                'proveedor_id' => $factura->proveedor_id,
+                'numero' => $factura->numero,
+                'fecha' => $factura->fecha,
+                'total' => $factura->total,
+                'motivo' => $motivo !== '' ? $motivo : null,
+                'datos' => [
+                    'factura' => $factura->only([
+                        'numero', 'fecha', 'volumen_m3', 'subtotal', 'igv', 'total', 'diferencia_confirmada',
+                        'origen', 'ocr_confianza', 'archivo_ruta', 'created_at',
+                    ]),
+                    'lineas' => $factura->lineas->map(fn ($l) => [
+                        'resistencia_id' => $l->resistencia_id,
+                        'resistencia' => $l->resistencia?->nombre,
+                        'volumen_m3' => $l->volumen_m3,
+                        'precio_unitario' => $l->precio_unitario,
+                        'importe' => $l->importe,
+                    ])->all(),
+                    'cargos' => $factura->cargos->map(fn ($c) => $c->only(['descripcion', 'importe']))->all(),
+                    'guias' => $factura->guias->map(fn (GuiaRemision $g) => $g->only(['id', 'numero']))->all(),
+                ],
+                'registrado_por' => $factura->registrado_por,
+                'eliminado_por' => $request->user()->id,
+            ]);
+
+            // Las guías quedan por facturar; la clave foránea no deja borrar la factura antes.
+            GuiaRemision::where('factura_id', $factura->id)->update(['factura_id' => null]);
+            $factura->delete();
+
+            return $factura->archivo_ruta;
+        });
+
+        // Después de confirmar el borrado: si falla, queda solo un archivo huérfano en el bucket.
+        Storage::delete($ruta);
+
+        return response()->json(['message' => __('sicco.facturas.eliminada')]);
     }
 
     /**

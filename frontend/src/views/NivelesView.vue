@@ -328,6 +328,53 @@ function reabrir(s: SectorFila) {
   })
 }
 
+// CU05: corregir errores de planificación. El backend repite las reglas; aquí solo se ofrece el botón
+// cuando aplica: nivel sin sectores, sector abierto y sin concreto vaciado (sin guías asignadas).
+const sinSectores = (n: NivelFila) => !sectores.value.some((s) => s.nivel_id === n.id)
+const eliminable = (s: SectorFila) => !s.fecha_culminacion && s.volumen_vaciado_m3 === 0
+
+function eliminarNivel(n: NivelFila) {
+  confirm.require({
+    header: 'Eliminar nivel',
+    message: `¿Eliminar el nivel ${n.nombre}?`,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Eliminar', severity: 'danger' },
+    accept: async () => {
+      try {
+        await nivelesServicio.eliminarNivel(n.id)
+        toast.add({ severity: 'success', summary: 'Nivel eliminado correctamente', life: 4000 })
+        // Si era el elegido, se elige el primero que quede.
+        if (nivelId.value === n.id) nivelId.value = null
+        await cargar()
+      } catch (error) {
+        avisarError(error)
+      }
+    },
+  })
+}
+
+function eliminarSector(s: SectorFila) {
+  confirm.require({
+    header: 'Eliminar sector',
+    message:
+      `¿Eliminar el sector ${s.nombre}? Su volumen presupuestado vuelve a quedar disponible ` +
+      'en la partida.',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Eliminar', severity: 'danger' },
+    accept: async () => {
+      try {
+        await nivelesServicio.eliminarSector(s.id)
+        toast.add({ severity: 'success', summary: 'Sector eliminado correctamente', life: 4000 })
+        await cargar()
+      } catch (error) {
+        avisarError(error)
+      }
+    },
+  })
+}
+
 const entero = { locale: 'es-PE', maxFractionDigits: 0, useGrouping: false, min: 1, fluid: true }
 const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, min: 0, fluid: true }
 </script>
@@ -385,6 +432,16 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
               :aria-label="`Editar nivel ${n.nombre}`"
               :title="`Editar nivel ${n.nombre}`"
               @click="abrirNivel(n)"
+            />
+            <Button
+              v-if="puedeGestionar && sinSectores(n)"
+              icon="pi pi-trash"
+              text
+              rounded
+              severity="danger"
+              :aria-label="`Eliminar nivel ${n.nombre}`"
+              :title="`Eliminar nivel ${n.nombre}`"
+              @click="eliminarNivel(n)"
             />
           </li>
           <li v-if="!nivelesOrdenados.length" class="px-3 py-2 text-surface-500">
@@ -481,6 +538,16 @@ const numero = { locale: 'es-PE', minFractionDigits: 0, maxFractionDigits: 2, mi
                 :aria-label="`Culminar sector ${fila.nombre}`"
                 :title="`Culminar sector ${fila.nombre}`"
                 @click="abrirCulminar(fila)"
+              />
+              <Button
+                v-if="eliminable(fila)"
+                icon="pi pi-trash"
+                text
+                rounded
+                severity="danger"
+                :aria-label="`Eliminar sector ${fila.nombre}`"
+                :title="`Eliminar sector ${fila.nombre}`"
+                @click="eliminarSector(fila)"
               />
             </template>
           </template>

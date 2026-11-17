@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\EstadoAlerta;
 use App\Enums\EstadoAsignacion;
 use App\Enums\OrigenGuia;
 use App\Enums\Rol;
+use App\Models\Alerta;
 use App\Models\GuiaRemision;
 use App\Models\HistorialAsignacion;
 use App\Models\Partida;
@@ -401,5 +403,49 @@ describe('sector culminado (CU09 con CU05)', function () {
 
         // El mismo reparto no toca el sector culminado.
         repartirGuia($guia, [$a->id => 5, $b->id => 3.5])->assertOk();
+    });
+});
+
+describe('eliminación de un sector (CU05 con CU09)', function () {
+    it('no elimina un sector con guías; al reasignarlas sí, y nombra el sector en el historial', function () {
+        [$p, $a, $b, $ing] = obraConSectores();
+        $guia = guiaDe($p);
+        $this->actingAs($ing);
+        repartirGuia($guia, [$a->id => 5, $b->id => 3.5])->assertOk();
+        $alerta = Alerta::create([
+            'proyecto_id' => $p->id, 'sector_id' => $a->id, 'exceso_m3' => 1,
+            'fecha' => now(), 'estado' => EstadoAlerta::Pendiente,
+        ]);
+
+        $this->deleteJson("/api/v1/sectores/{$a->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sector' => 'El sector tiene guías asignadas; reasígnelas a otro sector para eliminarlo']);
+
+        repartirGuia($guia, [$b->id => 8.5])->assertOk();
+        $this->deleteJson("/api/v1/sectores/{$a->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Sector eliminado correctamente');
+
+        expect(Sector::find($a->id))->toBeNull()
+            ->and(Alerta::find($alerta->id))->toBeNull()
+            ->and($b->fresh())->not->toBeNull();
+        $historial = HistorialAsignacion::where('guia_id', $guia->id)->orderBy('id')->get();
+        expect($historial[0]->antes)->toBe([])
+            // MySQL ordena las claves del JSON: se compara sin orden de claves.
+            ->and($historial[0]->despues)->toEqual([
+                ['sector_id' => $a->id, 'volumen_m3' => 5, 'sector' => 'Piso 1 – Sector A'],
+                ['sector_id' => $b->id, 'volumen_m3' => 3.5],
+            ])
+            ->and($historial[1]->antes[0])->toEqual(['sector_id' => $a->id, 'volumen_m3' => 5, 'sector' => 'Piso 1 – Sector A'])
+            ->and($historial[1]->despues)->toBe([['sector_id' => $b->id, 'volumen_m3' => 8.5]]);
+    });
+
+    it('rechaza la asignación a un sector que ya no existe', function () {
+        [$p, $a, , $ing] = obraConSectores();
+        $this->actingAs($ing)->deleteJson("/api/v1/sectores/{$a->id}")->assertOk();
+
+        repartirGuia(guiaDe($p), [$a->id => 1])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['asignaciones.0.sector_id' => 'El sector no pertenece al proyecto de la guía']);
     });
 });

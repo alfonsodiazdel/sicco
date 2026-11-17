@@ -15,6 +15,10 @@ export interface NivelesServicio {
   /** CU05: `fecha` en `YYYY-MM-DD`, no futura ni anterior a la última guía del sector. */
   culminarSector(id: number, fecha: string): Promise<SectorFila>
   reabrirSector(id: number): Promise<SectorFila>
+  /** CU05: corrige un error de planificación; solo un nivel sin sectores. */
+  eliminarNivel(id: number): Promise<void>
+  /** CU05: solo un sector abierto y sin guías asignadas ahora. */
+  eliminarSector(id: number): Promise<void>
 }
 
 const nivelesEjemplo: NivelFila[] = [
@@ -133,6 +137,29 @@ export function crearNivelesEnMemoria(
       }
       return { ...Object.assign(actual, { fecha_culminacion: null }) }
     },
+    async eliminarNivel(id) {
+      buscarNivel(id)
+      if (sectores.some((s) => s.nivel_id === id)) {
+        throw errorDeValidacion({ nivel: ['El nivel tiene sectores; elimínelos para eliminarlo'] })
+      }
+      niveles.splice(
+        niveles.findIndex((n) => n.id === id),
+        1,
+      )
+    },
+    async eliminarSector(id) {
+      const actual = buscarSector(id)
+      if (actual.fecha_culminacion) {
+        throw errorDeValidacion({ sector: ['El sector está culminado; reábralo para eliminarlo'] })
+      }
+      // En memoria no hay guías: lo vaciado hace las veces de sus asignaciones.
+      if (actual.volumen_vaciado_m3 > 0) {
+        throw errorDeValidacion({
+          sector: ['El sector tiene guías asignadas; reasígnelas a otro sector para eliminarlo'],
+        })
+      }
+      sectores.splice(sectores.indexOf(actual), 1)
+    },
   }
 }
 
@@ -162,6 +189,12 @@ export function crearNivelesApi(): NivelesServicio {
     },
     async reabrirSector(id) {
       return (await http.post<{ data: SectorFila }>(`/sectores/${id}/reabrir`)).data.data
+    },
+    async eliminarNivel(id) {
+      await http.delete(`/niveles/${id}`)
+    },
+    async eliminarSector(id) {
+      await http.delete(`/sectores/${id}`)
     },
   }
 }

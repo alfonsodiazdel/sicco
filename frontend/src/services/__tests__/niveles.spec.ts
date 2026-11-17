@@ -38,4 +38,24 @@ describe('niveles en memoria', () => {
       fecha_culminacion: null,
     })
   })
+
+  it('elimina como la API: nivel sin sectores, sector abierto y sin vaciado', async () => {
+    const niveles = crearNivelesEnMemoria(crearPartidasEnMemoria())
+    const rechazo = async (p: Promise<unknown>) => erroresDeValidacion(await p.catch((e) => e))
+
+    expect(await rechazo(niveles.eliminarNivel(1))).toEqual({
+      nivel: 'El nivel tiene sectores; elimínelos para eliminarlo',
+    })
+    expect(await rechazo(niveles.eliminarSector(4))).toEqual({
+      sector: 'El sector está culminado; reábralo para eliminarlo',
+    })
+    expect(await rechazo(niveles.eliminarSector(1))).toEqual({
+      sector: 'El sector tiene guías asignadas; reasígnelas a otro sector para eliminarlo',
+    })
+
+    await niveles.eliminarSector(5)
+    await niveles.eliminarNivel(3)
+    expect((await niveles.listarSectores(1)).map((s) => s.id)).toEqual([1, 2, 3, 4])
+    expect((await niveles.listarNiveles(1)).map((n) => n.id)).toEqual([1, 2])
+  })
 })

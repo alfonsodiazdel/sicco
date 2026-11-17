@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 import Tag from 'primevue/tag'
+import Textarea from 'primevue/textarea'
 import PaginaListado from '@/components/plantillas/PaginaListado.vue'
 import TablaCrud from '@/components/organismos/TablaCrud.vue'
 import DialogoVincularGuias from '@/components/organismos/DialogoVincularGuias.vue'
@@ -169,6 +170,35 @@ async function guardarGuias(ids: number[], confirmado = false): Promise<void> {
     avisarError(error)
   } finally {
     guardandoGuias.value = false
+  }
+}
+
+// Una factura registrada por error (p. ej. en otro proyecto) se elimina para registrarla bien: sus
+// guías vuelven a quedar por facturar y el backend guarda quién la eliminó y por qué.
+const dialogoEliminar = ref(false)
+const eliminando = ref(false)
+const motivo = ref('')
+
+function abrirEliminar() {
+  motivo.value = ''
+  dialogoEliminar.value = true
+}
+
+async function eliminar() {
+  const factura = detalle.value
+  if (!factura) return
+  eliminando.value = true
+  try {
+    const respuesta = await facturasServicio.eliminar(factura.id, motivo.value)
+    facturas.value = facturas.value.filter((f) => f.id !== factura.id)
+    dialogoEliminar.value = false
+    verDetalle.value = false
+    detalle.value = null
+    toast.add({ severity: 'success', summary: respuesta.message, life: 3000 })
+  } catch (error) {
+    avisarError(error)
+  } finally {
+    eliminando.value = false
   }
 }
 
@@ -404,14 +434,70 @@ onMounted(async () => {
       </section>
     </div>
     <template #footer>
-      <a
-        v-if="detalle"
-        :href="urlArchivoFactura(detalle.id)"
-        target="_blank"
-        rel="noopener"
-        class="text-sm font-medium text-primary-700 underline"
-        >Abrir archivo de la factura</a
-      >
+      <div v-if="detalle" class="flex w-full flex-wrap items-center justify-between gap-2">
+        <Button
+          v-if="puedeRegistrar"
+          label="Eliminar factura"
+          icon="pi pi-trash"
+          severity="danger"
+          size="small"
+          text
+          title="Para una factura registrada por error, p. ej. en otro proyecto"
+          data-eliminar
+          @click="abrirEliminar"
+        />
+        <a
+          :href="urlArchivoFactura(detalle.id)"
+          target="_blank"
+          rel="noopener"
+          class="ml-auto text-sm font-medium text-primary-700 underline"
+          >Abrir archivo de la factura</a
+        >
+      </div>
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="dialogoEliminar"
+    header="Eliminar factura"
+    modal
+    :closable="!eliminando"
+    :style="{ width: '32rem', maxWidth: 'calc(100vw - 2rem)' }"
+  >
+    <div v-if="detalle" class="space-y-3 text-sm" data-dialogo-eliminar>
+      <p>
+        ¿Eliminar la factura <strong>{{ detalle.numero }}</strong> de
+        {{ detalle.proveedor.razon_social }}?
+        <template v-if="detalle.guias.length">
+          Sus {{ detalle.guias.length }}
+          {{ detalle.guias.length === 1 ? 'guía vuelve' : 'guías vuelven' }} a quedar por facturar.
+        </template>
+      </p>
+      <Message severity="warn" icon="pi pi-exclamation-triangle">
+        Se borran su detalle y su archivo. Si la registró en el proyecto equivocado, descargue el
+        archivo antes y regístrela de nuevo en el correcto.
+      </Message>
+      <div>
+        <label for="motivo-eliminar" class="mb-1 block font-medium">Motivo (opcional)</label>
+        <Textarea
+          id="motivo-eliminar"
+          v-model="motivo"
+          rows="2"
+          maxlength="500"
+          class="w-full"
+          placeholder="Ej.: se registró en el proyecto equivocado"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <Button
+        label="Cancelar"
+        severity="secondary"
+        text
+        :disabled="eliminando"
+        @click="dialogoEliminar = false"
+      />
+      <Button label="Eliminar" severity="danger" :loading="eliminando" @click="eliminar" />
     </template>
   </Dialog>
 

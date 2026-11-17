@@ -38,6 +38,11 @@ export interface FacturasServicio {
     guiaIds: number[],
     confirmado?: boolean,
   ): Promise<RespuestaGuiasFactura>
+  /**
+   * Elimina una factura registrada por error (p. ej. en otro proyecto): sus guías vuelven a quedar
+   * por facturar y el número queda libre para registrarla bien. El motivo queda en el registro.
+   */
+  eliminar(facturaId: number, motivo?: string): Promise<{ message: string }>
   /** Las concreteras registradas, para elegir el proveedor de la factura. */
   proveedores(): Promise<Proveedor[]>
 }
@@ -92,6 +97,11 @@ export function crearFacturasApi(): FacturasServicio {
     async actualizarGuias(facturaId, guiaIds, confirmado = false) {
       const url = `/facturas/${facturaId}/guias`
       return (await http.put<RespuestaGuiasFactura>(url, { guia_ids: guiaIds, confirmado })).data
+    },
+    async eliminar(facturaId, motivo) {
+      const datos = motivo?.trim() ? { motivo: motivo.trim() } : {}
+      return (await http.delete<{ message: string }>(`/facturas/${facturaId}`, { data: datos }))
+        .data
     },
     async proveedores() {
       // Las concreteras de una empresa son pocas; se traen todas para el selector.
@@ -295,6 +305,16 @@ export function crearFacturasEnMemoria(
         data: detalle(factura),
         message: 'Guías de la factura actualizadas correctamente',
       }
+    },
+    async eliminar(facturaId, motivo) {
+      const i = facturas.findIndex((f) => f.id === facturaId)
+      if (i < 0) throw new Error('Factura no encontrada.')
+      if ((motivo?.trim().length ?? 0) > 500) {
+        throw errorDeValidacion({ motivo: ['Debe tener como máximo 500 caracteres'] })
+      }
+      facturas.splice(i, 1)
+      for (const [guiaId, id] of vinculadas) if (id === facturaId) vinculadas.delete(guiaId)
+      return { message: 'Factura eliminada correctamente' }
     },
     async proveedores() {
       return proveedoresEjemplo.map((p) => ({ ...p }))

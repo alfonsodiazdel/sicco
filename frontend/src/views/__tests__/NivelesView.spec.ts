@@ -601,4 +601,83 @@ describe('NivelesView', () => {
       expect(estado(vista, 0)).toBe('Abierto')
     })
   })
+
+  describe('eliminación de niveles y sectores', () => {
+    async function aceptar() {
+      const [opciones] = confirm.require.mock.calls[confirm.require.mock.calls.length - 1]!
+      await opciones.accept()
+      await asentar()
+    }
+
+    it('ofrece eliminar solo niveles sin sectores y sectores abiertos sin vaciado', async () => {
+      const vista = await montar()
+
+      expect(vista.find('button[aria-label="Eliminar nivel Sótano 1"]').exists()).toBe(false)
+      expect(vista.find('button[aria-label="Eliminar nivel Piso 1"]').exists()).toBe(false)
+      expect(vista.find('button[aria-label="Eliminar nivel Piso 2"]').exists()).toBe(true)
+      // Zapatas eje 1-3 está culminado; Zapatas eje 4-6 sigue abierto y sin guías.
+      expect(vista.find('button[aria-label="Eliminar sector Zapatas eje 1-3"]').exists()).toBe(
+        false,
+      )
+      expect(vista.find('button[aria-label="Eliminar sector Zapatas eje 4-6"]').exists()).toBe(true)
+
+      await elegirNivel(vista, 'Piso 1')
+      // Con concreto vaciado: tiene guías asignadas.
+      expect(vista.find('button[aria-label^="Eliminar sector "]').exists()).toBe(false)
+    })
+
+    it('elimina un sector después de confirmar', async () => {
+      const vista = await montar()
+      const eliminar = vi.spyOn(servicios.niveles!, 'eliminarSector')
+
+      await pulsar(vista, 'Eliminar sector Zapatas eje 4-6')
+      expect(confirm.require).toHaveBeenCalledWith(
+        expect.objectContaining({ header: 'Eliminar sector' }),
+      )
+      expect(eliminar).not.toHaveBeenCalled()
+      await aceptar()
+
+      expect(eliminar).toHaveBeenCalledWith(5)
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: 'Sector eliminado correctamente' }),
+      )
+      expect(filas(vista).map((f) => f[0])).toEqual(['Zapatas eje 1-3'])
+    })
+
+    it('al eliminar el nivel elegido pasa al primero que queda', async () => {
+      const vista = await montar()
+      await elegirNivel(vista, 'Piso 2')
+
+      await pulsar(vista, 'Eliminar nivel Piso 2')
+      await aceptar()
+
+      expect(toast.add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: 'Nivel eliminado correctamente' }),
+      )
+      expect(niveles(vista)).toEqual(['Sótano 1', 'Piso 1'])
+      expect(nivelElegido(vista)).toBe('Sótano 1')
+    })
+
+    it('avisa el rechazo del backend y deja el sector', async () => {
+      const vista = await montar()
+      const { errorDeValidacion } = await import('@/services/errores')
+      vi.spyOn(servicios.niveles!, 'eliminarSector').mockRejectedValue(
+        errorDeValidacion({
+          sector: ['El sector tiene guías asignadas; reasígnelas a otro sector para eliminarlo'],
+        }),
+      )
+
+      await pulsar(vista, 'Eliminar sector Zapatas eje 4-6')
+      await aceptar()
+
+      expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
+      expect(filas(vista)).toHaveLength(2)
+    })
+
+    it('al administrador no le ofrece eliminar', async () => {
+      const vista = await montar(undefined, 'administrador')
+
+      expect(vista.find('button[aria-label^="Eliminar "]').exists()).toBe(false)
+    })
+  })
 })

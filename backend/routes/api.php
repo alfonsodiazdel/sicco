@@ -97,8 +97,10 @@ Route::prefix('v1')->group(function () {
             Route::middleware('rol:ingeniero_produccion')->group(function () {
                 Route::post('proyectos/{proyecto}/niveles', [NivelController::class, 'store'])->whereNumber('proyecto');
                 Route::put('niveles/{nivel}', [NivelController::class, 'update'])->whereNumber('nivel');
+                Route::delete('niveles/{nivel}', [NivelController::class, 'destroy'])->whereNumber('nivel');
                 Route::post('niveles/{nivel}/sectores', [SectorController::class, 'store'])->whereNumber('nivel');
                 Route::put('sectores/{sector}', [SectorController::class, 'update'])->whereNumber('sector');
+                Route::delete('sectores/{sector}', [SectorController::class, 'destroy'])->whereNumber('sector');
                 Route::post('sectores/{sector}/culminar', [SectorController::class, 'culminar'])->whereNumber('sector');
                 Route::post('sectores/{sector}/reabrir', [SectorController::class, 'reabrir'])->whereNumber('sector');
             });
@@ -146,6 +148,9 @@ Route::prefix('v1')->group(function () {
                 Route::post('facturas', [FacturaController::class, 'store']);
                 // CU12 después del registro: agregar las guías que quedaron pendientes o quitar las equivocadas.
                 Route::put('facturas/{factura}/guias', [FacturaController::class, 'actualizarGuias'])->whereNumber('factura');
+                // Una factura registrada por error (p. ej. en otro proyecto) se elimina para registrarla bien;
+                // sus guías vuelven a quedar por facturar y queda constancia en facturas_eliminadas.
+                Route::delete('facturas/{factura}', [FacturaController::class, 'destroy'])->whereNumber('factura');
             });
 
             // CU18 Exportar documentos: Oficina técnica y el administrador descargan en ZIP las fotos

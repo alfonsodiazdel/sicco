@@ -224,6 +224,37 @@ describe('FacturasView (CU11)', () => {
     expect(vista.find('[data-vincular]').exists()).toBe(false)
   })
 
+  it('elimina una factura registrada por error y sus guías vuelven a quedar por facturar', async () => {
+    const { vista } = await montar()
+    const eliminar = vi.spyOn(servicios.facturas!, 'eliminar')
+    await vista.get('button[aria-label="Ver detalle de la factura F001-00002803"]').trigger('click')
+    await asentar()
+    await vista.get('[data-eliminar]').trigger('click')
+    await asentar()
+
+    expect(vista.get('[data-dialogo-eliminar]').text()).toContain(
+      'Sus 2 guías vuelven a quedar por facturar.',
+    )
+    await vista.get('#motivo-eliminar').setValue('Era del proyecto Surco')
+    await pulsar(vista, 'Eliminar')
+
+    expect(eliminar).toHaveBeenCalledWith(1, 'Era del proyecto Surco')
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Factura eliminada correctamente' }),
+    )
+    const numeros = vista.findAll('tbody tr').map((tr) => tr.find('td span.font-medium').text())
+    expect(numeros).toEqual(['F001-00002790'])
+    expect(vista.find('[data-detalle]').exists()).toBe(false)
+    expect((await servicios.facturas!.guiasPorFacturar(1, 1)).map((g) => g.id)).toEqual([2, 3])
+  })
+
+  it('el administrador no elimina facturas', async () => {
+    const { vista } = await montar('administrador')
+    await vista.get('button[aria-label="Ver detalle de la factura F001-00002803"]').trigger('click')
+    await asentar()
+    expect(vista.find('[data-eliminar]').exists()).toBe(false)
+  })
+
   it('Oficina técnica abre «Nueva factura»; el administrador solo consulta', async () => {
     const { vista, router } = await montar()
     await vista

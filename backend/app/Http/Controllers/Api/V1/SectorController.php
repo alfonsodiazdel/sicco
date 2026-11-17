@@ -7,6 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CulminarSectorRequest;
 use App\Http\Requests\SectorRequest;
 use App\Http\Resources\SectorResource;
+use App\Models\Alerta;
+use App\Models\Asignacion;
+use App\Models\HistorialAsignacion;
 use App\Models\Nivel;
 use App\Models\Partida;
 use App\Models\Proyecto;
@@ -92,6 +95,47 @@ class SectorController extends Controller
         });
 
         return SectorResource::make($actualizado)->additional(['message' => __('sicco.sectores.reabierto_ok')])->response();
+    }
+
+    /**
+     * CU05: corrige un error de planificación. Solo sin guías asignadas ahora (si las tuvo, se
+     * reasignan antes a otro sector) y sin culminar. Su volumen vuelve al disponible de la partida.
+     */
+    public function destroy(Request $request, Sector $sector): JsonResponse
+    {
+        $this->autorizarProyecto($request, Nivel::findOrFail($sector->nivel_id)->proyecto);
+
+        DB::transaction(function () use ($sector) {
+            // La asignación de guías bloquea el mismo sector: no se cruza con una que lo esté usando.
+            $sector = Sector::whereKey($sector->id)->with('nivel')->lockForUpdate()->firstOrFail();
+            if ($sector->culminado()) {
+                throw ValidationException::withMessages(['sector' => __('sicco.sectores.culminado_no_eliminable')]);
+            }
+            if (Asignacion::where('sector_id', $sector->id)->exists()) {
+                throw ValidationException::withMessages(['sector' => __('sicco.sectores.con_guias')]);
+            }
+
+            // Las guías que tuvo dejaron su id en el historial (CU09): se le agrega el nombre para
+            // que el historial se siga leyendo sin el sector.
+            $etiqueta = "{$sector->nivel->nombre} – {$sector->nombre}";
+            HistorialAsignacion::where(fn ($q) => $q
+                ->whereJsonContains('antes', [['sector_id' => $sector->id]])
+                ->orWhereJsonContains('despues', [['sector_id' => $sector->id]]))
+                ->lockForUpdate()->get()
+                ->each(function (HistorialAsignacion $h) use ($sector, $etiqueta) {
+                    $nombrar = fn (array $reparto) => array_map(
+                        fn (array $a) => $a['sector_id'] === $sector->id ? $a + ['sector' => $etiqueta] : $a,
+                        $reparto,
+                    );
+                    $h->forceFill(['antes' => $nombrar($h->antes), 'despues' => $nombrar($h->despues)])->save();
+                });
+
+            // Sus alertas (CU14) venían de guías que ya no están en él.
+            Alerta::where('sector_id', $sector->id)->delete();
+            $sector->delete();
+        });
+
+        return response()->json(['message' => __('sicco.sectores.eliminado')]);
     }
 
     /**

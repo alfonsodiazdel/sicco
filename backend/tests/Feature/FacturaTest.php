@@ -5,6 +5,9 @@ use App\Enums\EstadoAsignacion;
 use App\Enums\OrigenGuia;
 use App\Enums\Rol;
 use App\Models\Factura;
+use App\Models\FacturaCargo;
+use App\Models\FacturaEliminada;
+use App\Models\FacturaLinea;
 use App\Models\GuiaRemision;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
@@ -422,6 +425,95 @@ describe('guías de una factura ya registrada (CU12)', function () {
         $this->actingAs(asignadoA(obra(['codigo' => 'PRY-003'])));
         actualizarGuias($id, $guias)->assertForbidden();
     });
+});
+
+describe('eliminar una factura registrada por error', function () {
+    it('la elimina con su detalle y archivo, libera las guías y deja constancia', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, $guias, [
+            'cargos' => [['descripcion' => 'Bombeo', 'importe' => 450]],
+        ]))->assertCreated()->json('data.id');
+        $ruta = Factura::findOrFail($id)->archivo_ruta;
+
+        $this->deleteJson("/api/v1/facturas/{$id}", ['motivo' => '  Era del proyecto Surco  '])
+            ->assertOk()
+            ->assertJsonPath('message', 'Factura eliminada correctamente');
+
+        expect(Factura::count())->toBe(0)
+            ->and(FacturaLinea::count())->toBe(0)
+            ->and(FacturaCargo::count())->toBe(0)
+            ->and(GuiaRemision::whereNotNull('factura_id')->count())->toBe(0);
+        Storage::assertMissing($ruta);
+        $this->getJson("/api/v1/proyectos/{$p->id}/guias/por-facturar?proveedor_id={$proveedor->id}")
+            ->assertJsonCount(3);
+
+        $log = FacturaEliminada::sole();
+        expect($log->factura_id)->toBe($id)
+            ->and($log->proyecto_id)->toBe($p->id)
+            ->and($log->proveedor_id)->toBe($proveedor->id)
+            ->and($log->numero)->toBe('F001-00002803')
+            ->and($log->total)->toBe('8997.92')
+            ->and($log->motivo)->toBe('Era del proyecto Surco')
+            ->and($log->registrado_por)->toBe($oficina->id)
+            ->and($log->eliminado_por)->toBe($oficina->id)
+            ->and($log->datos['lineas'])->toHaveCount(2)
+            ->and($log->datos['cargos'])->toEqual([['descripcion' => 'Bombeo', 'importe' => '450.00']])
+            ->and(array_column($log->datos['guias'], 'id'))->toBe(array_map(fn ($g) => $g->id, $guias))
+            ->and($log->datos['factura']['archivo_ruta'])->toBe($ruta);
+    });
+
+    it('deja registrarla de nuevo en el proyecto correcto con el mismo número', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $correcto = obra(['codigo' => 'PRY-002']);
+        $correcto->usuarios()->attach($oficina->id);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, guiasDelEjemplo($p, $proveedor)))->json('data.id');
+
+        registrarFactura(datosFactura($correcto, $proveedor, guiasDelEjemplo($correcto, $proveedor)))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['numero' => 'La factura ya fue registrada']);
+
+        $this->deleteJson("/api/v1/facturas/{$id}")->assertOk();
+        expect(FacturaEliminada::sole()->motivo)->toBeNull();
+
+        registrarFactura(datosFactura($correcto, $proveedor, guiasDelEjemplo($correcto, $proveedor)))
+            ->assertCreated()
+            ->assertJsonPath('data.numero', 'F001-00002803');
+    });
+
+    it('valida el motivo', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, guiasDelEjemplo($p, $proveedor)))->json('data.id');
+
+        $this->deleteJson("/api/v1/facturas/{$id}", ['motivo' => str_repeat('a', 501)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['motivo' => 'Debe tener como máximo 500 caracteres']);
+
+        expect(Factura::count())->toBe(1)->and(FacturaEliminada::count())->toBe(0);
+    });
+
+    it('solo la elimina Oficina técnica de un proyecto asignado', function (?Rol $rol) {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $id = $this->actingAs($oficina)
+            ->post('/api/v1/facturas', datosFactura($p, $proveedor, guiasDelEjemplo($p, $proveedor)), ['Accept' => 'application/json'])
+            ->json('data.id');
+
+        $usuario = $rol ? asignadoA($p, $rol) : asignadoA(obra(['codigo' => 'PRY-003']));
+        $this->actingAs($usuario)->deleteJson("/api/v1/facturas/{$id}")->assertForbidden();
+
+        expect(Factura::count())->toBe(1)
+            ->and(GuiaRemision::whereNotNull('factura_id')->count())->toBe(3)
+            ->and(FacturaEliminada::count())->toBe(0);
+    })->with([
+        'administrador' => Rol::Administrador,
+        'almacenero' => Rol::Almacenero,
+        'producción' => Rol::IngenieroProduccion,
+        'gerencia' => Rol::Gerencia,
+        'oficina técnica de otro proyecto' => null,
+    ]);
 });
 
 describe('aviso de lo que falta por vincular', function () {

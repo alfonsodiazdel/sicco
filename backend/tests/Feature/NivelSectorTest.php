@@ -254,6 +254,68 @@ it('el seeder de demo arma los niveles y sectores de las pantallas', function ()
     expect((float) Sector::where('nombre', 'Sector C')->value('volumen_presup_m3'))->toBe(122.5);
 });
 
+describe('eliminación de niveles y sectores', function () {
+    it('elimina un sector sin guías y devuelve su volumen al disponible de la partida', function () {
+        [$p, $columnas, $ing] = obraConColumnas();
+        $n = nivel($p);
+        $s = sector($n, $columnas, 180.5);
+
+        $this->actingAs($ing)->deleteJson("/api/v1/sectores/{$s->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Sector eliminado correctamente');
+        expect(Sector::find($s->id))->toBeNull();
+
+        $this->actingAs($ing)->postJson("/api/v1/niveles/{$n->id}/sectores", [
+            'nombre' => 'Sector A', 'presupuesto_id' => $columnas->id, 'volumen_presup_m3' => 180.5,
+        ])->assertCreated();
+    });
+
+    it('no elimina un sector culminado', function () {
+        [$p, $columnas, $ing] = obraConColumnas();
+        $s = sector(nivel($p), $columnas, 60);
+        $s->forceFill(['fecha_culminacion' => '2026-11-09'])->save();
+
+        $this->actingAs($ing)->deleteJson("/api/v1/sectores/{$s->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sector' => 'El sector está culminado; reábralo para eliminarlo']);
+        expect(Sector::find($s->id))->not->toBeNull();
+    });
+
+    it('elimina un nivel solo si no tiene sectores', function () {
+        [$p, $columnas, $ing] = obraConColumnas();
+        $n = nivel($p);
+        $s = sector($n, $columnas, 60);
+
+        $this->actingAs($ing)->deleteJson("/api/v1/niveles/{$n->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['nivel' => 'El nivel tiene sectores; elimínelos para eliminarlo']);
+
+        $this->actingAs($ing)->deleteJson("/api/v1/sectores/{$s->id}")->assertOk();
+        $this->actingAs($ing)->deleteJson("/api/v1/niveles/{$n->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Nivel eliminado correctamente');
+        expect(Nivel::find($n->id))->toBeNull();
+    });
+
+    it('solo Producción asignada elimina; a un proyecto ajeno responde 403', function () {
+        [$p, $columnas] = obraConColumnas();
+        $n = nivel($p);
+        $vacio = nivel($p, 'Piso 2', 2);
+        $s = sector($n, $columnas, 60);
+
+        foreach ([Rol::OficinaTecnica, Rol::Gerencia, Rol::Almacenero] as $rol) {
+            $this->actingAs(asignadoA($p, $rol))->deleteJson("/api/v1/sectores/{$s->id}")->assertForbidden();
+            $this->actingAs(asignadoA($p, $rol))->deleteJson("/api/v1/niveles/{$vacio->id}")->assertForbidden();
+        }
+        $ajeno = conRol(Rol::IngenieroProduccion);
+        $this->actingAs($ajeno)->deleteJson("/api/v1/sectores/{$s->id}")
+            ->assertForbidden()->assertJsonPath('message', 'No tiene acceso a este proyecto.');
+        $this->actingAs($ajeno)->deleteJson("/api/v1/niveles/{$vacio->id}")->assertForbidden();
+        expect(Sector::find($s->id))->not->toBeNull()
+            ->and(Nivel::find($vacio->id))->not->toBeNull();
+    });
+});
+
 describe('culminación de sectores', function () {
     beforeEach(function () {
         $this->travelTo(Carbon::parse('2026-11-09 12:00:00', 'America/Lima'));

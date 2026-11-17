@@ -48,6 +48,8 @@ return [
     ],
     'niveles' => [
         'duplicado' => 'El nivel ya existe en el proyecto',
+        'con_sectores' => 'El nivel tiene sectores; elimínelos para eliminarlo',
+        'eliminado' => 'Nivel eliminado correctamente',
     ],
     'guias' => [
         'registrada' => 'Guía registrada correctamente',
@@ -69,6 +71,7 @@ return [
         'sector_repetido' => 'El sector ya está en la asignación',
         'sector_ajeno' => 'El sector no pertenece al proyecto de la guía',
         'sector_culminado' => 'El sector :sector está culminado; reábralo para cambiar sus guías',
+        'sector_eliminado' => 'Uno de los sectores se acaba de eliminar; recargue la asignación',
     ],
     'facturas' => [
         'registrada' => 'Factura registrada correctamente',
@@ -86,6 +89,7 @@ return [
         'citada_no_registrada' => 'La factura cita la guía :numero, que no está registrada',
         'citada_otro_proyecto' => 'La factura cita la guía :numero, que es de otro proyecto',
         'citada_facturada' => 'La factura cita la guía :numero, que ya está facturada',
+        'eliminada' => 'Factura eliminada correctamente',
     ],
     'sectores' => [
         'duplicado' => 'El sector ya existe en el nivel',
@@ -96,6 +100,9 @@ return [
         'no_culminado' => 'El sector no está culminado',
         'culminado_ok' => 'Sector culminado correctamente',
         'reabierto_ok' => 'Sector reabierto correctamente',
+        'culminado_no_eliminable' => 'El sector está culminado; reábralo para eliminarlo',
+        'con_guias' => 'El sector tiene guías asignadas; reasígnelas a otro sector para eliminarlo',
+        'eliminado' => 'Sector eliminado correctamente',
     ],
     'alertas' => [
         'revisada' => 'Alerta marcada como revisada',
