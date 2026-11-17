@@ -29,6 +29,22 @@ class Proveedor extends Model
         return $this->hasMany(ProductoProveedor::class);
     }
 
+    public function guias(): HasMany
+    {
+        return $this->hasMany(GuiaRemision::class);
+    }
+
+    public function facturas(): HasMany
+    {
+        return $this->hasMany(Factura::class);
+    }
+
+    /** Ya se usó en una guía o factura: solo se puede desactivar, para no perder su trazabilidad. */
+    public function enUso(): bool
+    {
+        return $this->guias()->exists() || $this->facturas()->exists();
+    }
+
     /** El f'c que indica el código según `patron_codigo`, p. ej. 280 para 70280NB5746 en Holcim. */
     public function fcDelCodigo(?string $codigo): ?int
     {

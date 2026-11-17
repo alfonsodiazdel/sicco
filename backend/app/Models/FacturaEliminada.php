@@ -31,6 +31,7 @@ class FacturaEliminada extends Model
         return $this->belongsTo(Proyecto::class);
     }
 
+    /** Sin clave foránea: puede no existir si se eliminó; sus datos quedan en `datos.proveedor`. */
     public function proveedor(): BelongsTo
     {
         return $this->belongsTo(Proveedor::class);

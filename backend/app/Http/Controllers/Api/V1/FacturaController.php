@@ -293,7 +293,7 @@ class FacturaController extends Controller
         $ruta = DB::transaction(function () use ($request, $factura) {
             // A la vez que otro cambio de guías o eliminación de la misma factura: espera al primero.
             $factura = Factura::whereKey($factura->id)->lockForUpdate()->firstOrFail();
-            $factura->load(['lineas.resistencia', 'cargos', 'guias' => fn ($q) => $q->orderBy('id')]);
+            $factura->load(['proveedor', 'lineas.resistencia', 'cargos', 'guias' => fn ($q) => $q->orderBy('id')]);
 
             $motivo = trim((string) $request->validated('motivo'));
             FacturaEliminada::create([
@@ -318,6 +318,8 @@ class FacturaController extends Controller
                     ])->all(),
                     'cargos' => $factura->cargos->map(fn ($c) => $c->only(['descripcion', 'importe']))->all(),
                     'guias' => $factura->guias->map(fn (GuiaRemision $g) => $g->only(['id', 'numero']))->all(),
+                    // `proveedor_id` no tiene clave foránea: el registro se sigue leyendo si se elimina el proveedor.
+                    'proveedor' => $factura->proveedor->only(['id', 'ruc', 'razon_social']),
                 ],
                 'registrado_por' => $factura->registrado_por,
                 'eliminado_por' => $request->user()->id,

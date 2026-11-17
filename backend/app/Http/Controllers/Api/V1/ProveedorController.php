@@ -8,6 +8,8 @@ use App\Http\Requests\ProveedorRequest;
 use App\Http\Resources\ProveedorDetalleResource;
 use App\Http\Resources\ProveedorResource;
 use App\Models\Proveedor;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -55,10 +57,35 @@ class ProveedorController extends Controller
         return $this->recurso($request)::make($proveedor);
     }
 
-    public function destroy(Proveedor $proveedor): Response
+    /**
+     * Solo se elimina un proveedor que nunca se usó (p. ej. registrado por error o duplicado); sus
+     * productos se van con él. Con guías o facturas, se desactiva.
+     */
+    public function destroy(Proveedor $proveedor): Response|JsonResponse
     {
-        $proveedor->delete();
+        if ($proveedor->enUso()) {
+            return $this->enUso();
+        }
+
+        try {
+            $proveedor->delete();
+        } catch (QueryException $e) {
+            // Una guía o factura registrada a la vez: la clave foránea no deja eliminarlo.
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+
+            return $this->enUso();
+        }
 
         return response()->noContent();
+    }
+
+    private function enUso(): JsonResponse
+    {
+        return response()->json([
+            'message' => __('sicco.proveedores.en_uso'),
+            'code' => 'proveedor_en_uso',
+        ], Response::HTTP_CONFLICT);
     }
 }

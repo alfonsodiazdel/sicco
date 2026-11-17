@@ -1,6 +1,11 @@
 <?php
 
+use App\Enums\EstadoAsignacion;
+use App\Enums\OrigenGuia;
 use App\Enums\Rol;
+use App\Models\Factura;
+use App\Models\GuiaRemision;
+use App\Models\ProductoProveedor;
 use App\Models\Proveedor;
 use App\Models\User;
 
@@ -72,6 +77,61 @@ it('elimina un proveedor', function () {
         ->assertNoContent();
 
     expect(Proveedor::find($proveedor->id))->toBeNull();
+});
+
+function guiaDelProveedor(Proveedor $proveedor): GuiaRemision
+{
+    $proyecto = obra();
+
+    return GuiaRemision::create([
+        'proyecto_id' => $proyecto->id, 'proveedor_id' => $proveedor->id, 'numero' => 'T001-00000001',
+        'fecha' => today()->toDateString(), 'resistencia_id' => resistencia(280)->id, 'volumen_m3' => 8,
+        'foto_ruta' => "guias/{$proyecto->id}/foto.jpg", 'estado_asignacion' => EstadoAsignacion::SinSector,
+        'origen' => OrigenGuia::Manual, 'registrado_por' => conRol(Rol::Almacenero)->id,
+    ]);
+}
+
+describe('proveedor ya usado en documentos', function () {
+    it('no elimina un proveedor con guías y pide desactivarlo', function () {
+        $proveedor = Proveedor::factory()->create();
+        guiaDelProveedor($proveedor);
+
+        $this->actingAs(oficinaTecnica())
+            ->deleteJson("/api/v1/proveedores/{$proveedor->id}")
+            ->assertConflict()
+            ->assertJsonPath('code', 'proveedor_en_uso')
+            ->assertJsonPath('message', 'El proveedor tiene guías o facturas registradas; desactívelo en lugar de eliminarlo.');
+
+        expect(Proveedor::find($proveedor->id))->not->toBeNull();
+    });
+
+    it('no elimina un proveedor con facturas', function () {
+        $proveedor = Proveedor::factory()->create();
+        $proyecto = obra();
+        Factura::create([
+            'proyecto_id' => $proyecto->id, 'proveedor_id' => $proveedor->id, 'numero' => 'F001-00000001',
+            'fecha' => today()->toDateString(), 'volumen_m3' => 8, 'subtotal' => 2000, 'igv' => 360, 'total' => 2360,
+            'archivo_ruta' => "facturas/{$proyecto->id}/f.pdf", 'registrado_por' => oficinaTecnica()->id,
+        ]);
+
+        $this->actingAs(oficinaTecnica())
+            ->deleteJson("/api/v1/proveedores/{$proveedor->id}")
+            ->assertConflict()
+            ->assertJsonPath('code', 'proveedor_en_uso');
+
+        expect(Proveedor::find($proveedor->id))->not->toBeNull();
+    });
+
+    it('elimina con él los productos registrados de la concretera', function () {
+        $proveedor = Proveedor::factory()->create();
+        $proveedor->productos()->create(['codigo' => '70280NB5746', 'resistencia_id' => resistencia(280)->id]);
+
+        $this->actingAs(oficinaTecnica())
+            ->deleteJson("/api/v1/proveedores/{$proveedor->id}")
+            ->assertNoContent();
+
+        expect(ProductoProveedor::count())->toBe(0);
+    });
 });
 
 it('permite consultar proveedores a todos los roles', function (Rol $rol) {

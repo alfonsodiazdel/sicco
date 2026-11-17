@@ -21,6 +21,7 @@ return [
         'direccion_fiscal_max' => 'La dirección fiscal no puede superar los 250 caracteres.',
         'planta_despacho_max' => 'La planta de despacho no puede superar los 150 caracteres.',
         'inactivo' => 'Este proveedor está inactivo.',
+        'en_uso' => 'El proveedor tiene guías o facturas registradas; desactívelo en lugar de eliminarlo.',
     ],
     'grupos' => [
         'duplicado' => 'El grupo ya existe',

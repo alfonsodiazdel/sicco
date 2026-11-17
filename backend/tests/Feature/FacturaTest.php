@@ -461,7 +461,25 @@ describe('eliminar una factura registrada por error', function () {
             ->and($log->datos['lineas'])->toHaveCount(2)
             ->and($log->datos['cargos'])->toEqual([['descripcion' => 'Bombeo', 'importe' => '450.00']])
             ->and(array_column($log->datos['guias'], 'id'))->toBe(array_map(fn ($g) => $g->id, $guias))
-            ->and($log->datos['factura']['archivo_ruta'])->toBe($ruta);
+            ->and($log->datos['factura']['archivo_ruta'])->toBe($ruta)
+            ->and($log->datos['proveedor'])->toBe($proveedor->only(['id', 'ruc', 'razon_social']));
+    });
+
+    it('no impide eliminar al proveedor y el registro conserva sus datos', function () {
+        [$p, $proveedor, $oficina] = obraConOficina();
+        $guias = guiasDelEjemplo($p, $proveedor);
+        $this->actingAs($oficina);
+        $id = registrarFactura(datosFactura($p, $proveedor, $guias))->assertCreated()->json('data.id');
+        $this->deleteJson("/api/v1/facturas/{$id}")->assertOk();
+        // Las guías liberadas, sin asignar, se eliminan (CU10): el proveedor queda sin documentos.
+        GuiaRemision::whereKey(array_map(fn ($g) => $g->id, $guias))->delete();
+
+        $this->deleteJson("/api/v1/proveedores/{$proveedor->id}")->assertNoContent();
+
+        $log = FacturaEliminada::sole();
+        expect(Proveedor::find($proveedor->id))->toBeNull()
+            ->and($log->proveedor_id)->toBe($proveedor->id)
+            ->and($log->datos['proveedor'])->toBe($proveedor->only(['id', 'ruc', 'razon_social']));
     });
 
     it('deja registrarla de nuevo en el proyecto correcto con el mismo número', function () {
