@@ -1,5 +1,7 @@
 # SICCO
 
+![SICCO en funcionamiento: registro de la guía desde el celular, asignación de sector, control de desperdicio con alerta, factura, dashboard y reporte EAT](docs/img/sicco-demo.gif)
+
 Sistema de Control de Consumo de Concreto en Obra. API REST en Laravel 13 (PHP 8.5)
 y SPA en Vue 3 + TypeScript. Arquitectura y decisiones: `Docs/arquitectura.md` (carpeta del proyecto, fuera de este repositorio).
 
